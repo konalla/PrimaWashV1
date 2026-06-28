@@ -1,0 +1,10 @@
+node_modules
+.npm-cache
+dist
+.git
+.github
+.env
+.env.*
+!.env.example
+coverage
+*.log

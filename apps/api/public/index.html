@@ -1,0 +1,1649 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prima Wash</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-0: #06100d;
+        --bg-1: #0b1d17;
+        --surface: rgba(255, 255, 255, 0.06);
+        --surface-strong: rgba(255, 255, 255, 0.1);
+        --surface-soft: rgba(255, 255, 255, 0.045);
+        --line: rgba(255, 255, 255, 0.14);
+        --line-strong: rgba(151, 255, 194, 0.34);
+        --text: #f7fff9;
+        --muted: #a8bab1;
+        --muted-2: #879a90;
+        --green: #66f5a0;
+        --green-2: #1fc86a;
+        --gold: #ffd98b;
+        --danger: #ff9999;
+        --shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+        --focus-ring: 0 0 0 3px rgba(102, 245, 160, 0.28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 16% 8%, rgba(98, 242, 154, 0.24), transparent 29rem),
+          radial-gradient(circle at 86% 4%, rgba(255, 217, 138, 0.14), transparent 26rem),
+          linear-gradient(145deg, var(--bg-0), var(--bg-1) 56%, #06110e);
+        color: var(--text);
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+        background-size: 72px 72px;
+        mask-image: linear-gradient(to bottom, black, transparent 76%);
+      }
+
+      main {
+        position: relative;
+        width: min(1220px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 20px 0 calc(48px + env(safe-area-inset-bottom));
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .mark {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 15px;
+        background: linear-gradient(145deg, rgba(98, 242, 154, 0.24), rgba(255, 255, 255, 0.08));
+        box-shadow: 0 14px 50px rgba(33, 200, 108, 0.22);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 9px 13px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+        background: var(--green);
+        box-shadow: 0 0 0 5px rgba(98, 242, 154, 0.12);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.18fr 0.82fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background:
+          linear-gradient(145deg, var(--surface), rgba(255, 255, 255, 0.035)),
+          rgba(10, 29, 22, 0.74);
+        box-shadow: var(--shadow);
+        padding: 24px;
+        backdrop-filter: blur(20px);
+      }
+
+      .hero-card {
+        min-height: 300px;
+        overflow: hidden;
+      }
+
+      .eyebrow {
+        margin: 0 0 18px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-bottom: 24px;
+        font-size: clamp(38px, 5.2vw, 64px);
+        line-height: 0.96;
+        letter-spacing: -0.06em;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 25px;
+        letter-spacing: -0.04em;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+        letter-spacing: -0.025em;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .hero-copy {
+        max-width: 680px;
+        font-size: 18px;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .phone {
+        display: flex;
+        min-height: 300px;
+        flex-direction: column;
+        justify-content: space-between;
+        border-color: rgba(98, 242, 154, 0.24);
+      }
+
+      .phone-shell {
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035));
+        padding: 16px;
+      }
+
+      .phone-screen {
+        border-radius: 24px;
+        background: #07110e;
+        padding: 18px;
+      }
+
+      .vehicle-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .vehicle-icon {
+        display: grid;
+        width: 52px;
+        height: 52px;
+        place-items: center;
+        border-radius: 18px;
+        background: rgba(98, 242, 154, 0.14);
+        font-size: 24px;
+      }
+
+      .steps {
+        display: grid;
+        gap: 12px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
+        padding: 13px;
+        background: rgba(255, 255, 255, 0.055);
+      }
+
+      .step-number {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border-radius: 12px;
+        background: rgba(98, 242, 154, 0.16);
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .step small,
+      .caption {
+        color: var(--muted-2);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 0.95fr 1.05fr;
+        gap: 20px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      label {
+        display: block;
+        margin: 0 0 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.02em;
+      }
+
+      input,
+      select,
+      button {
+        min-height: 48px;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        padding: 14px 15px;
+        font: inherit;
+      }
+
+      input,
+      select {
+        background: rgba(0, 0, 0, 0.24);
+        color: var(--text);
+        outline: none;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: var(--green);
+        box-shadow: 0 0 0 4px rgba(98, 242, 154, 0.1);
+      }
+
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 18px;
+        border: 0;
+        background: linear-gradient(135deg, var(--green), var(--green-2));
+        color: #03120a;
+        cursor: pointer;
+        font-weight: 950;
+        box-shadow: 0 18px 40px rgba(33, 200, 108, 0.22);
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.04);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.68;
+        transform: none;
+      }
+
+      button.secondary {
+        width: auto;
+        margin-top: 0;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        box-shadow: none;
+        font-size: 13px;
+        padding: 10px 13px;
+      }
+
+      button.danger {
+        width: auto;
+        margin-top: 12px;
+        border: 1px solid rgba(255, 140, 140, 0.42);
+        background: rgba(255, 140, 140, 0.12);
+        color: #ffd9d9;
+        box-shadow: none;
+        font-size: 13px;
+        padding: 10px 13px;
+      }
+
+      button.payment {
+        width: auto;
+        margin-top: 12px;
+        background: linear-gradient(135deg, var(--gold), #ffb84f);
+        color: #1d1200;
+        box-shadow: 0 18px 40px rgba(255, 184, 79, 0.16);
+        font-size: 13px;
+        padding: 10px 13px;
+      }
+
+      .service-grid {
+        display: grid;
+        gap: 10px;
+        margin: 12px 0 18px;
+      }
+
+      .service-card {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 14px;
+        background: var(--surface-soft);
+        cursor: pointer;
+        text-align: left;
+        box-shadow: none;
+        color: var(--text);
+        margin-top: 0;
+      }
+
+      .service-card[aria-pressed="true"] {
+        border-color: var(--line-strong);
+        background: rgba(98, 242, 154, 0.1);
+      }
+
+      .service-card[aria-pressed="true"]::after {
+        content: "Selected";
+        grid-column: 1 / -1;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .price {
+        color: var(--green);
+        font-size: 18px;
+        font-weight: 950;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 18px 0;
+      }
+
+      .mini {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--surface-soft);
+        padding: 14px;
+      }
+
+      .mini strong {
+        display: block;
+        margin-top: 5px;
+        font-size: 18px;
+      }
+
+      .list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .row {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--surface-strong);
+        padding: 16px;
+      }
+
+      .row strong {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .row span,
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .booking-card {
+        border-color: var(--line-strong);
+        background:
+          linear-gradient(145deg, rgba(98, 242, 154, 0.13), rgba(255, 255, 255, 0.06)),
+          var(--surface-strong);
+      }
+
+      .status {
+        min-height: 20px;
+        margin-top: 14px;
+      }
+
+      .success {
+        color: var(--green);
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      .audit-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .journey-progress {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin: 0 0 20px;
+      }
+
+      .journey-step {
+        display: grid;
+        gap: 7px;
+        color: var(--muted-2);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .journey-step::before {
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        content: "";
+      }
+
+      .journey-step.is-active {
+        color: var(--text);
+      }
+
+      .journey-step.is-active::before {
+        background: var(--green);
+      }
+
+      .trust-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin: 18px 0 0;
+      }
+
+      .trust-item {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px;
+        background: var(--surface-soft);
+      }
+
+      .trust-item strong {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 13px;
+      }
+
+      .trust-item span {
+        color: var(--muted-2);
+        font-size: 12px;
+      }
+
+      details.diagnostics {
+        display: none;
+      }
+
+      details.diagnostics summary {
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .timeline-step {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted-2);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .timeline-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      .timeline-step.is-active {
+        color: var(--green);
+      }
+
+      .timeline-step.is-active .timeline-dot {
+        background: var(--green);
+        box-shadow: 0 0 0 6px rgba(98, 242, 154, 0.1);
+      }
+
+      .audit-event {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+      }
+
+      .audit-dot {
+        width: 11px;
+        height: 11px;
+        margin-top: 4px;
+        border-radius: 99px;
+        background: var(--gold);
+        box-shadow: 0 0 0 6px rgba(255, 217, 138, 0.1);
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 50% 0%, rgba(102, 245, 160, 0.13), transparent 30rem),
+          #040b08;
+      }
+
+      body::before {
+        opacity: 0.35;
+      }
+
+      .mobile-app {
+        width: min(100%, 480px);
+        min-height: 100vh;
+        padding: 0 18px calc(92px + env(safe-area-inset-bottom));
+        background:
+          radial-gradient(circle at 100% 0%, rgba(102, 245, 160, 0.12), transparent 22rem),
+          linear-gradient(180deg, #07120e, #091811 60%, #06100d);
+        box-shadow: 0 0 90px rgba(0, 0, 0, 0.55);
+      }
+
+      .mobile-app .topbar {
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        min-height: 82px;
+        margin: 0 -18px 18px;
+        border-bottom: 0;
+        padding: 18px;
+        background: rgba(7, 18, 14, 0.88);
+        backdrop-filter: blur(18px);
+      }
+
+      .greeting {
+        margin: 3px 0 0;
+        font-size: 22px;
+      }
+
+      .profile-button {
+        width: 44px;
+        min-height: 44px;
+        margin: 0;
+        border: 1px solid rgba(102, 245, 160, 0.32);
+        border-radius: 15px;
+        padding: 0;
+        background: rgba(102, 245, 160, 0.13);
+        color: var(--text);
+        box-shadow: none;
+      }
+
+      .mobile-app .hero {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+
+      .vehicle-hero {
+        overflow: hidden;
+        border: 1px solid rgba(102, 245, 160, 0.26);
+        border-radius: 26px;
+        padding: 22px;
+        background:
+          radial-gradient(circle at 100% 0%, rgba(102, 245, 160, 0.22), transparent 14rem),
+          linear-gradient(145deg, #142d22, #0c1c16);
+        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.25);
+      }
+
+      .vehicle-hero-top,
+      .vehicle-health {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .vehicle-hero h1 {
+        margin: 5px 0 9px;
+        font-size: 31px;
+        letter-spacing: -0.05em;
+      }
+
+      .vehicle-plate {
+        display: inline-flex;
+        border: 1px solid rgba(255, 255, 255, 0.17);
+        border-radius: 8px;
+        padding: 5px 8px;
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.1em;
+      }
+
+      .vehicle-monogram {
+        display: grid;
+        width: 74px;
+        height: 74px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--green);
+        font-size: 22px;
+        font-weight: 950;
+      }
+
+      .vehicle-health {
+        margin-top: 22px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: 15px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .vehicle-health i {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 7px;
+        border-radius: 99px;
+        background: var(--green);
+        box-shadow: 0 0 0 5px rgba(102, 245, 160, 0.1);
+      }
+
+      .text-button {
+        width: auto;
+        min-height: auto;
+        margin: 0;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--green);
+        box-shadow: none;
+        font-size: 12px;
+      }
+
+      .quick-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .quick-actions button {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        min-height: 82px;
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 13px;
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+        text-align: left;
+        box-shadow: none;
+      }
+
+      .quick-actions strong,
+      .quick-actions small {
+        display: block;
+      }
+
+      .quick-actions strong {
+        margin-bottom: 3px;
+        font-size: 13px;
+      }
+
+      .quick-actions small {
+        color: var(--muted-2);
+        font-size: 10px;
+        line-height: 1.35;
+      }
+
+      .quick-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 12px;
+        background: rgba(102, 245, 160, 0.13);
+        color: var(--green);
+      }
+
+      .care-banner {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        border: 1px solid rgba(255, 217, 139, 0.22);
+        border-radius: 20px;
+        padding: 17px;
+        background: rgba(255, 217, 139, 0.06);
+      }
+
+      .care-banner .eyebrow {
+        margin-bottom: 7px;
+        color: var(--gold);
+        font-size: 9px;
+      }
+
+      .care-banner strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .care-banner p {
+        margin: 4px 0 0;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .guarantee-mark {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 15px;
+        background: rgba(255, 217, 139, 0.13);
+        color: var(--gold);
+        font-size: 20px;
+      }
+
+      .mobile-app .layout {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+      }
+
+      .mobile-app .card {
+        border-radius: 26px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.045);
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      .mobile-app .journey-progress {
+        margin-bottom: 22px;
+      }
+
+      .mobile-app .journey-step {
+        overflow: hidden;
+        font-size: 9px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .section-intro {
+        margin: -9px 0 18px;
+        font-size: 13px;
+      }
+
+      .vehicle-details {
+        margin: 0 0 18px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 13px 14px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .vehicle-details summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .vehicle-details .form-grid {
+        margin-top: 15px;
+      }
+
+      .mobile-app .service-card {
+        min-height: 84px;
+        border-radius: 18px;
+        padding: 15px;
+      }
+
+      .mobile-app .service-card[aria-pressed="true"] {
+        border-color: rgba(102, 245, 160, 0.45);
+        background:
+          linear-gradient(145deg, rgba(102, 245, 160, 0.12), rgba(255, 255, 255, 0.04));
+      }
+
+      .mobile-app .service-card[aria-pressed="true"]::after {
+        content: "✓ Selected";
+      }
+
+      .mobile-app .summary-grid {
+        gap: 8px;
+      }
+
+      .mobile-app .mini {
+        border-radius: 15px;
+        padding: 11px;
+      }
+
+      .mobile-app .mini strong {
+        font-size: 14px;
+      }
+
+      .mobile-app .trust-strip {
+        grid-template-columns: 1fr;
+        gap: 7px;
+      }
+
+      .mobile-app .trust-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        border-radius: 14px;
+        padding: 11px 13px;
+      }
+
+      .mobile-app .trust-item span::before {
+        margin-right: 5px;
+        color: var(--green);
+        content: "✓";
+      }
+
+      .appointment-hub .section-header {
+        margin-top: 24px;
+      }
+
+      .mobile-app .row {
+        border-radius: 17px;
+        background: rgba(255, 255, 255, 0.055);
+      }
+
+      .bottom-nav {
+        position: fixed;
+        z-index: 15;
+        right: 50%;
+        bottom: 0;
+        display: grid;
+        width: min(100%, 480px);
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid var(--line);
+        padding: 9px 10px calc(9px + env(safe-area-inset-bottom));
+        background: rgba(7, 18, 14, 0.94);
+        backdrop-filter: blur(20px);
+        transform: translateX(50%);
+      }
+
+      .bottom-nav-item {
+        display: grid;
+        gap: 3px;
+        min-height: 51px;
+        margin: 0;
+        border: 0;
+        border-radius: 13px;
+        padding: 6px 4px;
+        background: transparent;
+        color: var(--muted-2);
+        box-shadow: none;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .bottom-nav-item span {
+        font-size: 18px;
+      }
+
+      .bottom-nav-item.is-active {
+        background: rgba(102, 245, 160, 0.09);
+        color: var(--green);
+      }
+
+      @media (max-width: 930px) {
+        .hero,
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        main.mobile-app {
+          width: 100%;
+          padding-top: 0;
+        }
+
+        .topbar,
+        .summary-grid,
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .mobile-app .topbar {
+          align-items: center;
+          flex-direction: row;
+        }
+
+        .card {
+          border-radius: 24px;
+          padding: 20px;
+        }
+
+        .hero-card {
+          min-height: auto;
+        }
+
+        .hero-copy {
+          font-size: 16px;
+        }
+
+        .trust-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .mobile-app .card {
+          padding: 18px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="mobile-app">
+      <header class="topbar">
+        <div>
+          <span class="caption">Thursday, 25 June</span>
+          <h2 class="greeting">Good morning, Nalla</h2>
+        </div>
+        <button class="profile-button" type="button" aria-label="Open profile">N</button>
+      </header>
+
+      <section class="hero">
+        <div class="vehicle-hero">
+          <div class="vehicle-hero-top">
+            <div>
+              <span class="caption">Your vehicle</span>
+              <h1 id="preview-vehicle-title">Tesla Model 3</h1>
+              <span class="vehicle-plate">PRIMA001</span>
+            </div>
+            <div class="vehicle-monogram" aria-hidden="true">T3</div>
+          </div>
+          <div class="vehicle-health">
+            <span><i></i> Care profile active</span>
+            <button class="text-button" type="button">Manage vehicle</button>
+          </div>
+        </div>
+
+        <div class="quick-actions" aria-label="Quick actions">
+          <button type="button" data-scroll-booking>
+            <span class="quick-icon">✦</span>
+            <span><strong>Book care</strong><small>Find a trusted service</small></span>
+          </button>
+          <button type="button" data-scroll-appointments>
+            <span class="quick-icon">◷</span>
+            <span><strong>Appointments</strong><small>Track your booking</small></span>
+          </button>
+        </div>
+
+        <div class="care-banner">
+          <div>
+            <span class="eyebrow">Prima Care Guarantee</span>
+            <strong>Quality care, protected payment.</strong>
+            <p>Every partner is verified and every booking is supported.</p>
+          </div>
+          <span class="guarantee-mark">✓</span>
+        </div>
+      </section>
+
+      <section class="layout">
+        <form class="card" id="booking-form" data-app-section="book">
+          <div class="journey-progress" aria-label="Booking progress">
+            <span class="journey-step is-active">Vehicle</span>
+            <span class="journey-step is-active">Service</span>
+            <span class="journey-step is-active">Time</span>
+            <span class="journey-step">Review &amp; pay</span>
+          </div>
+          <p class="eyebrow">Book vehicle care</p>
+          <h2>What does your car need?</h2>
+          <p class="section-intro">Upfront prices from quality-checked partners near you.</p>
+
+          <details class="vehicle-details">
+            <summary>Vehicle details</summary>
+          <div class="form-grid">
+            <div class="field-wide">
+              <label for="plateNumber">Plate number</label>
+              <input id="plateNumber" name="plateNumber" value="PRIMA001" autocomplete="off" required />
+            </div>
+
+            <div>
+              <label for="make">Make</label>
+              <input id="make" name="make" value="Tesla" />
+            </div>
+
+            <div>
+              <label for="model">Model</label>
+              <input id="model" name="model" value="Model 3" />
+            </div>
+          </div>
+          </details>
+
+          <label style="margin-top: 18px">Select service</label>
+          <div class="service-grid" id="service-cards"></div>
+          <select id="serviceCode" name="serviceCode" hidden></select>
+
+          <label for="availabilitySlotId">Choose an appointment</label>
+          <select id="availabilitySlotId" name="availabilitySlotId"></select>
+
+          <div class="summary-grid">
+            <div class="mini">
+              <span class="caption">Partner</span>
+              <strong>Verified</strong>
+            </div>
+            <div class="mini">
+              <span class="caption">Status</span>
+              <strong id="summary-status">Ready</strong>
+            </div>
+            <div class="mini">
+              <span class="caption">Price</span>
+              <strong id="summary-price">$0.00</strong>
+            </div>
+          </div>
+
+          <div class="trust-strip" aria-label="Booking protections">
+            <div class="trust-item"><strong>Price protected</strong><span>No surprise charges</span></div>
+            <div class="trust-item"><strong>Verified care</strong><span>Quality-checked partner</span></div>
+            <div class="trust-item"><strong>Flexible</strong><span>Cancel before check-in</span></div>
+          </div>
+
+          <button id="submit-button" type="submit">Continue to secure booking</button>
+          <div class="status" id="status" role="status" aria-live="polite">Choose a service and appointment time.</div>
+        </form>
+
+        <div class="card appointment-hub" data-app-section="appointments">
+          <p class="eyebrow">Your appointment</p>
+          <h2>Booking summary</h2>
+          <div class="list" id="result-list">
+            <div class="row">
+              <strong>No appointment yet</strong>
+              <span>Your confirmed service, time, and payment status will appear here.</span>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <div>
+              <p class="eyebrow" style="margin-bottom: 8px">Live care</p>
+              <h2 style="margin-bottom: 0">Your appointments</h2>
+            </div>
+            <button class="secondary" id="refresh-bookings" type="button">Refresh status</button>
+          </div>
+          <div class="list" id="my-bookings-list">
+            <div class="row">
+              <strong>No active bookings</strong>
+              <span>Your upcoming and active vehicle-care appointments will appear here.</span>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <div>
+              <p class="eyebrow" style="margin-bottom: 8px">Vehicle history</p>
+              <h2 style="margin-bottom: 0">Care records</h2>
+            </div>
+            <button class="secondary" id="refresh-records" type="button">Refresh records</button>
+          </div>
+          <div class="list" id="service-records-list">
+            <div class="row">
+              <strong>No service records yet</strong>
+              <span>Completed care automatically becomes part of your vehicle’s trusted history.</span>
+            </div>
+          </div>
+
+          <details class="diagnostics">
+            <summary>Developer diagnostics</summary>
+            <div class="audit-header">
+              <div>
+                <p class="eyebrow" style="margin: 18px 0 8px">System activity</p>
+                <h2 style="margin-bottom: 0">Audit trail</h2>
+              </div>
+            </div>
+            <div class="list" id="audit-list">
+              <div class="row">
+                <strong>No audit events yet</strong>
+                <span>Successful booking activity will appear here.</span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="App navigation">
+        <button class="bottom-nav-item is-active" type="button" data-nav-target="home"><span>⌂</span>Home</button>
+        <button class="bottom-nav-item" type="button" data-nav-target="book"><span>✦</span>Book</button>
+        <button class="bottom-nav-item" type="button" data-nav-target="appointments"><span>◷</span>Bookings</button>
+        <button class="bottom-nav-item" type="button" data-nav-target="garage"><span>◇</span>Garage</button>
+      </nav>
+    </main>
+
+    <script>
+      const actorHeaders = {
+        "content-type": "application/json",
+        "x-prima-user-id": "usr_demo_001",
+        "x-prima-role": "customer",
+      };
+
+      const statusEl = document.querySelector("#status");
+      const submitButton = document.querySelector("#submit-button");
+      const serviceSelect = document.querySelector("#serviceCode");
+      const serviceCards = document.querySelector("#service-cards");
+      const slotSelect = document.querySelector("#availabilitySlotId");
+      const resultList = document.querySelector("#result-list");
+      const auditList = document.querySelector("#audit-list");
+      const myBookingsList = document.querySelector("#my-bookings-list");
+      const refreshBookingsButton = document.querySelector("#refresh-bookings");
+      const serviceRecordsList = document.querySelector("#service-records-list");
+      const refreshRecordsButton = document.querySelector("#refresh-records");
+      const summaryPrice = document.querySelector("#summary-price");
+      const summaryStatus = document.querySelector("#summary-status");
+      const previewVehicleTitle = document.querySelector("#preview-vehicle-title");
+      const makeInput = document.querySelector("#make");
+      const modelInput = document.querySelector("#model");
+      const plateInput = document.querySelector("#plateNumber");
+
+      let servicesCache = [];
+      const statusSteps = ["pending_payment", "confirmed", "checked_in", "in_service", "completed"];
+      const statusLabels = {
+        pending_payment: "Awaiting confirmation",
+        confirmed: "Confirmed",
+        checked_in: "Checked in",
+        in_service: "In service",
+        completed: "Completed",
+        cancelled: "Cancelled",
+      };
+      const cancellableStatuses = new Set(["pending_payment", "confirmed", "checked_in"]);
+      const paymentLabels = {
+        requires_authorization: "Payment hold needed",
+        authorized: "Payment authorized",
+        captured: "Payment captured",
+        refunded: "Payment refunded",
+        voided: "Payment voided",
+      };
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          ...options,
+          headers: { ...actorHeaders, ...(options.headers || {}) },
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Request failed");
+        }
+
+        return payload.data;
+      }
+
+      function formatMoney(price) {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: price.currency,
+        }).format(price.amountMinor / 100);
+      }
+
+      function formatService(code) {
+        const serviceNames = {
+          wash_basic: "Essential Wash",
+          wash_premium: "Premium Detail",
+          detail_interior: "Interior Detail",
+        };
+
+        return serviceNames[code] || code.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function formatAppointment(value) {
+        return new Date(value).toLocaleString([], {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+
+      function setStatus(message, state = "default") {
+        statusEl.textContent = message;
+        statusEl.className = `status ${state}`;
+        summaryStatus.textContent = state === "success" ? "Booked" : state === "error" ? "Needs attention" : "Ready";
+      }
+
+      function updateVehiclePreview() {
+        previewVehicleTitle.textContent = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
+        document.querySelector(".vehicle-plate").textContent = plateInput.value || "YOUR PLATE";
+      }
+
+      function renderServiceCards(services) {
+        serviceCards.innerHTML = services
+          .map(
+            (service, index) => `
+              <button
+                class="service-card"
+                type="button"
+                data-service-code="${service.code}"
+                aria-pressed="${index === 0 ? "true" : "false"}"
+              >
+                <span>
+                  <strong>${service.name}</strong><br />
+                  <span class="caption">${service.durationMinutes} min &middot; upfront price &middot; satisfaction guarantee</span>
+                </span>
+                <span class="price">${formatMoney(service.price)}</span>
+              </button>
+            `,
+          )
+          .join("");
+
+        serviceCards.querySelectorAll(".service-card").forEach((card) => {
+          card.addEventListener("click", () => selectService(card.dataset.serviceCode));
+        });
+
+        if (services[0]) {
+          selectService(services[0].code);
+        }
+      }
+
+      function selectService(serviceCode) {
+        serviceSelect.value = serviceCode;
+        serviceCards.querySelectorAll(".service-card").forEach((card) => {
+          card.setAttribute("aria-pressed", String(card.dataset.serviceCode === serviceCode));
+        });
+
+        const service = servicesCache.find((item) => item.code === serviceCode);
+        summaryPrice.textContent = service ? formatMoney(service.price) : "$0.00";
+      }
+
+      async function refreshAuditTrail() {
+        const events = await api("/v1/audit-events?limit=5", {
+          headers: {
+            "x-prima-user-id": "usr_internal_preview",
+            "x-prima-role": "internal",
+          },
+        });
+
+        if (events.length === 0) {
+          auditList.innerHTML = `
+            <div class="row">
+              <strong>No audit events yet</strong>
+              <span>Successful vehicle and booking mutations will appear here.</span>
+            </div>
+          `;
+          return;
+        }
+
+        auditList.innerHTML = events
+          .map(
+            (event) => `
+              <div class="row audit-event">
+                <span class="audit-dot"></span>
+                <span>
+                  <strong>${event.action}</strong>
+                  <span>${event.resourceType} &middot; ${event.resourceId}</span>
+                </span>
+              </div>
+            `,
+          )
+          .join("");
+      }
+
+      async function refreshMyBookings() {
+        const bookings = await api("/v1/bookings");
+
+        if (bookings.length === 0) {
+          myBookingsList.innerHTML = `
+            <div class="row">
+              <strong>No active bookings</strong>
+              <span>Your upcoming and active vehicle-care appointments will appear here.</span>
+            </div>
+          `;
+          return;
+        }
+
+        myBookingsList.innerHTML = bookings
+          .map(
+            (booking) => `
+              <div class="row">
+                <strong>${formatService(booking.serviceCode)} · ${statusLabels[booking.status]}</strong>
+                <span>${formatAppointment(booking.scheduledStartAt)} · ${formatMoney(booking.acceptedPrice)}</span>
+                ${renderTimeline(booking.status)}
+                ${renderCancelButton(booking)}
+              </div>
+            `,
+          )
+          .join("");
+      }
+
+      async function refreshServiceRecords() {
+        const records = await api("/v1/service-records");
+
+        if (records.length === 0) {
+          serviceRecordsList.innerHTML = `
+            <div class="row">
+              <strong>No service records yet</strong>
+              <span>Completed care automatically becomes part of your vehicle’s trusted history.</span>
+            </div>
+          `;
+          return;
+        }
+
+        serviceRecordsList.innerHTML = records
+          .map(
+            (record) => `
+              <div class="row booking-card">
+                <strong>${formatService(record.serviceCode)} completed</strong>
+                <span>${formatAppointment(record.completedAt)} · verified care record</span>
+                <div class="timeline">
+                  <div class="timeline-step is-active"><span class="timeline-dot"></span><span>Verified service record</span></div>
+                  <div class="timeline-step is-active"><span class="timeline-dot"></span><span>Booking ${record.bookingId}</span></div>
+                </div>
+              </div>
+            `,
+          )
+          .join("");
+      }
+
+      function renderCancelButton(booking) {
+        if (!cancellableStatuses.has(booking.status)) {
+          return "";
+        }
+
+        return `<button class="danger" type="button" data-cancel-booking-id="${booking.id}">Cancel booking</button>`;
+      }
+
+      function renderTimeline(status) {
+        const activeIndex = statusSteps.indexOf(status);
+
+        if (status === "cancelled") {
+          return `
+            <div class="timeline">
+              <div class="timeline-step is-active"><span class="timeline-dot"></span><span>Cancelled</span></div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="timeline">
+            ${statusSteps
+              .map(
+                (step, index) => `
+                  <div class="timeline-step ${index <= activeIndex ? "is-active" : ""}">
+                    <span class="timeline-dot"></span>
+                    <span>${statusLabels[step]}</span>
+                  </div>
+                `,
+              )
+              .join("")}
+          </div>
+        `;
+      }
+
+      async function boot() {
+        const [services, slots] = await Promise.all([api("/v1/services"), api("/v1/availability")]);
+        servicesCache = services;
+
+        serviceSelect.innerHTML = services.map((service) => `<option value="${service.code}">${service.name}</option>`).join("");
+        renderServiceCards(services);
+
+        slotSelect.innerHTML =
+          slots.length === 0
+            ? `<option value="">No appointments available</option>`
+            : slots
+                .map((slot) => {
+                  const start = new Date(slot.startsAt);
+                  const end = new Date(slot.endsAt);
+                  const day = start.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+                  const time = `${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+                  return `<option value="${slot.id}">${day}, ${time}</option>`;
+                })
+                .join("");
+
+        await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
+      }
+
+      makeInput.addEventListener("input", updateVehiclePreview);
+      modelInput.addEventListener("input", updateVehiclePreview);
+      plateInput.addEventListener("input", updateVehiclePreview);
+
+      document.querySelector("[data-scroll-booking]").addEventListener("click", () => {
+        document.querySelector("#booking-form").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      document.querySelector("[data-scroll-appointments]").addEventListener("click", () => {
+        document.querySelector(".appointment-hub").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      document.querySelectorAll("[data-nav-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-nav-target]").forEach((item) => item.classList.toggle("is-active", item === button));
+          const target = button.dataset.navTarget;
+          const targetElement =
+            target === "home"
+              ? document.querySelector(".mobile-app")
+              : target === "book"
+                ? document.querySelector("#booking-form")
+                : target === "appointments"
+                  ? document.querySelector(".appointment-hub")
+                  : document.querySelector(".vehicle-details");
+          targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+      refreshBookingsButton.addEventListener("click", async () => {
+        refreshBookingsButton.disabled = true;
+
+        try {
+          await refreshMyBookings();
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          refreshBookingsButton.disabled = false;
+        }
+      });
+      refreshRecordsButton.addEventListener("click", async () => {
+        refreshRecordsButton.disabled = true;
+
+        try {
+          await refreshServiceRecords();
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          refreshRecordsButton.disabled = false;
+        }
+      });
+
+      document.addEventListener("click", async (event) => {
+        const authorizePaymentButton = event.target.closest("button[data-authorize-payment-id]");
+
+        if (authorizePaymentButton) {
+          authorizePaymentButton.disabled = true;
+          setStatus("Securing your payment...", "default");
+
+          try {
+            await api(`/v1/payments/${authorizePaymentButton.dataset.authorizePaymentId}/authorize`, {
+              method: "POST",
+            });
+            await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
+          setStatus("Payment secured. Your appointment is ready for partner confirmation.", "success");
+          } catch (error) {
+            setStatus(error.message, "error");
+          } finally {
+            authorizePaymentButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const button = event.target.closest("button[data-cancel-booking-id]");
+
+        if (!button) {
+          return;
+        }
+
+        if (!window.confirm("Cancel this appointment? Any authorized payment hold will be released.")) {
+          return;
+        }
+
+        button.disabled = true;
+        setStatus("Cancelling booking...", "default");
+
+        try {
+          await api(`/v1/bookings/${button.dataset.cancelBookingId}/cancel`, {
+            method: "POST",
+            body: JSON.stringify({ reason: "customer_requested" }),
+          });
+          await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
+          setStatus("Booking cancelled.", "success");
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      document.querySelector("#booking-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        submitButton.disabled = true;
+        setStatus("Creating secure booking...", "default");
+
+        const form = new FormData(event.currentTarget);
+
+        try {
+          const vehicle = await api("/v1/vehicles", {
+            method: "POST",
+            body: JSON.stringify({
+              plateNumber: form.get("plateNumber"),
+              make: form.get("make"),
+              model: form.get("model"),
+              year: 2026,
+            }),
+          });
+
+          const booking = await api("/v1/bookings", {
+            method: "POST",
+            body: JSON.stringify({
+              vehicleId: vehicle.id,
+              availabilitySlotId: form.get("availabilitySlotId"),
+              serviceCode: form.get("serviceCode"),
+            }),
+          });
+
+          const payment = await api("/v1/payments/intents", {
+            method: "POST",
+            body: JSON.stringify({
+              bookingId: booking.id,
+            }),
+          });
+
+          resultList.innerHTML = `
+            <div class="row booking-card">
+              <strong>${vehicle.plateNumber} &middot; ${booking.status.replace("_", " ")}</strong>
+              <span>${formatService(booking.serviceCode)} · ${formatAppointment(booking.scheduledStartAt)}</span>
+              <button class="payment" type="button" data-authorize-payment-id="${payment.id}">Secure payment</button>
+            </div>
+            <div class="row">
+              <strong>${formatMoney(booking.acceptedPrice)}</strong>
+              <span>${paymentLabels[payment.status]} &middot; protected checkout</span>
+            </div>
+            <div class="row">
+              <strong>Prima Care Guarantee</strong>
+              <span>Your booking is protected and every appointment update will appear here.</span>
+            </div>
+          `;
+          await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
+          setStatus("Appointment created. Secure payment to complete your booking.", "success");
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      boot().catch((error) => setStatus(error.message, "error"));
+    </script>
+  </body>
+</html>

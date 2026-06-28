@@ -1,0 +1,382 @@
+import type { Booking, BookingStatus, CreateBookingRequest, Money, ServiceCode } from "@prima-wash/contracts";
+import type { DatabasePool } from "../../db/pool.js";
+import { findAvailabilitySlot, findServiceOffering } from "../availability/catalog.js";
+import type { AvailabilityRepository } from "../availability/repository.js";
+
+type CreateBookingInput = CreateBookingRequest & { readonly ownerId: string };
+
+export interface BookingRepository {
+  list(ownerId?: string): Promise<readonly Booking[]>;
+  get(bookingId: string): Promise<Booking | undefined>;
+  create(input: CreateBookingInput): Promise<Booking>;
+  updateStatus(bookingId: string, status: BookingStatus): Promise<Booking>;
+}
+
+export class InMemoryBookingRepository implements BookingRepository {
+  readonly #bookings = new Map<string, Booking>();
+
+  constructor(private readonly availability?: AvailabilityRepository) {}
+
+  async list(ownerId?: string): Promise<readonly Booking[]> {
+    const allBookings = Array.from(this.#bookings.values());
+    return ownerId ? allBookings.filter((booking) => booking.ownerId === ownerId) : allBookings;
+  }
+
+  async get(bookingId: string): Promise<Booking | undefined> {
+    return this.#bookings.get(bookingId);
+  }
+
+  async create(input: CreateBookingInput): Promise<Booking> {
+    if (!input.availabilitySlotId) {
+      throw new Error("availability_slot_required");
+    }
+
+    const slot = this.availability
+      ? await this.availability.get(input.availabilitySlotId)
+      : findAvailabilitySlot(input.availabilitySlotId);
+    const service = findServiceOffering(input.serviceCode);
+
+    if (!slot) {
+      throw new Error("availability_slot_not_found");
+    }
+
+    if (!service || !slot.serviceCodes.includes(input.serviceCode)) {
+      throw new Error("service_not_available_for_slot");
+    }
+
+    if (slot.closedAt) {
+      throw new Error("availability_slot_closed");
+    }
+
+    const bookedCount = Array.from(this.#bookings.values()).filter(
+      (booking) =>
+        booking.partnerLocationId === slot.partnerLocationId &&
+        booking.scheduledStartAt === slot.startsAt &&
+        booking.status !== "cancelled",
+    ).length;
+
+    if (bookedCount >= slot.capacity) {
+      throw new Error("availability_slot_full");
+    }
+
+    const booking = buildBooking({
+      ownerId: input.ownerId,
+      vehicleId: input.vehicleId,
+      partnerLocationId: slot.partnerLocationId,
+      serviceCode: input.serviceCode,
+      scheduledStartAt: slot.startsAt,
+      durationMinutes: service.durationMinutes,
+      acceptedPrice: service.price,
+    });
+
+    this.#bookings.set(booking.id, booking);
+    return booking;
+  }
+
+  async updateStatus(bookingId: string, status: BookingStatus): Promise<Booking> {
+    const booking = this.#bookings.get(bookingId);
+
+    if (!booking) {
+      throw new Error("booking_not_found");
+    }
+
+    const updatedBooking: Booking = { ...booking, status };
+    this.#bookings.set(bookingId, updatedBooking);
+    return updatedBooking;
+  }
+}
+
+export class PostgresBookingRepository implements BookingRepository {
+  constructor(private readonly pool: DatabasePool) {}
+
+  async list(ownerId?: string): Promise<readonly Booking[]> {
+    const result = ownerId
+      ? await this.pool.query<BookingRow>(
+          `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                  accepted_price_currency, created_at
+           from bookings
+           where owner_id = $1
+           order by created_at desc`,
+          [ownerId],
+        )
+      : await this.pool.query<BookingRow>(
+          `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                  accepted_price_currency, created_at
+           from bookings
+           order by created_at desc`,
+        );
+
+    return result.rows.map(mapBookingRow);
+  }
+
+  async get(bookingId: string): Promise<Booking | undefined> {
+    const result = await this.pool.query<BookingRow>(
+      `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+              scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+              accepted_price_currency, created_at
+       from bookings
+       where id = $1`,
+      [bookingId],
+    );
+
+    return result.rows[0] ? mapBookingRow(result.rows[0]) : undefined;
+  }
+
+  async create(input: CreateBookingInput): Promise<Booking> {
+    if (!input.availabilitySlotId) {
+      throw new Error("availability_slot_required");
+    }
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("begin");
+
+      const slotResult = await client.query<SlotServiceRow>(
+        `select s.partner_location_id,
+                s.starts_at,
+                s.capacity,
+                s.closed_at,
+                so.duration_minutes,
+                so.price_amount_minor,
+                so.price_currency
+         from availability_slots s
+         inner join availability_slot_services ass on ass.availability_slot_id = s.id
+         inner join service_offerings so on so.code = ass.service_code
+         where s.id = $1 and so.code = $2 and so.active = true
+         for update`,
+        [input.availabilitySlotId, input.serviceCode],
+      );
+
+      const slot = slotResult.rows[0];
+
+      if (!slot) {
+        throw new Error("availability_slot_not_found");
+      }
+
+      if (slot.closed_at) {
+        throw new Error("availability_slot_closed");
+      }
+
+      const capacityResult = await client.query<{ booked_count: string }>(
+        `select count(*) as booked_count
+         from bookings
+         where partner_location_id = $1
+           and scheduled_start_at = $2
+           and status <> 'cancelled'`,
+        [slot.partner_location_id, slot.starts_at],
+      );
+      const bookedCount = Number(capacityResult.rows[0]?.booked_count ?? 0);
+
+      if (bookedCount >= slot.capacity) {
+        throw new Error("availability_slot_full");
+      }
+
+      const booking = buildBooking({
+        ownerId: input.ownerId,
+        vehicleId: input.vehicleId,
+        partnerLocationId: slot.partner_location_id,
+        serviceCode: input.serviceCode,
+        scheduledStartAt: new Date(slot.starts_at).toISOString(),
+        durationMinutes: slot.duration_minutes,
+        acceptedPrice: {
+          amountMinor: slot.price_amount_minor,
+          currency: slot.price_currency,
+        },
+      });
+
+      const result = await client.query<BookingRow>(
+        `insert into bookings (
+          id, owner_id, vehicle_id, partner_location_id, service_code, status,
+          scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+          accepted_price_currency, created_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        returning id, owner_id, vehicle_id, partner_location_id, service_code, status,
+                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                  accepted_price_currency, created_at`,
+        [
+          booking.id,
+          booking.ownerId,
+          booking.vehicleId,
+          booking.partnerLocationId,
+          booking.serviceCode,
+          booking.status,
+          booking.scheduledStartAt,
+          booking.scheduledEndAt,
+          booking.acceptedPrice.amountMinor,
+          booking.acceptedPrice.currency,
+          booking.createdAt,
+        ],
+      );
+
+      const row = result.rows[0];
+
+      if (!row) {
+        throw new Error("booking_create_failed");
+      }
+
+      await client.query("commit");
+      return mapBookingRow(row);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateStatus(bookingId: string, status: BookingStatus): Promise<Booking> {
+    const result = await this.pool.query<BookingRow>(
+      `update bookings
+       set status = $2
+       where id = $1
+       returning id, owner_id, vehicle_id, partner_location_id, service_code, status,
+                 scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                 accepted_price_currency, created_at`,
+      [bookingId, status],
+    );
+
+    const row = result.rows[0];
+
+    if (!row) {
+      throw new Error("booking_not_found");
+    }
+
+    return mapBookingRow(row);
+  }
+}
+
+export function validateCreateBooking(input: Partial<CreateBookingRequest>): string[] {
+  const errors: string[] = [];
+
+  if (!input.vehicleId || input.vehicleId.trim().length < 3) {
+    errors.push("vehicleId is required");
+  }
+
+  if (!input.availabilitySlotId && !input.holdId) {
+    errors.push("availabilitySlotId or holdId is required");
+  }
+
+  if (input.availabilitySlotId !== undefined && input.availabilitySlotId.trim().length < 3) {
+    errors.push("availabilitySlotId must be valid");
+  }
+
+  if (input.holdId !== undefined && input.holdId.trim().length < 3) {
+    errors.push("holdId must be valid");
+  }
+
+  if (!input.serviceCode) {
+    errors.push("serviceCode is required");
+  }
+
+  return errors;
+}
+
+export function canTransitionBookingStatus(from: BookingStatus, to: BookingStatus): boolean {
+  if (from === to) {
+    return true;
+  }
+
+  const allowedTransitions: Record<BookingStatus, readonly BookingStatus[]> = {
+    pending_payment: ["confirmed", "cancelled"],
+    confirmed: ["checked_in", "cancelled"],
+    checked_in: ["in_service", "cancelled"],
+    in_service: ["completed"],
+    completed: [],
+    cancelled: [],
+  };
+
+  return allowedTransitions[from].includes(to);
+}
+
+export function validateUpdateBookingStatus(input: { readonly status?: string }): string[] {
+  const errors: string[] = [];
+  const validStatuses: readonly BookingStatus[] = [
+    "pending_payment",
+    "confirmed",
+    "checked_in",
+    "in_service",
+    "completed",
+    "cancelled",
+  ];
+
+  if (!input.status || !validStatuses.includes(input.status as BookingStatus)) {
+    errors.push("status must be a valid booking status");
+  }
+
+  return errors;
+}
+
+interface BuildBookingInput {
+  readonly ownerId: string;
+  readonly vehicleId: string;
+  readonly partnerLocationId: string;
+  readonly serviceCode: ServiceCode;
+  readonly scheduledStartAt: string;
+  readonly durationMinutes: number;
+  readonly acceptedPrice: Money;
+}
+
+interface SlotServiceRow {
+  readonly partner_location_id: string;
+  readonly starts_at: Date | string;
+  readonly capacity: number;
+  readonly closed_at: Date | string | null;
+  readonly duration_minutes: number;
+  readonly price_amount_minor: number;
+  readonly price_currency: string;
+}
+
+interface BookingRow {
+  readonly id: string;
+  readonly owner_id: string;
+  readonly vehicle_id: string;
+  readonly partner_location_id: string;
+  readonly service_code: ServiceCode;
+  readonly status: Booking["status"];
+  readonly scheduled_start_at: Date | string;
+  readonly scheduled_end_at: Date | string;
+  readonly accepted_price_amount_minor: number;
+  readonly accepted_price_currency: string;
+  readonly created_at: Date | string;
+}
+
+function buildBooking(input: BuildBookingInput): Booking {
+  const scheduledEndAt = new Date(
+    new Date(input.scheduledStartAt).getTime() + input.durationMinutes * 60_000,
+  ).toISOString();
+
+  return {
+    id: `book_${crypto.randomUUID()}`,
+    ownerId: input.ownerId,
+    vehicleId: input.vehicleId,
+    partnerLocationId: input.partnerLocationId,
+    serviceCode: input.serviceCode,
+    status: "pending_payment",
+    scheduledStartAt: input.scheduledStartAt,
+    scheduledEndAt,
+    acceptedPrice: input.acceptedPrice,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function mapBookingRow(row: BookingRow): Booking {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    vehicleId: row.vehicle_id,
+    partnerLocationId: row.partner_location_id,
+    serviceCode: row.service_code,
+    status: row.status,
+    scheduledStartAt: new Date(row.scheduled_start_at).toISOString(),
+    scheduledEndAt: new Date(row.scheduled_end_at).toISOString(),
+    acceptedPrice: {
+      amountMinor: row.accepted_price_amount_minor,
+      currency: row.accepted_price_currency,
+    },
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}

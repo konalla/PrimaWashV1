@@ -1,0 +1,2061 @@
+import { createServer, type Server } from "node:http";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type {
+  AvailabilitySearchResponse,
+  AvailabilitySearchSlot,
+  Booking,
+  BookingHold,
+  RequestAuthCodeRequest,
+  VerifyAuthCodeRequest,
+  CancelBookingRequest,
+  CapacityTemplate,
+  CreateAvailabilitySlotRequest,
+  CreateBookingHoldRequest,
+  CreateCapacityTemplateRequest,
+  CreateBookingRequest,
+  CreatePaymentIntentRequest,
+  CreateVehicleRequest,
+  GenerateCapacityTemplateSlotsRequest,
+  UpdateVehicleRequest,
+  UpdateCustomerProfileRequest,
+  HealthResponse,
+  ProductEventName,
+  PartnerDashboardResponse,
+  PartnerAvailabilitySlot,
+  PaymentIntent,
+  PaymentStatus,
+  SchedulingConfig,
+  ServiceRecord,
+  ServiceCapacityRule,
+  UpdateBookingStatusRequest,
+  UpdateAvailabilitySlotRequest,
+  UpdateCapacityTemplateRequest,
+  UpdateSchedulingConfigRequest,
+} from "@prima-wash/contracts";
+import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, requireActor } from "./http/auth.js";
+import { readJsonBody } from "./http/body.js";
+import { attachRequestLogging, type RequestContext } from "./http/request-log.js";
+import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
+import { findServiceOffering, serviceCatalog } from "./modules/availability/catalog.js";
+import { AuthService } from "./modules/auth/service.js";
+import {
+  validateCreateAvailabilitySlot,
+  validateUpdateAvailabilitySlot,
+  type CreateAvailabilitySlotInput,
+} from "./modules/availability/repository.js";
+import {
+  validateCreateCapacityTemplate,
+  validateGenerateCapacitySlots,
+  validateUpdateCapacityTemplate,
+} from "./modules/capacity-templates/repository.js";
+import { validateCreateBookingHold } from "./modules/booking-holds/repository.js";
+import { validateSchedulingConfig } from "./modules/scheduling/repository.js";
+import {
+  canTransitionBookingStatus,
+  validateCreateBooking,
+  validateUpdateBookingStatus,
+} from "./modules/bookings/repository.js";
+import type { Repositories } from "./modules/repositories.js";
+import { validateCreatePaymentIntent } from "./modules/payments/repository.js";
+import { validateCreateVehicle } from "./modules/vehicles/repository.js";
+import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
+import { validateProfileUpdate } from "./modules/profiles/repository.js";
+
+export interface CreateApiServerOptions {
+  readonly repositories: Repositories;
+  readonly publicDirectory?: string;
+  readonly enableRequestLogging?: boolean;
+  readonly authSessionSecret?: string;
+}
+
+export function createApiServer(options: CreateApiServerOptions): Server {
+  const publicDirectory = options.publicDirectory ?? path.resolve("apps/api/public");
+  const enableRequestLogging = options.enableRequestLogging ?? true;
+  const authService = new AuthService(
+    options.authSessionSecret ??
+      process.env.AUTH_SESSION_SECRET ??
+      "prima-wash-development-secret-change-before-production",
+  );
+
+  return createServer(async (request, response) => {
+    applyCorsHeaders(request, response);
+
+    if (request.method === "OPTIONS") {
+      sendCorsPreflight(request, response);
+      return;
+    }
+
+    const requestContext = enableRequestLogging
+      ? attachRequestLogging(request, response)
+      : createSilentRequestContext(request, response);
+    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+    if (request.method === "GET" && requestUrl.pathname === "/") {
+      const html = await readFile(path.join(publicDirectory, "index.html"), "utf8");
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(html);
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/health") {
+      const payload: HealthResponse = {
+        service: "prima-wash-api",
+        status: "ok",
+        httpStatus: 200,
+        timestamp: new Date().toISOString(),
+      };
+      sendJson(response, 200, payload);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/auth/code/request") {
+      try {
+        const input = await readJsonBody<RequestAuthCodeRequest>(request);
+        sendJson(response, 201, { data: authService.requestCode(input.identifier) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "invalid_request";
+
+        if (message === "invalid_auth_identifier") {
+          sendError(response, 400, message, "Enter a valid email address or international phone number");
+          return;
+        }
+
+        sendError(response, 400, "invalid_request", "Verification code could not be requested");
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/auth/code/verify") {
+      try {
+        const input = await readJsonBody<VerifyAuthCodeRequest>(request);
+        const session = authService.verifyCode(input.challengeId, input.code);
+        await options.repositories.profiles.upsertIdentity(
+          session.user.id,
+          session.user.identifier,
+          session.user.displayName ?? "Vehicle owner",
+        );
+        sendJson(response, 200, { data: session });
+      } catch (error) {
+        sendAuthVerificationError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/profile") {
+      try {
+        const actor = requireActor(request);
+        const profile = await options.repositories.profiles.get(actor.userId);
+        if (!profile) {
+          sendError(response, 404, "profile_not_found", "Customer profile does not exist");
+          return;
+        }
+        sendJson(response, 200, { data: profile });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname === "/v1/profile") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<UpdateCustomerProfileRequest>(request);
+        const errors = validateProfileUpdate(input);
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Profile payload is invalid", errors);
+          return;
+        }
+        sendJson(response, 200, { data: await options.repositories.profiles.update(actor.userId, input) });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 404, "profile_not_found", "Customer profile does not exist");
+        }
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/auth/session") {
+      try {
+        const token = getBearerToken(request);
+        sendJson(response, 200, { data: authService.readSession(token) });
+      } catch (error) {
+        sendAuthVerificationError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/auth/logout") {
+      sendJson(response, 200, { data: { loggedOut: true } });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/services") {
+      sendJson(response, 200, { data: serviceCatalog });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/partners") {
+      const serviceCode = requestUrl.searchParams.get("serviceCode") as Parameters<
+        typeof options.repositories.partners.list
+      >[0];
+      sendJson(response, 200, { data: await options.repositories.partners.list(serviceCode) });
+      return;
+    }
+
+    const partnerDetailMatch = requestUrl.pathname.match(/^\/v1\/partners\/([^/]+)$/);
+
+    if (request.method === "GET" && partnerDetailMatch) {
+      const partnerId = partnerDetailMatch[1];
+      const partner = partnerId ? await options.repositories.partners.get(partnerId) : undefined;
+      if (!partner) {
+        sendError(response, 404, "partner_not_found", "Partner location does not exist");
+        return;
+      }
+      sendJson(response, 200, { data: partner });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/availability") {
+      const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? undefined;
+      sendJson(response, 200, { data: await options.repositories.availability.listPublic(partnerLocationId) });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/availability/search") {
+      const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+      const serviceCode = requestUrl.searchParams.get("serviceCode");
+      const date = requestUrl.searchParams.get("date");
+
+      if (!serviceCode || !findServiceOffering(serviceCode)) {
+        sendError(response, 400, "validation_failed", "serviceCode query parameter is required");
+        return;
+      }
+
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        sendError(response, 400, "validation_failed", "date query parameter must use YYYY-MM-DD format");
+        return;
+      }
+
+      const partner = await options.repositories.partners.get(partnerLocationId);
+
+      if (!partner) {
+        sendError(response, 404, "partner_not_found", "Partner location does not exist");
+        return;
+      }
+
+      const config = await options.repositories.scheduling.get(partnerLocationId);
+      const bookings = await options.repositories.bookings.list();
+      const holds = await options.repositories.bookingHolds.listActive({
+        partnerLocationId,
+        serviceCode,
+        date,
+      });
+      const search = buildDynamicAvailabilitySearch({
+        partnerLocationId,
+        serviceCode,
+        date,
+        timezone: partner.timezone,
+        config,
+        bookings,
+        holds,
+      });
+
+      sendJson(response, 200, { data: search });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/partner/availability") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        sendJson(response, 200, { data: await options.repositories.availability.listPartner(partnerLocationId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/booking-holds") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreateBookingHoldRequest>(request);
+        const errors = validateCreateBookingHold(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking hold payload is invalid", errors);
+          return;
+        }
+
+        const vehicle = await options.repositories.vehicles.get(input.vehicleId);
+
+        if (!vehicle) {
+          sendError(response, 404, "vehicle_not_found", "Vehicle does not exist");
+          return;
+        }
+
+        assertOwnerAccess(actor, vehicle.ownerId);
+
+        const partner = await options.repositories.partners.get(input.partnerLocationId);
+
+        if (!partner) {
+          sendError(response, 404, "partner_not_found", "Partner location does not exist");
+          return;
+        }
+
+        const date = getDateInTimeZone(input.startsAt, partner.timezone);
+        const config = await options.repositories.scheduling.get(input.partnerLocationId);
+        const bookings = await options.repositories.bookings.list();
+        const holds = await options.repositories.bookingHolds.listActive({
+          partnerLocationId: input.partnerLocationId,
+          serviceCode: input.serviceCode,
+          date,
+        });
+        const search = buildDynamicAvailabilitySearch({
+          partnerLocationId: input.partnerLocationId,
+          serviceCode: input.serviceCode,
+          date,
+          timezone: partner.timezone,
+          config,
+          bookings,
+          holds,
+        });
+        const selectedSlot = search.slots.find((slot) => sameInstant(slot.startsAt, input.startsAt));
+
+        if (!selectedSlot) {
+          sendError(response, 409, "slot_unavailable", "Selected appointment time is no longer available");
+          return;
+        }
+
+        const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+        const hold = await options.repositories.bookingHolds.create({
+          ownerId: vehicle.ownerId,
+          vehicleId: input.vehicleId,
+          partnerLocationId: input.partnerLocationId,
+          serviceCode: input.serviceCode,
+          startsAt: selectedSlot.startsAt,
+          endsAt: selectedSlot.endsAt,
+          expiresAt,
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking_hold.created",
+          resourceType: "booking_hold",
+          resourceId: hold.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: hold.partnerLocationId,
+            serviceCode: hold.serviceCode,
+            startsAt: hold.startsAt,
+            expiresAt: hold.expiresAt,
+          },
+        });
+
+        sendJson(response, 201, {
+          data: {
+            hold,
+            expiresInSeconds: Math.max(0, Math.floor((new Date(hold.expiresAt).getTime() - Date.now()) / 1000)),
+          },
+        });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking hold request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const bookingHoldMatch = requestUrl.pathname.match(/^\/v1\/booking-holds\/([^/]+)$/);
+
+    if (request.method === "DELETE" && bookingHoldMatch) {
+      try {
+        const actor = requireActor(request);
+        const holdId = bookingHoldMatch[1];
+
+        if (!holdId) {
+          sendError(response, 404, "booking_hold_not_found", "Booking hold does not exist");
+          return;
+        }
+
+        const hold = await options.repositories.bookingHolds.get(holdId);
+
+        if (!hold) {
+          sendError(response, 404, "booking_hold_not_found", "Booking hold does not exist");
+          return;
+        }
+
+        assertOwnerAccess(actor, hold.ownerId);
+        const released = await options.repositories.bookingHolds.updateStatus(hold.id, "released");
+        sendJson(response, 200, { data: released });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking hold release request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/partner/availability") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const input = await readJsonBody<CreateAvailabilitySlotRequest>(request);
+        const errors = validateCreateAvailabilitySlot(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Availability payload is invalid", errors);
+          return;
+        }
+
+        const slot = await options.repositories.availability.create({
+          ...input,
+          partnerLocationId: input.partnerLocationId ?? "loc_demo_001",
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "availability_slot.created",
+          resourceType: "availability_slot",
+          resourceId: slot.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: slot.partnerLocationId,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+            capacity: slot.capacity,
+            serviceCodes: slot.serviceCodes,
+          },
+        });
+
+        sendJson(response, 201, { data: slot });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Availability request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/partner/scheduling/config") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        sendJson(response, 200, { data: await options.repositories.scheduling.get(partnerLocationId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "PATCH" && requestUrl.pathname === "/v1/partner/scheduling/config") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        const input = await readJsonBody<UpdateSchedulingConfigRequest>(request);
+        const errors = validateSchedulingConfig(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Scheduling config payload is invalid", errors);
+          return;
+        }
+
+        const config = await options.repositories.scheduling.replace(partnerLocationId, input);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "scheduling_config.updated",
+          resourceType: "partner_location",
+          resourceId: partnerLocationId,
+          requestId: requestContext.requestId,
+          metadata: {
+            scheduleRuleCount: config.operatingScheduleRules.length,
+            exceptionCount: config.calendarExceptions.length,
+            resourcePoolCount: config.resourcePools.length,
+            serviceRuleCount: config.serviceCapacityRules.length,
+          },
+        });
+
+        sendJson(response, 200, { data: config });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Scheduling config request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/partner/capacity-templates") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        sendJson(response, 200, { data: await options.repositories.capacityTemplates.list(partnerLocationId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/partner/capacity-templates") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const input = await readJsonBody<CreateCapacityTemplateRequest>(request);
+        const errors = validateCreateCapacityTemplate(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Capacity template payload is invalid", errors);
+          return;
+        }
+
+        const template = await options.repositories.capacityTemplates.create({
+          ...input,
+          partnerLocationId: input.partnerLocationId ?? "loc_demo_001",
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "capacity_template.created",
+          resourceType: "capacity_template",
+          resourceId: template.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: template.partnerLocationId,
+            name: template.name,
+            openTime: template.openTime,
+            closeTime: template.closeTime,
+            staffCount: template.staffCount,
+            bayCount: template.bayCount,
+            serviceCodes: template.serviceCodes,
+          },
+        });
+
+        sendJson(response, 201, { data: template });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Capacity template request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const capacityTemplateGenerateMatch = requestUrl.pathname.match(
+      /^\/v1\/partner\/capacity-templates\/([^/]+)\/generate$/,
+    );
+    const capacityTemplateMatch = requestUrl.pathname.match(/^\/v1\/partner\/capacity-templates\/([^/]+)$/);
+
+    if (request.method === "POST" && capacityTemplateGenerateMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const templateId = capacityTemplateGenerateMatch[1];
+
+        if (!templateId) {
+          sendError(response, 404, "capacity_template_not_found", "Capacity template does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<GenerateCapacityTemplateSlotsRequest>(request);
+        const errors = validateGenerateCapacitySlots(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Capacity generation payload is invalid", errors);
+          return;
+        }
+
+        const template = await options.repositories.capacityTemplates.get(templateId);
+
+        if (!template) {
+          sendError(response, 404, "capacity_template_not_found", "Capacity template does not exist");
+          return;
+        }
+
+        const slotsToCreate = generateAvailabilitySlotsFromTemplate(template, input.date);
+        const slots: PartnerAvailabilitySlot[] = [];
+
+        for (const slotInput of slotsToCreate) {
+          slots.push(await options.repositories.availability.create(slotInput));
+        }
+
+        await options.repositories.audit.record({
+          actor,
+          action: "capacity_template.generated",
+          resourceType: "capacity_template",
+          resourceId: template.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: template.partnerLocationId,
+            date: input.date,
+            slotCount: slots.length,
+            capacityPerSlot: Math.min(template.staffCount, template.bayCount),
+          },
+        });
+
+        sendJson(response, 201, { data: { template, slots } });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Capacity generation request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "PATCH" && capacityTemplateMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const templateId = capacityTemplateMatch[1];
+
+        if (!templateId) {
+          sendError(response, 404, "capacity_template_not_found", "Capacity template does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateCapacityTemplateRequest>(request);
+        const errors = validateUpdateCapacityTemplate(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Capacity template payload is invalid", errors);
+          return;
+        }
+
+        const template = await options.repositories.capacityTemplates.update(templateId, input);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "capacity_template.updated",
+          resourceType: "capacity_template",
+          resourceId: template.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: template.partnerLocationId,
+            name: template.name,
+          },
+        });
+
+        sendJson(response, 200, { data: template });
+      } catch (error) {
+        if (sendAuthError(response, error)) {
+          return;
+        }
+
+        if (error instanceof Error && error.message === "capacity_template_not_found") {
+          sendError(response, 404, "capacity_template_not_found", "Capacity template does not exist");
+          return;
+        }
+
+        sendError(response, 400, "invalid_request", "Capacity template update request could not be processed", String(error));
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/audit-events") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "50", 10);
+        sendJson(response, 200, { data: await options.repositories.audit.list(Math.min(Math.max(limit, 1), 100)) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/partner/dashboard") {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        const bookings = await options.repositories.bookings.list();
+        const auditEvents = await options.repositories.audit.list(8);
+        const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
+        sendJson(response, 200, {
+          data: buildPartnerDashboard(partnerLocationId, bookings, auditEvents, paymentByBookingId),
+        });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/analytics/mavo") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const month = requestUrl.searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
+
+        if (!/^\d{4}-\d{2}$/.test(month)) {
+          sendError(response, 400, "validation_failed", "month must use YYYY-MM format");
+          return;
+        }
+
+        sendJson(response, 200, { data: await options.repositories.productEvents.calculateMavo(month) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/vehicles") {
+      try {
+        const actor = requireActor(request);
+        const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
+        assertOwnerAccess(actor, ownerId);
+        sendJson(response, 200, { data: await options.repositories.vehicles.list(ownerId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/vehicles") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreateVehicleRequest>(request);
+        const errors = validateCreateVehicle(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Vehicle payload is invalid", errors);
+          return;
+        }
+
+        if (input.ownerId) {
+          assertOwnerAccess(actor, input.ownerId);
+        }
+
+        const ownerId = input.ownerId ?? actor.userId;
+        const vehicle = await options.repositories.vehicles.create({ ...input, ownerId });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "vehicle.created",
+          resourceType: "vehicle",
+          resourceId: vehicle.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            ownerId: vehicle.ownerId,
+            plateNumber: vehicle.plateNumber,
+          },
+        });
+
+        await recordProductEvent(options.repositories, {
+          ownerId: vehicle.ownerId,
+          name: "vehicle_created",
+          resourceType: "vehicle",
+          resourceId: vehicle.id,
+          metadata: {
+            plateNumber: vehicle.plateNumber,
+          },
+        });
+
+        sendJson(response, 201, { data: vehicle });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Vehicle request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const vehicleMatch = requestUrl.pathname.match(/^\/v1\/vehicles\/([^/]+)$/);
+
+    if (request.method === "PATCH" && vehicleMatch) {
+      try {
+        const actor = requireActor(request);
+        const vehicleId = vehicleMatch[1];
+        if (!vehicleId) throw new Error("vehicle_not_found");
+        const existing = await options.repositories.vehicles.get(vehicleId);
+        if (!existing) {
+          sendError(response, 404, "vehicle_not_found", "Vehicle does not exist");
+          return;
+        }
+        assertOwnerAccess(actor, existing.ownerId);
+        const input = await readJsonBody<UpdateVehicleRequest>(request);
+        const errors = validateUpdateVehicle(input);
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Vehicle update payload is invalid", errors);
+          return;
+        }
+        sendJson(response, 200, { data: await options.repositories.vehicles.update(vehicleId, input) });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Vehicle update could not be processed");
+        }
+      }
+      return;
+    }
+
+    if (request.method === "DELETE" && vehicleMatch) {
+      try {
+        const actor = requireActor(request);
+        const vehicleId = vehicleMatch[1];
+        if (!vehicleId) throw new Error("vehicle_not_found");
+        const existing = await options.repositories.vehicles.get(vehicleId);
+        if (!existing) {
+          sendError(response, 404, "vehicle_not_found", "Vehicle does not exist");
+          return;
+        }
+        assertOwnerAccess(actor, existing.ownerId);
+        await options.repositories.vehicles.delete(vehicleId);
+        sendJson(response, 200, { data: { deleted: true } });
+      } catch (error) {
+        if (sendAuthError(response, error)) return;
+        const message = error instanceof Error ? error.message : "invalid_request";
+        if (message === "vehicle_has_history") {
+          sendError(response, 409, message, "Vehicles with booking history cannot be deleted");
+          return;
+        }
+        sendError(response, 400, "invalid_request", "Vehicle could not be deleted");
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/bookings") {
+      try {
+        const actor = requireActor(request);
+        const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
+        assertOwnerAccess(actor, ownerId);
+        sendJson(response, 200, { data: await options.repositories.bookings.list(ownerId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    const bookingDetailMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)$/);
+
+    if (request.method === "GET" && bookingDetailMatch) {
+      try {
+        const actor = requireActor(request);
+        const bookingId = bookingDetailMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        if (actor.role === "customer") {
+          assertOwnerAccess(actor, booking.ownerId);
+        } else {
+          assertPartnerOrInternal(actor);
+        }
+
+        sendJson(response, 200, { data: booking });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/service-records") {
+      try {
+        const actor = requireActor(request);
+        const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
+        assertOwnerAccess(actor, ownerId);
+        sendJson(response, 200, { data: await options.repositories.serviceRecords.list(ownerId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/payments") {
+      try {
+        const actor = requireActor(request);
+        const bookingId = requestUrl.searchParams.get("bookingId");
+
+        if (!bookingId) {
+          sendError(response, 400, "validation_failed", "bookingId query parameter is required");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        if (actor.role === "customer") {
+          assertOwnerAccess(actor, booking.ownerId);
+        } else {
+          assertPartnerOrInternal(actor);
+        }
+
+        const payment = await options.repositories.payments.getByBookingId(bookingId);
+        sendJson(response, 200, { data: payment ?? null });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/payments/intents") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreatePaymentIntentRequest>(request);
+        const errors = validateCreatePaymentIntent(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Payment intent payload is invalid", errors);
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(input.bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        if (actor.role === "customer") {
+          assertOwnerAccess(actor, booking.ownerId);
+        } else {
+          assertPartnerOrInternal(actor);
+        }
+
+        const payment = await options.repositories.payments.createForBooking(booking);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "payment.intent_created",
+          resourceType: "payment_intent",
+          resourceId: payment.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            bookingId: payment.bookingId,
+            ownerId: payment.ownerId,
+            amount: payment.amount,
+            status: payment.status,
+          },
+        });
+
+        sendJson(response, 201, { data: payment });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Payment intent request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const paymentAuthorizeMatch = requestUrl.pathname.match(/^\/v1\/payments\/([^/]+)\/authorize$/);
+    const paymentCaptureMatch = requestUrl.pathname.match(/^\/v1\/payments\/([^/]+)\/capture$/);
+    const paymentRefundMatch = requestUrl.pathname.match(/^\/v1\/payments\/([^/]+)\/refund$/);
+
+    if (request.method === "POST" && paymentAuthorizeMatch) {
+      try {
+        const actor = requireActor(request);
+        const paymentIntentId = paymentAuthorizeMatch[1];
+
+        if (!paymentIntentId) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        const payment = await options.repositories.payments.get(paymentIntentId);
+
+        if (!payment) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        assertOwnerAccess(actor, payment.ownerId);
+
+        const authorizedPayment = await options.repositories.payments.authorize(payment.id);
+
+        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.authorized", authorizedPayment);
+
+        sendJson(response, 200, { data: authorizedPayment });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendPaymentError(response, error, "Payment authorization request could not be processed");
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && paymentCaptureMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const paymentIntentId = paymentCaptureMatch[1];
+
+        if (!paymentIntentId) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        const payment = await options.repositories.payments.get(paymentIntentId);
+
+        if (!payment) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        const capturedPayment = await options.repositories.payments.captureByBookingId(payment.bookingId);
+
+        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.captured", capturedPayment);
+
+        sendJson(response, 200, { data: capturedPayment });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendPaymentError(response, error, "Payment capture request could not be processed");
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && paymentRefundMatch) {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const paymentIntentId = paymentRefundMatch[1];
+
+        if (!paymentIntentId) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        const refundedPayment = await options.repositories.payments.refund(paymentIntentId);
+
+        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.refunded", refundedPayment);
+
+        sendJson(response, 200, { data: refundedPayment });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendPaymentError(response, error, "Payment refund request could not be processed");
+        }
+      }
+
+      return;
+    }
+
+    const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
+    const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
+    const availabilityUpdateMatch = requestUrl.pathname.match(/^\/v1\/partner\/availability\/([^/]+)$/);
+
+    if (request.method === "PATCH" && availabilityUpdateMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const slotId = availabilityUpdateMatch[1];
+
+        if (!slotId) {
+          sendError(response, 404, "availability_slot_not_found", "Availability slot does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateAvailabilitySlotRequest>(request);
+        const errors = validateUpdateAvailabilitySlot(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Availability update payload is invalid", errors);
+          return;
+        }
+
+        const slot = await options.repositories.availability.update(slotId, input);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "availability_slot.updated",
+          resourceType: "availability_slot",
+          resourceId: slot.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: slot.partnerLocationId,
+            capacity: slot.capacity,
+            serviceCodes: slot.serviceCodes,
+            closedAt: slot.closedAt ?? null,
+          },
+        });
+
+        sendJson(response, 200, { data: slot });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "availability_slot_not_found") {
+            sendError(response, 404, message, "Availability slot does not exist");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Availability update request could not be processed", message);
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && bookingCancelMatch) {
+      try {
+        const actor = requireActor(request);
+        const bookingId = bookingCancelMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const input = await readOptionalJsonBody<CancelBookingRequest>(request);
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        if (actor.role === "customer") {
+          assertOwnerAccess(actor, booking.ownerId);
+        } else {
+          assertPartnerOrInternal(actor);
+        }
+
+        if (!canTransitionBookingStatus(booking.status, "cancelled")) {
+          sendError(
+            response,
+            409,
+            "booking_cannot_be_cancelled",
+            `Cannot cancel booking from ${booking.status}`,
+          );
+          return;
+        }
+
+        const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "cancelled");
+        const voidedPayment = await options.repositories.payments.voidByBookingId(updatedBooking.id);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.cancelled",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            fromStatus: booking.status,
+            toStatus: updatedBooking.status,
+            cancelledBy: actor.role,
+            reason: input.reason ?? "not_provided",
+            partnerLocationId: updatedBooking.partnerLocationId,
+          },
+        });
+
+        if (voidedPayment) {
+          await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.voided", voidedPayment);
+        }
+
+        await recordProductEvent(options.repositories, {
+          ownerId: updatedBooking.ownerId,
+          name: "booking_cancelled",
+          resourceType: "booking",
+          resourceId: updatedBooking.id,
+          metadata: {
+            cancelledBy: actor.role,
+            reason: input.reason ?? "not_provided",
+          },
+        });
+
+        sendJson(response, 200, { data: updatedBooking });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking cancellation request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "PATCH" && bookingStatusMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingStatusMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateBookingStatusRequest>(request);
+        const errors = validateUpdateBookingStatus(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking status payload is invalid", errors);
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        if (!canTransitionBookingStatus(booking.status, input.status)) {
+          sendError(
+            response,
+            409,
+            "invalid_booking_status_transition",
+            `Cannot transition booking from ${booking.status} to ${input.status}`,
+          );
+          return;
+        }
+
+        if (input.status === "confirmed") {
+          const payment = await options.repositories.payments.getByBookingId(booking.id);
+
+          if (!payment || payment.status !== "authorized") {
+            sendError(
+              response,
+              409,
+              "payment_authorization_required",
+              "Booking requires an authorized payment before partner confirmation",
+            );
+            return;
+          }
+        }
+
+        let capturedPayment: PaymentIntent | undefined;
+
+        if (input.status === "completed") {
+          const payment = await options.repositories.payments.getByBookingId(booking.id);
+
+          if (!payment || payment.status !== "authorized") {
+            sendError(
+              response,
+              409,
+              "payment_capture_required",
+              "Booking requires an authorized payment before completion",
+            );
+            return;
+          }
+
+          capturedPayment = await options.repositories.payments.captureByBookingId(booking.id);
+        }
+
+        const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, input.status);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.status_changed",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            fromStatus: booking.status,
+            toStatus: updatedBooking.status,
+            partnerLocationId: updatedBooking.partnerLocationId,
+          },
+        });
+
+        if (capturedPayment) {
+          await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.captured", capturedPayment);
+        }
+
+        const serviceRecord = await createServiceRecordIfCompleted(options.repositories, updatedBooking);
+
+        if (serviceRecord) {
+          await options.repositories.audit.record({
+            actor,
+            action: "service_record.created",
+            resourceType: "service_record",
+            resourceId: serviceRecord.id,
+            requestId: requestContext.requestId,
+            metadata: {
+              bookingId: serviceRecord.bookingId,
+              ownerId: serviceRecord.ownerId,
+              vehicleId: serviceRecord.vehicleId,
+              serviceCode: serviceRecord.serviceCode,
+            },
+          });
+
+          await recordProductEvent(options.repositories, {
+            ownerId: serviceRecord.ownerId,
+            name: "service_completed",
+            resourceType: "service_record",
+            resourceId: serviceRecord.id,
+            metadata: {
+              bookingId: serviceRecord.bookingId,
+              vehicleId: serviceRecord.vehicleId,
+              serviceCode: serviceRecord.serviceCode,
+            },
+          });
+        }
+
+        sendJson(response, 200, { data: updatedBooking });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking status request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/bookings") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreateBookingRequest>(request);
+        const errors = validateCreateBooking(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking payload is invalid", errors);
+          return;
+        }
+
+        if (input.ownerId) {
+          assertOwnerAccess(actor, input.ownerId);
+        }
+
+        const ownerId = input.ownerId ?? actor.userId;
+        const vehicle = await options.repositories.vehicles.get(input.vehicleId);
+
+        if (!vehicle) {
+          sendError(response, 404, "vehicle_not_found", "Vehicle does not exist");
+          return;
+        }
+
+        assertOwnerAccess(actor, vehicle.ownerId);
+
+        if (vehicle.ownerId !== ownerId) {
+          sendError(response, 409, "vehicle_owner_mismatch", "Vehicle does not belong to the requested owner");
+          return;
+        }
+
+        let availabilitySlotId = input.availabilitySlotId;
+        let consumedHold: BookingHold | undefined;
+
+        if (input.holdId) {
+          const hold = await options.repositories.bookingHolds.get(input.holdId);
+
+          if (!hold) {
+            sendError(response, 404, "booking_hold_not_found", "Booking hold does not exist");
+            return;
+          }
+
+          assertOwnerAccess(actor, hold.ownerId);
+
+          if (hold.status !== "active" || new Date(hold.expiresAt).getTime() <= Date.now()) {
+            sendError(response, 409, "booking_hold_expired", "Booking hold is no longer active");
+            return;
+          }
+
+          if (hold.vehicleId !== input.vehicleId || hold.serviceCode !== input.serviceCode || hold.ownerId !== ownerId) {
+            sendError(response, 409, "booking_hold_mismatch", "Booking hold does not match this booking request");
+            return;
+          }
+
+          const partner = await options.repositories.partners.get(hold.partnerLocationId);
+
+          if (!partner) {
+            sendError(response, 404, "partner_not_found", "Partner location does not exist");
+            return;
+          }
+
+          const date = getDateInTimeZone(hold.startsAt, partner.timezone);
+          const config = await options.repositories.scheduling.get(hold.partnerLocationId);
+          const bookings = await options.repositories.bookings.list();
+          const holds = await options.repositories.bookingHolds.listActive({
+            partnerLocationId: hold.partnerLocationId,
+            serviceCode: hold.serviceCode,
+            date,
+            excludeHoldId: hold.id,
+          });
+          const search = buildDynamicAvailabilitySearch({
+            partnerLocationId: hold.partnerLocationId,
+            serviceCode: hold.serviceCode,
+            date,
+            timezone: partner.timezone,
+            config,
+            bookings,
+            holds,
+          });
+          const matchedSlot = search.slots.find((slot) => sameInstant(slot.startsAt, hold.startsAt));
+
+          if (!matchedSlot) {
+            await options.repositories.bookingHolds.updateStatus(hold.id, "expired");
+            sendError(response, 409, "slot_unavailable", "Held appointment time is no longer available");
+            return;
+          }
+
+          const slot = await options.repositories.availability.create({
+            partnerLocationId: hold.partnerLocationId,
+            startsAt: hold.startsAt,
+            endsAt: hold.endsAt,
+            capacity: matchedSlot.capacity,
+            serviceCodes: [hold.serviceCode],
+          });
+          availabilitySlotId = slot.id;
+          consumedHold = hold;
+        }
+
+        if (!availabilitySlotId) {
+          sendError(response, 400, "validation_failed", "availabilitySlotId or holdId is required");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.create({ ...input, availabilitySlotId, ownerId });
+
+        if (consumedHold) {
+          await options.repositories.bookingHolds.updateStatus(consumedHold.id, "consumed");
+        }
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.created",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            ownerId: booking.ownerId,
+            vehicleId: booking.vehicleId,
+            partnerLocationId: booking.partnerLocationId,
+            serviceCode: booking.serviceCode,
+            acceptedPrice: booking.acceptedPrice,
+          },
+        });
+
+        await recordProductEvent(options.repositories, {
+          ownerId: booking.ownerId,
+          name: "booking_created",
+          resourceType: "booking",
+          resourceId: booking.id,
+          metadata: {
+            vehicleId: booking.vehicleId,
+            serviceCode: booking.serviceCode,
+            acceptedPrice: booking.acceptedPrice,
+          },
+        });
+
+        sendJson(response, 201, { data: booking });
+      } catch (error) {
+        if (sendAuthError(response, error)) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "unknown_error";
+
+        if (message === "availability_slot_not_found") {
+          sendError(response, 404, message, "Availability slot does not exist");
+          return;
+        }
+
+        if (message === "service_not_available_for_slot") {
+          sendError(response, 409, message, "Requested service is not available for the selected slot");
+          return;
+        }
+
+        if (message === "availability_slot_closed") {
+          sendError(response, 409, message, "Selected availability slot is closed");
+          return;
+        }
+
+        if (message === "availability_slot_full") {
+          sendError(response, 409, message, "Selected availability slot is at capacity");
+          return;
+        }
+
+        sendError(response, 400, "invalid_request", "Booking request could not be processed", message);
+      }
+
+      return;
+    }
+
+    sendError(response, 404, "not_found", "Route not found");
+  });
+}
+
+function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "unknown_error";
+
+  if (message === "authentication_required") {
+    sendError(response, 401, message, "Authentication is required");
+    return true;
+  }
+
+  if (message === "forbidden_owner_scope") {
+    sendError(response, 403, message, "Actor is not allowed to access this owner scope");
+    return true;
+  }
+
+  if (message === "internal_role_required") {
+    sendError(response, 403, message, "Internal role is required");
+    return true;
+  }
+
+  if (message === "partner_role_required") {
+    sendError(response, 403, message, "Partner or internal role is required");
+    return true;
+  }
+
+  return false;
+}
+
+function sendAuthVerificationError(response: Parameters<typeof sendError>[0], error: unknown): void {
+  const message = error instanceof Error ? error.message : "invalid_access_token";
+
+  if (message === "invalid_auth_code") {
+    sendError(response, 401, message, "The verification code is incorrect");
+    return;
+  }
+
+  if (message === "auth_challenge_expired") {
+    sendError(response, 410, message, "The verification code has expired");
+    return;
+  }
+
+  if (message === "auth_challenge_locked") {
+    sendError(response, 429, message, "Too many attempts. Request a new verification code");
+    return;
+  }
+
+  sendError(response, 401, "invalid_access_token", "The session is invalid or expired");
+}
+
+function getBearerToken(request: Parameters<typeof requireActor>[0]): string {
+  const authorization = request.headers.authorization;
+
+  if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) {
+    throw new Error("invalid_access_token");
+  }
+
+  return authorization.slice("Bearer ".length);
+}
+
+function buildPartnerDashboard(
+  partnerLocationId: string,
+  bookings: readonly Booking[],
+  auditEvents: PartnerDashboardResponse["auditEvents"],
+  paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
+): PartnerDashboardResponse {
+  const locationBookings = bookings.filter((booking) => booking.partnerLocationId === partnerLocationId);
+  const pendingPayment = locationBookings.filter((booking) => {
+    const payment = paymentByBookingId.get(booking.id);
+    return booking.status === "pending_payment" && payment?.status !== "authorized";
+  }).length;
+  const readyToConfirm = locationBookings.filter((booking) => {
+    const payment = paymentByBookingId.get(booking.id);
+    return booking.status === "pending_payment" && payment?.status === "authorized";
+  }).length;
+  const expectedRevenueMinor = locationBookings.reduce(
+    (total, booking) => total + booking.acceptedPrice.amountMinor,
+    0,
+  );
+  const authorizedRevenueMinor = locationBookings.reduce((total, booking) => {
+    const payment = paymentByBookingId.get(booking.id);
+    return payment?.status === "authorized" ? total + payment.amount.amountMinor : total;
+  }, 0);
+  const capturedRevenueMinor = locationBookings.reduce((total, booking) => {
+    const payment = paymentByBookingId.get(booking.id);
+    return payment?.status === "captured" ? total + payment.amount.amountMinor : total;
+  }, 0);
+  const atRiskRevenueMinor = locationBookings.reduce((total, booking) => {
+    const payment = paymentByBookingId.get(booking.id);
+
+    if (booking.status !== "pending_payment") {
+      return total;
+    }
+
+    return payment?.status === "authorized" ? total : total + booking.acceptedPrice.amountMinor;
+  }, 0);
+  const uniqueOwners = new Set(locationBookings.map((booking) => booking.ownerId)).size;
+  const queue = locationBookings
+    .slice()
+    .sort((a, b) => a.scheduledStartAt.localeCompare(b.scheduledStartAt))
+    .slice(0, 8)
+    .map((booking) => {
+      const payment = paymentByBookingId.get(booking.id);
+
+      return {
+        bookingId: booking.id,
+        vehicleId: booking.vehicleId,
+        ownerId: booking.ownerId,
+        serviceCode: booking.serviceCode,
+        status: booking.status,
+        ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
+        actionHint: getPartnerActionHint(booking, payment),
+        scheduledStartAt: booking.scheduledStartAt,
+      };
+    });
+
+  return {
+    partnerLocationId,
+    generatedAt: new Date().toISOString(),
+    metrics: [
+      {
+        label: "Bookings",
+        value: String(locationBookings.length),
+        delta: readyToConfirm > 0 ? `${readyToConfirm} ready to confirm` : `${pendingPayment} awaiting payment`,
+      },
+      {
+        label: "Expected revenue",
+        value: formatMoney(expectedRevenueMinor, "USD"),
+        delta: "Accepted price basis",
+      },
+      {
+        label: "Authorized revenue",
+        value: formatMoney(authorizedRevenueMinor, "USD"),
+        delta: "Ready for service",
+      },
+      {
+        label: "Captured revenue",
+        value: formatMoney(capturedRevenueMinor, "USD"),
+        delta: "Completed work",
+      },
+      {
+        label: "Payment risk",
+        value: formatMoney(atRiskRevenueMinor, "USD"),
+        delta: pendingPayment > 0 ? `${pendingPayment} needs owner action` : "No payment blockers",
+      },
+      {
+        label: "Active owners",
+        value: String(uniqueOwners),
+        delta: "MAVO contribution",
+      },
+      {
+        label: "Audit events",
+        value: String(auditEvents.length),
+        delta: "Latest operational trail",
+      },
+    ],
+    queue,
+    auditEvents,
+  };
+}
+
+async function buildPaymentLookup(
+  repositories: Repositories,
+  bookings: readonly Booking[],
+): Promise<ReadonlyMap<string, PaymentIntent>> {
+  const entries = await Promise.all(
+    bookings.map(async (booking) => {
+      const payment = await repositories.payments.getByBookingId(booking.id);
+      return payment ? ([booking.id, payment] as const) : undefined;
+    }),
+  );
+
+  return new Map(entries.filter((entry): entry is readonly [string, PaymentIntent] => Boolean(entry)));
+}
+
+function getPartnerActionHint(booking: Booking, payment?: PaymentIntent): string {
+  if (booking.status === "pending_payment") {
+    if (!payment) {
+      return "Customer has not created a payment hold yet";
+    }
+
+    if (payment.status === "requires_authorization") {
+      return "Waiting for customer payment authorization";
+    }
+
+    if (payment.status === "authorized") {
+      return "Payment authorized; ready to confirm";
+    }
+
+    return `Payment is ${payment.status.replaceAll("_", " ")}`;
+  }
+
+  if (booking.status === "confirmed") {
+    return "Customer expected; check in when vehicle arrives";
+  }
+
+  if (booking.status === "checked_in") {
+    return "Vehicle received; start service when bay is ready";
+  }
+
+  if (booking.status === "in_service") {
+    return "Service underway; completion will capture payment";
+  }
+
+  if (booking.status === "completed") {
+    return "Completed and payment captured";
+  }
+
+  return "Cancelled; no further action";
+}
+
+function formatMoney(amountMinor: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+  }).format(amountMinor / 100);
+}
+
+async function createServiceRecordIfCompleted(
+  repositories: Repositories,
+  booking: Booking,
+): Promise<ServiceRecord | undefined> {
+  if (booking.status !== "completed") {
+    return undefined;
+  }
+
+  return repositories.serviceRecords.createFromBooking(booking);
+}
+
+async function recordProductEvent(
+  repositories: Repositories,
+  input: {
+    readonly ownerId: string;
+    readonly name: ProductEventName;
+    readonly resourceType: string;
+    readonly resourceId: string;
+    readonly metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await repositories.productEvents.record(input);
+}
+
+async function recordPaymentAudit(
+  repositories: Repositories,
+  actor: Parameters<typeof assertOwnerAccess>[0],
+  requestId: string,
+  action: string,
+  payment: PaymentIntent,
+): Promise<void> {
+  await repositories.audit.record({
+    actor,
+    action,
+    resourceType: "payment_intent",
+    resourceId: payment.id,
+    requestId,
+    metadata: {
+      bookingId: payment.bookingId,
+      ownerId: payment.ownerId,
+      amount: payment.amount,
+      status: payment.status,
+    },
+  });
+}
+
+function sendPaymentError(
+  response: Parameters<typeof sendError>[0],
+  error: unknown,
+  fallbackMessage: string,
+): void {
+  const message = error instanceof Error ? error.message : "unknown_error";
+
+  if (message === "payment_intent_not_found") {
+    sendError(response, 404, message, "Payment intent does not exist");
+    return;
+  }
+
+  if (message === "invalid_payment_status_transition") {
+    sendError(response, 409, message, "Payment status transition is not allowed");
+    return;
+  }
+
+  sendError(response, 400, "invalid_request", fallbackMessage, message);
+}
+
+function generateAvailabilitySlotsFromTemplate(
+  template: CapacityTemplate,
+  date: string,
+): readonly CreateAvailabilitySlotInput[] {
+  const capacity = Math.max(1, Math.min(template.staffCount, template.bayCount));
+  const cadenceMinutes = template.slotDurationMinutes + template.bufferMinutes;
+  const opensAt = new Date(`${date}T${template.openTime}:00`);
+  const closesAt = new Date(`${date}T${template.closeTime}:00`);
+  const slots: CreateAvailabilitySlotInput[] = [];
+
+  if (!Number.isFinite(opensAt.getTime()) || !Number.isFinite(closesAt.getTime()) || closesAt <= opensAt) {
+    return slots;
+  }
+
+  for (
+    let cursor = new Date(opensAt);
+    cursor.getTime() + template.slotDurationMinutes * 60_000 <= closesAt.getTime();
+    cursor = new Date(cursor.getTime() + cadenceMinutes * 60_000)
+  ) {
+    slots.push({
+      partnerLocationId: template.partnerLocationId,
+      startsAt: cursor.toISOString(),
+      endsAt: new Date(cursor.getTime() + template.slotDurationMinutes * 60_000).toISOString(),
+      capacity,
+      serviceCodes: template.serviceCodes,
+    });
+  }
+
+  return slots;
+}
+
+function buildDynamicAvailabilitySearch(input: {
+  readonly partnerLocationId: string;
+  readonly serviceCode: string;
+  readonly date: string;
+  readonly timezone: string;
+  readonly config: SchedulingConfig;
+  readonly bookings: readonly Booking[];
+  readonly holds: readonly BookingHold[];
+}): AvailabilitySearchResponse {
+  const serviceRule = input.config.serviceCapacityRules.find(
+    (rule) => rule.serviceCode === input.serviceCode && rule.enabled,
+  );
+
+  if (!serviceRule) {
+    return {
+      partnerLocationId: input.partnerLocationId,
+      serviceCode: input.serviceCode as AvailabilitySearchResponse["serviceCode"],
+      date: input.date,
+      timezone: input.timezone,
+      slots: [],
+      closedReason: "Service is not configured for dynamic availability",
+    };
+  }
+
+  const exception = input.config.calendarExceptions.find((item) => item.date === input.date);
+
+  if (exception?.type === "closed") {
+    return {
+      partnerLocationId: input.partnerLocationId,
+      serviceCode: serviceRule.serviceCode,
+      date: input.date,
+      timezone: input.timezone,
+      slots: [],
+      closedReason: exception.reason,
+    };
+  }
+
+  const weekday = getWeekdayInTimeZone(input.date, input.timezone);
+  const scheduleRule = input.config.operatingScheduleRules.find((rule) => rule.weekday === weekday && rule.enabled);
+  const openTime = exception?.type === "special_hours" ? exception.openTime : scheduleRule?.openTime;
+  const closeTime = exception?.type === "special_hours" ? exception.closeTime : scheduleRule?.closeTime;
+
+  if (!openTime || !closeTime) {
+    return {
+      partnerLocationId: input.partnerLocationId,
+      serviceCode: serviceRule.serviceCode,
+      date: input.date,
+      timezone: input.timezone,
+      slots: [],
+      closedReason: "Location is closed on this date",
+    };
+  }
+
+  const capacity = calculateServiceCapacity(input.config, serviceRule);
+
+  if (capacity < 1) {
+    return {
+      partnerLocationId: input.partnerLocationId,
+      serviceCode: serviceRule.serviceCode,
+      date: input.date,
+      timezone: input.timezone,
+      slots: [],
+      closedReason: "No enabled resources can support this service",
+    };
+  }
+
+  const openAt = zonedTimeToUtc(input.date, openTime, input.timezone);
+  const closeAt = zonedTimeToUtc(input.date, closeTime, input.timezone);
+  const cadenceMinutes = Math.max(15, serviceRule.durationMinutes);
+  const serviceBlockMinutes =
+    serviceRule.preBufferMinutes + serviceRule.durationMinutes + serviceRule.postBufferMinutes;
+  const dailyBookings = input.bookings.filter(
+    (booking) =>
+      booking.partnerLocationId === input.partnerLocationId &&
+      booking.serviceCode === serviceRule.serviceCode &&
+      booking.status !== "cancelled" &&
+      getDateInTimeZone(booking.scheduledStartAt, input.timezone) === input.date,
+  );
+  const slots: AvailabilitySearchSlot[] = [];
+
+  if (dailyBookings.length >= serviceRule.maxDailyBookings) {
+    return {
+      partnerLocationId: input.partnerLocationId,
+      serviceCode: serviceRule.serviceCode,
+      date: input.date,
+      timezone: input.timezone,
+      slots,
+      closedReason: "Daily booking limit reached",
+    };
+  }
+
+  for (
+    let cursor = new Date(openAt);
+    cursor.getTime() + serviceBlockMinutes * 60_000 <= closeAt.getTime();
+    cursor = new Date(cursor.getTime() + cadenceMinutes * 60_000)
+  ) {
+    const startsAt = new Date(cursor.getTime() + serviceRule.preBufferMinutes * 60_000);
+    const endsAt = new Date(startsAt.getTime() + serviceRule.durationMinutes * 60_000);
+    const blockStart = cursor;
+    const blockEnd = new Date(cursor.getTime() + serviceBlockMinutes * 60_000);
+    const overlappingBookings = dailyBookings.filter((booking) =>
+      rangesOverlap(
+        new Date(booking.scheduledStartAt),
+        new Date(booking.scheduledEndAt),
+        blockStart,
+        blockEnd,
+      ),
+    ).length;
+    const overlappingHolds = input.holds.filter((hold) =>
+      rangesOverlap(new Date(hold.startsAt), new Date(hold.endsAt), blockStart, blockEnd),
+    ).length;
+    const availableCount = Math.max(0, capacity - overlappingBookings - overlappingHolds);
+
+    if (availableCount > 0) {
+      slots.push({
+        partnerLocationId: input.partnerLocationId,
+        serviceCode: serviceRule.serviceCode,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        capacity,
+        availableCount,
+        source: "dynamic_rules",
+      });
+    }
+  }
+
+  return {
+    partnerLocationId: input.partnerLocationId,
+    serviceCode: serviceRule.serviceCode,
+    date: input.date,
+    timezone: input.timezone,
+    slots,
+  };
+}
+
+function calculateServiceCapacity(config: SchedulingConfig, rule: ServiceCapacityRule): number {
+  const staff = config.resourcePools
+    .filter((resource) => resource.enabled && resource.resourceType === "staff")
+    .reduce((sum, resource) => sum + resource.quantity, 0);
+  const requiredResource = config.resourcePools
+    .filter((resource) => resource.enabled && resource.resourceType === rule.requiredResourceType)
+    .reduce((sum, resource) => sum + resource.quantity, 0);
+
+  return Math.min(
+    Math.floor(staff / rule.requiredStaff),
+    Math.floor(requiredResource / rule.requiredResourceQuantity),
+    rule.maxConcurrent,
+  );
+}
+
+function rangesOverlap(leftStart: Date, leftEnd: Date, rightStart: Date, rightEnd: Date): boolean {
+  return leftStart < rightEnd && rightStart < leftEnd;
+}
+
+function sameInstant(left: string, right: string): boolean {
+  return new Date(left).getTime() === new Date(right).getTime();
+}
+
+function getWeekdayInTimeZone(date: string, timezone: string): number {
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).format(
+    zonedTimeToUtc(date, "12:00", timezone),
+  );
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day);
+}
+
+function getDateInTimeZone(instant: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(instant));
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+function zonedTimeToUtc(date: string, time: string, timezone: string): Date {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const utcGuess = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0, 0));
+  const offset = getTimeZoneOffsetMs(utcGuess, timezone);
+  const firstPass = new Date(utcGuess.getTime() - offset);
+  const correctedOffset = getTimeZoneOffsetMs(firstPass, timezone);
+  return new Date(utcGuess.getTime() - correctedOffset);
+}
+
+function getTimeZoneOffsetMs(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+  return asUtc - date.getTime();
+}
+
+function createSilentRequestContext(
+  request: Parameters<typeof attachRequestLogging>[0],
+  response: Parameters<typeof attachRequestLogging>[1],
+): RequestContext {
+  const requestId = getRequestId(request);
+  response.setHeader("x-request-id", requestId);
+  return { requestId, startedAt: process.hrtime.bigint() };
+}
+
+function getRequestId(request: Parameters<typeof attachRequestLogging>[0]): string {
+  const header = request.headers["x-request-id"];
+
+  if (typeof header === "string" && header.trim().length > 0) {
+    return header.trim();
+  }
+
+  if (Array.isArray(header) && header[0]?.trim()) {
+    return header[0].trim();
+  }
+
+  return crypto.randomUUID();
+}
+
+async function readOptionalJsonBody<T>(request: Parameters<typeof readJsonBody>[0]): Promise<Partial<T>> {
+  try {
+    return await readJsonBody<Partial<T>>(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown_error";
+
+    if (message === "request_body_required") {
+      return {};
+    }
+
+    throw error;
+  }
+}

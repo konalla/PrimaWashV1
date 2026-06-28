@@ -1,0 +1,22 @@
+{
+  "name": "prima-wash",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/api && npm run build --workspace @prima-wash/web",
+    "check": "npm run check --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/contracts && npm run check --workspace @prima-wash/api && npm run check --workspace @prima-wash/web && npm run check --workspace @prima-wash/mobile",
+    "db:migrate": "npm run migrate --workspace @prima-wash/api",
+    "dev:api": "npm run dev --workspace @prima-wash/api",
+    "dev:mobile": "npm run start --workspace @prima-wash/mobile",
+    "dev:mobile:web": "npm run web --workspace @prima-wash/mobile",
+    "dev:web": "npm run dev --workspace @prima-wash/web",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

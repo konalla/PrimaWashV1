@@ -1,0 +1,2563 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prima Wash Business Dashboard</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #f7fff9;
+        --muted: #aabbb2;
+        --soft: #879a90;
+        --bg: #07110e;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-2: rgba(255, 255, 255, 0.1);
+        --line: rgba(255, 255, 255, 0.14);
+        --green: #66f5a0;
+        --green-2: #1fc86a;
+        --amber: #ffd98b;
+        --red: #ff9999;
+        --blue: #8ec5ff;
+        --shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+        --focus-ring: 0 0 0 3px rgba(102, 245, 160, 0.28);
+        --radius-sm: 12px;
+        --radius-md: 16px;
+        --radius-lg: 24px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 38% -10%, rgba(102, 245, 160, 0.1), transparent 34rem),
+          linear-gradient(145deg, #050c0a, #0a1a14 58%, #06100d);
+        color: var(--ink);
+      }
+
+      main {
+        width: min(1240px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 20px 0 48px;
+      }
+
+      .topbar,
+      .cluster,
+      .metric-grid,
+      .split,
+      .queue-row,
+      .audit-row {
+        display: grid;
+        gap: 16px;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        margin-bottom: 18px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 950;
+        letter-spacing: -0.04em;
+      }
+
+      .mark {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border: 1px solid rgba(102, 245, 160, 0.34);
+        border-radius: 16px;
+        background: rgba(102, 245, 160, 0.14);
+        box-shadow: 0 16px 50px rgba(31, 200, 106, 0.18);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 9px 13px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+        background: var(--green);
+        box-shadow: 0 0 0 5px rgba(102, 245, 160, 0.12);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.35fr 0.65fr;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          linear-gradient(145deg, var(--panel), rgba(255, 255, 255, 0.035)),
+          rgba(5, 14, 11, 0.78);
+        box-shadow: var(--shadow);
+        padding: 22px;
+        backdrop-filter: blur(18px);
+      }
+
+      .eyebrow {
+        margin: 0 0 16px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 950;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-bottom: 12px;
+        font-size: clamp(32px, 4vw, 48px);
+        line-height: 1;
+        letter-spacing: -0.055em;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 25px;
+        letter-spacing: -0.04em;
+      }
+
+      h3 {
+        margin-bottom: 4px;
+        font-size: 16px;
+      }
+
+      p,
+      .muted {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-bottom: 18px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .metric span {
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin: 10px 0 6px;
+        font-size: 32px;
+        letter-spacing: -0.06em;
+      }
+
+      .split {
+        grid-template-columns: 1.45fr 0.55fr;
+      }
+
+      .queue-row,
+      .slot-row,
+      .audit-row {
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--panel-2);
+        padding: 15px;
+      }
+
+      .queue-row {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .queue-row::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--green);
+        opacity: 0.74;
+      }
+
+      .queue-row.is-blocked::before {
+        background: var(--red);
+      }
+
+      .queue-row.is-active::before {
+        background: var(--blue);
+      }
+
+      .queue-time {
+        display: grid;
+        min-width: 86px;
+        gap: 4px;
+      }
+
+      .queue-time strong {
+        font-size: 19px;
+        letter-spacing: -0.04em;
+      }
+
+      .queue-time span {
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .queue-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .queue-actions-stack {
+        display: grid;
+        min-width: 210px;
+        justify-items: end;
+        gap: 9px;
+      }
+
+      .queue-copy {
+        display: grid;
+        gap: 6px;
+      }
+
+      .queue-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .queue-status {
+        display: grid;
+        justify-items: end;
+        gap: 7px;
+        text-align: right;
+      }
+
+      .booking-stage {
+        display: grid;
+        gap: 4px;
+        justify-items: end;
+      }
+
+      .booking-stage strong {
+        font-size: 13px;
+        text-transform: capitalize;
+      }
+
+      .booking-stage span {
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 850;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .workflow-rail {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(42px, 1fr));
+        gap: 6px;
+        width: min(100%, 320px);
+        margin-top: 10px;
+      }
+
+      .workflow-step {
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .workflow-step.is-complete {
+        background: rgba(102, 245, 160, 0.85);
+      }
+
+      .workflow-step.is-active {
+        background: var(--blue);
+        box-shadow: 0 0 0 4px rgba(142, 197, 255, 0.12);
+      }
+
+      .command-panel {
+        display: grid;
+        gap: 8px;
+        justify-items: end;
+      }
+
+      button.action {
+        min-height: 44px;
+        border: 1px solid rgba(102, 245, 160, 0.32);
+        border-radius: 999px;
+        background: rgba(102, 245, 160, 0.12);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 900;
+        padding: 9px 12px;
+      }
+
+      button.action.primary-command {
+        min-width: 148px;
+        border-color: rgba(102, 245, 160, 0.5);
+        background: linear-gradient(135deg, rgba(102, 245, 160, 0.24), rgba(31, 200, 106, 0.13));
+        color: var(--ink);
+      }
+
+      button.action:hover {
+        background: rgba(102, 245, 160, 0.2);
+        transform: translateY(-1px);
+      }
+
+      button.action:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      button.action.danger {
+        border-color: var(--line);
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .payment-chip {
+        display: inline-flex;
+        width: fit-content;
+        margin-top: 6px;
+        border: 1px solid rgba(255, 217, 139, 0.26);
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: rgba(255, 217, 139, 0.09);
+        color: var(--amber);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .payment-chip.is-authorized {
+        border-color: rgba(102, 245, 160, 0.3);
+        background: rgba(102, 245, 160, 0.1);
+        color: var(--green);
+      }
+
+      .payment-chip.is-captured {
+        border-color: rgba(142, 197, 255, 0.3);
+        background: rgba(142, 197, 255, 0.1);
+        color: var(--blue);
+      }
+
+      .payment-chip.is-blocked {
+        border-color: rgba(255, 143, 143, 0.34);
+        background: rgba(255, 143, 143, 0.1);
+        color: var(--red);
+      }
+
+      .action-hint {
+        max-width: 230px;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 750;
+        line-height: 1.35;
+      }
+
+      .blocker-card {
+        max-width: 260px;
+        border: 1px solid rgba(255, 153, 153, 0.26);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        background: rgba(255, 153, 153, 0.08);
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 850;
+        line-height: 1.35;
+        text-align: right;
+      }
+
+      .drawer-dialog {
+        width: min(620px, calc(100% - 24px));
+        margin-right: 16px;
+      }
+
+      .drawer-body {
+        display: grid;
+        gap: 16px;
+      }
+
+      .drawer-hero {
+        display: grid;
+        gap: 10px;
+        border: 1px solid rgba(102, 245, 160, 0.22);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        background: rgba(102, 245, 160, 0.07);
+      }
+
+      .drawer-title-row,
+      .detail-grid,
+      .timeline-row {
+        display: grid;
+        gap: 12px;
+      }
+
+      .drawer-title-row {
+        grid-template-columns: 1fr auto;
+        align-items: start;
+      }
+
+      .detail-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .detail-item {
+        display: grid;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .detail-item span {
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .detail-item strong {
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .drawer-timeline {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-row {
+        grid-template-columns: auto 1fr;
+        align-items: start;
+      }
+
+      .timeline-dot {
+        width: 13px;
+        height: 13px;
+        margin-top: 3px;
+        border-radius: 99px;
+        background: var(--line);
+      }
+
+      .timeline-dot.is-complete {
+        background: var(--green);
+      }
+
+      .timeline-dot.is-active {
+        background: var(--blue);
+        box-shadow: 0 0 0 5px rgba(142, 197, 255, 0.12);
+      }
+
+      .timeline-copy {
+        display: grid;
+        gap: 3px;
+      }
+
+      .timeline-copy strong {
+        font-size: 13px;
+      }
+
+      .timeline-copy span {
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .availability-card {
+        margin-top: 18px;
+      }
+
+      .section-heading,
+      .toolbar,
+      .filter-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .filter-bar {
+        justify-content: flex-start;
+        overflow-x: auto;
+        margin: 0 0 16px;
+        padding-bottom: 4px;
+      }
+
+      .filter-chip {
+        min-height: 40px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 8px 13px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .filter-chip[aria-pressed="true"] {
+        border-color: rgba(102, 245, 160, 0.4);
+        background: rgba(102, 245, 160, 0.12);
+        color: var(--ink);
+      }
+
+      .location-copy {
+        display: grid;
+        gap: 3px;
+      }
+
+      .location-copy small,
+      .sync-label {
+        color: var(--soft);
+        font-size: 13px;
+      }
+
+      .toast {
+        position: fixed;
+        z-index: 20;
+        right: 20px;
+        bottom: 20px;
+        max-width: min(390px, calc(100% - 40px));
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 14px 16px;
+        background: #10231b;
+        color: var(--ink);
+        box-shadow: var(--shadow);
+        transform: translateY(16px);
+        opacity: 0;
+        pointer-events: none;
+        transition: 180ms ease;
+      }
+
+      .toast.is-visible {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      dialog {
+        width: min(760px, calc(100% - 24px));
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 0;
+        background: #0c1b15;
+        color: var(--ink);
+        box-shadow: var(--shadow);
+      }
+
+      dialog::backdrop {
+        background: rgba(2, 8, 6, 0.78);
+        backdrop-filter: blur(8px);
+      }
+
+      .dialog-body {
+        padding: 24px;
+      }
+
+      .dialog-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .field input,
+      .field select {
+        width: 100%;
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        background: rgba(0, 0, 0, 0.24);
+        color: var(--ink);
+      }
+
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .planner-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .planner-summary span {
+        display: grid;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.045);
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .planner-summary strong {
+        color: var(--ink);
+        font-size: 20px;
+        letter-spacing: -0.05em;
+        text-transform: none;
+      }
+
+      .planner-preview {
+        max-height: 190px;
+        overflow: auto;
+        margin-top: 12px;
+        border: 1px dashed var(--line);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .slot-row.is-closed {
+        opacity: 0.66;
+      }
+
+      .slot-meter {
+        overflow: hidden;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .slot-meter span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--green), var(--amber));
+      }
+
+      .badge {
+        display: grid;
+        min-width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 15px;
+        background: rgba(102, 245, 160, 0.12);
+        color: var(--green);
+        font-weight: 950;
+      }
+
+      .price {
+        color: var(--green);
+        font-weight: 950;
+      }
+
+      .empty,
+      .error {
+        border: 1px dashed var(--line);
+        border-radius: 22px;
+        padding: 22px;
+        color: var(--muted);
+      }
+
+      .error {
+        color: var(--red);
+      }
+
+      .confidence {
+        display: grid;
+        gap: 12px;
+      }
+
+      .confidence-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid var(--line);
+        padding: 13px 0;
+      }
+
+      .confidence-item:last-child {
+        border-bottom: 0;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        height: 100vh;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        padding: 24px 18px;
+        background: rgba(4, 13, 10, 0.92);
+        backdrop-filter: blur(18px);
+      }
+
+      .sidebar .brand {
+        padding: 0 8px 28px;
+      }
+
+      .nav-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav-item {
+        display: flex;
+        min-height: 46px;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .nav-item:hover,
+      .nav-item.is-active {
+        border-color: rgba(102, 245, 160, 0.2);
+        background: rgba(102, 245, 160, 0.09);
+        color: var(--ink);
+      }
+
+      .nav-item:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
+      .nav-icon {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        place-items: center;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--green);
+      }
+
+      .sidebar-footer {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: center;
+        margin-top: auto;
+        border-top: 1px solid var(--line);
+        padding: 18px 6px 0;
+      }
+
+      .sidebar-footer strong,
+      .sidebar-footer span {
+        display: block;
+      }
+
+      .sidebar-footer strong {
+        font-size: 13px;
+      }
+
+      .sidebar-footer span {
+        margin-top: 3px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .business-avatar {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 12px;
+        background: linear-gradient(145deg, var(--green), var(--green-2));
+        color: #04110b;
+        font-size: 12px;
+        font-weight: 950;
+      }
+
+      main {
+        width: min(1440px, calc(100% - 48px));
+      }
+
+      .topbar {
+        position: sticky;
+        z-index: 8;
+        top: 0;
+        grid-template-columns: 1fr auto;
+        min-height: 72px;
+        margin-bottom: 28px;
+        background: rgba(7, 17, 14, 0.88);
+        backdrop-filter: blur(18px);
+      }
+
+      .location-selector {
+        display: grid;
+        gap: 3px;
+      }
+
+      .location-selector select {
+        min-width: 220px;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 950;
+      }
+
+      .location-kicker {
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .icon-button,
+      .mobile-menu {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: var(--panel);
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .mobile-menu {
+        display: none;
+      }
+
+      .hero {
+        grid-template-columns: minmax(0, 1fr) 310px;
+        align-items: stretch;
+        margin-bottom: 20px;
+      }
+
+      .hero > .card:first-child {
+        display: flex;
+        min-height: 190px;
+        flex-direction: column;
+        justify-content: center;
+        border-color: rgba(102, 245, 160, 0.18);
+        background:
+          radial-gradient(circle at 92% 0%, rgba(102, 245, 160, 0.12), transparent 18rem),
+          rgba(9, 24, 18, 0.72);
+      }
+
+      .hero > .card:first-child p:last-child {
+        max-width: 650px;
+        margin-bottom: 0;
+        font-size: 16px;
+      }
+
+      .hero aside.card {
+        box-shadow: none;
+      }
+
+      .metric-grid {
+        gap: 12px;
+      }
+
+      .metric {
+        position: relative;
+        overflow: hidden;
+        min-height: 140px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .metric::after {
+        position: absolute;
+        right: -30px;
+        bottom: -50px;
+        width: 110px;
+        height: 110px;
+        border-radius: 999px;
+        background: rgba(102, 245, 160, 0.055);
+        content: "";
+      }
+
+      .metric strong {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .metric small {
+        position: relative;
+        z-index: 1;
+      }
+
+      .metric.is-attention {
+        border-color: rgba(255, 217, 139, 0.3);
+      }
+
+      .metric.is-positive {
+        border-color: rgba(102, 245, 160, 0.22);
+      }
+
+      .split {
+        grid-template-columns: minmax(0, 1fr) 330px;
+      }
+
+      .queue-row {
+        grid-template-columns: 88px minmax(0, 1fr) auto;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .queue-time {
+        display: grid;
+        gap: 3px;
+      }
+
+      .queue-time strong {
+        font-size: 18px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .queue-time span {
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .empty {
+        display: grid;
+        min-height: 116px;
+        place-items: center;
+        text-align: center;
+      }
+
+      .availability-card {
+        margin-bottom: 30px;
+      }
+
+      .availability-day {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 18px;
+        border-top: 1px solid var(--line);
+        padding-top: 18px;
+      }
+
+      .availability-day:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .day-label {
+        display: grid;
+        align-content: start;
+        gap: 4px;
+      }
+
+      .day-label strong {
+        font-size: 16px;
+      }
+
+      .day-label span {
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .day-slots {
+        display: grid;
+        gap: 10px;
+      }
+
+      .slot-row {
+        grid-template-columns: 160px minmax(0, 1fr) auto;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .slot-time {
+        display: grid;
+        gap: 3px;
+      }
+
+      .slot-time strong {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .slot-capacity {
+        display: grid;
+        gap: 8px;
+      }
+
+      .slot-capacity-copy {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .slot-meter {
+        height: 6px;
+      }
+
+      .slot-meter span {
+        min-width: 4px;
+      }
+
+      .secondary-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin: -6px 0 20px;
+        color: var(--soft);
+        font-size: 12px;
+      }
+
+      .secondary-metrics strong {
+        color: var(--muted);
+      }
+
+      .section-description {
+        margin: -8px 0 0;
+        font-size: 13px;
+      }
+
+      .activity-card .audit-row {
+        grid-template-columns: 42px minmax(0, 1fr);
+      }
+
+      .activity-card .badge {
+        min-width: 38px;
+        height: 38px;
+      }
+
+      .activity-card .cluster {
+        gap: 10px;
+      }
+
+      .card {
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+      }
+
+      .action.primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, var(--green), var(--green-2));
+        color: #04110b;
+      }
+
+      .agenda-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      @media (max-width: 940px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .sidebar.is-open {
+          position: fixed;
+          z-index: 30;
+          top: 0;
+          left: 0;
+          display: flex;
+          width: min(290px, calc(100% - 48px));
+          box-shadow: 30px 0 80px rgba(0, 0, 0, 0.55);
+        }
+
+        .mobile-menu {
+          display: grid;
+        }
+
+        .topbar {
+          grid-template-columns: auto 1fr auto;
+        }
+
+        .hero,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        main {
+          width: min(100% - 20px, 1240px);
+        }
+
+        .topbar {
+          grid-template-columns: auto 1fr auto;
+        }
+
+        .queue-row,
+        .slot-row,
+        .audit-row {
+          grid-template-columns: 1fr;
+        }
+
+        .metric-grid,
+        .dialog-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-heading {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .queue-status {
+          justify-items: start;
+          text-align: left;
+        }
+
+        .booking-stage,
+        .command-panel,
+        .queue-actions {
+          justify-items: start;
+          justify-content: flex-start;
+          text-align: left;
+        }
+
+        .blocker-card {
+          text-align: left;
+        }
+
+        .location-kicker,
+        .icon-button {
+          display: none;
+        }
+
+        .hero {
+          gap: 12px;
+        }
+
+        .hero > .card:first-child {
+          min-height: auto;
+        }
+
+        .availability-day {
+          grid-template-columns: 1fr;
+        }
+
+        .day-label {
+          grid-template-columns: auto 1fr;
+          align-items: baseline;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">P</div>
+          <span>Prima Wash</span>
+        </div>
+        <nav class="nav-list" aria-label="Business navigation">
+          <a class="nav-item is-active" href="#overview"><span class="nav-icon">⌂</span>Overview</a>
+          <a class="nav-item" href="#queue-section"><span class="nav-icon">▣</span>Bookings</a>
+          <a class="nav-item" href="#availability-section"><span class="nav-icon">◫</span>Availability</a>
+          <a class="nav-item" href="#activity-section"><span class="nav-icon">↻</span>Activity</a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="business-avatar">PW</div>
+          <div>
+            <strong id="sidebar-location-name">Prima Wash Central</strong>
+            <span>Business workspace</span>
+          </div>
+        </div>
+      </aside>
+    <main>
+      <header class="topbar">
+        <button class="mobile-menu" type="button" aria-label="Toggle navigation">☰</button>
+        <div class="location-selector">
+          <span class="location-kicker">Current location</span>
+          <select id="partner-location-select" aria-label="Current partner location">
+            <option value="loc_demo_001">Prima Wash Central</option>
+            <option value="loc_harbour_001">Harbour Auto Spa</option>
+            <option value="loc_orchard_001">Orchard Detail Lab</option>
+          </select>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" type="button" aria-label="Notifications">●</button>
+          <span class="pill"><span class="dot"></span> Live</span>
+        </div>
+      </header>
+
+      <section class="hero" id="overview">
+        <div class="card">
+          <p class="eyebrow">Today’s operations</p>
+          <h1>Good morning, Amadou.</h1>
+          <p>
+            Here is what needs your attention across today’s bookings, payments, and service capacity.
+          </p>
+        </div>
+        <aside class="card">
+          <p class="eyebrow">Workspace status</p>
+          <div class="confidence">
+            <div class="confidence-item"><span class="muted">Operating hours</span><strong>08:00–19:00</strong></div>
+            <div class="confidence-item"><span class="muted">Location</span><strong id="location-id">Central</strong></div>
+            <div class="confidence-item"><span class="muted">Connection</span><strong id="source">Live</strong></div>
+            <div class="confidence-item"><span class="muted">Last synced</span><strong id="generated-at">Loading</strong></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="metric-grid" id="metrics"></section>
+      <div class="secondary-metrics" id="secondary-metrics" aria-label="Secondary business metrics"></div>
+
+      <section class="split" id="queue-section">
+        <div class="card" id="activity-section">
+          <p class="eyebrow">Today’s queue</p>
+          <div class="section-heading">
+            <h2>Bookings to manage</h2>
+            <span class="sync-label">Sorted by urgency</span>
+          </div>
+          <div class="filter-bar" aria-label="Filter bookings">
+            <button class="filter-chip" type="button" data-queue-filter="attention" aria-pressed="true">Needs attention</button>
+            <button class="filter-chip" type="button" data-queue-filter="upcoming" aria-pressed="false">Upcoming</button>
+            <button class="filter-chip" type="button" data-queue-filter="active" aria-pressed="false">In service</button>
+            <button class="filter-chip" type="button" data-queue-filter="all" aria-pressed="false">All</button>
+          </div>
+          <div class="cluster" id="queue"></div>
+        </div>
+
+        <div class="card">
+          <p class="eyebrow">Recent activity</p>
+          <h2>Operational trail</h2>
+          <div class="cluster" id="audit"></div>
+        </div>
+      </section>
+
+      <section class="card availability-card" id="availability-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Availability control</p>
+            <h2>Capacity and slot controls</h2>
+            <p class="section-description">Review open capacity across the next seven days.</p>
+          </div>
+          <button class="action primary" type="button" data-create-slot>Add availability</button>
+        </div>
+        <div class="cluster" id="availability"></div>
+      </section>
+    </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="availability-dialog" aria-labelledby="availability-dialog-title">
+      <form class="dialog-body" id="availability-form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Capacity planner</p>
+            <h2 id="availability-dialog-title">Generate bookable capacity</h2>
+            <p class="section-description">Set operating constraints. Prima Wash will create bookable slots from hours, staff, bays, service duration, and buffer.</p>
+          </div>
+          <button class="action" type="button" data-close-dialog>Close</button>
+        </div>
+        <div class="dialog-grid">
+          <div class="field field-wide">
+            <label for="capacity-template-select">Saved template</label>
+            <select id="capacity-template-select" name="templateId">
+              <option value="">Create a new capacity template</option>
+            </select>
+          </div>
+          <div class="field field-wide">
+            <label for="planner-name">Template name</label>
+            <input id="planner-name" name="name" type="text" value="Weekday standard capacity" required />
+          </div>
+          <div class="field field-wide">
+            <label for="planner-date">Date</label>
+            <input id="planner-date" name="date" type="date" required />
+          </div>
+          <div class="field">
+            <label for="planner-open">Open time</label>
+            <input id="planner-open" name="open" type="time" value="08:00" required />
+          </div>
+          <div class="field">
+            <label for="planner-close">Close time</label>
+            <input id="planner-close" name="close" type="time" value="19:00" required />
+          </div>
+          <div class="field">
+            <label for="planner-staff">Employees available</label>
+            <input id="planner-staff" name="staff" type="number" min="1" max="30" value="3" required />
+          </div>
+          <div class="field">
+            <label for="planner-bays">Bays/tools available</label>
+            <input id="planner-bays" name="bays" type="number" min="1" max="30" value="2" required />
+          </div>
+          <div class="field">
+            <label for="planner-service">Service mix</label>
+            <select id="planner-service" name="service">
+              <option value="wash_basic,wash_premium">Basic + premium wash</option>
+              <option value="wash_basic">Basic wash</option>
+              <option value="wash_premium">Premium wash</option>
+              <option value="detail_interior">Interior detail</option>
+              <option value="wash_basic,wash_premium,detail_interior">All services</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="planner-duration">Slot duration</label>
+            <select id="planner-duration" name="duration">
+              <option value="auto">Auto from service mix</option>
+              <option value="30">30 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">60 minutes</option>
+              <option value="90">90 minutes</option>
+              <option value="120">120 minutes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="planner-buffer">Buffer / cleanup</label>
+            <input id="planner-buffer" name="buffer" type="number" min="0" max="60" value="15" required />
+          </div>
+        </div>
+        <div class="planner-summary" aria-label="Generated capacity summary">
+          <span>Slots<strong id="planner-slot-count">0</strong></span>
+          <span>Vehicles/day<strong id="planner-vehicle-count">0</strong></span>
+          <span>Cadence<strong id="planner-cadence">—</strong></span>
+        </div>
+        <div class="planner-preview" id="planner-preview">Set hours and resources to preview generated slots.</div>
+        <div class="dialog-actions">
+          <button class="action" type="button" data-close-dialog>Cancel</button>
+          <button class="action" type="button" data-save-capacity-template>Save template</button>
+          <button class="action primary" type="submit">Save & generate availability</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="drawer-dialog" id="booking-dialog" aria-labelledby="booking-dialog-title">
+      <form class="dialog-body drawer-body" method="dialog">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Booking command</p>
+            <h2 id="booking-dialog-title">Booking detail</h2>
+            <p class="section-description">Review payment, timing, and operational status before moving the booking forward.</p>
+          </div>
+          <button class="action" type="button" data-close-booking-dialog>Close</button>
+        </div>
+        <div id="booking-detail"></div>
+      </form>
+    </dialog>
+
+    <script>
+      const apiBase = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:3001";
+      const partnerLocations = {
+        loc_demo_001: {
+          name: "Prima Wash Central",
+          organizationId: "org_partner_001",
+          hours: "08:00–19:00",
+          avatar: "PW",
+        },
+        loc_harbour_001: {
+          name: "Harbour Auto Spa",
+          organizationId: "org_partner_002",
+          hours: "07:30–20:00",
+          avatar: "HA",
+        },
+        loc_orchard_001: {
+          name: "Orchard Detail Lab",
+          organizationId: "org_partner_003",
+          hours: "09:00–18:30",
+          avatar: "OD",
+        },
+      };
+
+      const metricsEl = document.querySelector("#metrics");
+      const secondaryMetricsEl = document.querySelector("#secondary-metrics");
+      const queueEl = document.querySelector("#queue");
+      const auditEl = document.querySelector("#audit");
+      const availabilityEl = document.querySelector("#availability");
+      const generatedAtEl = document.querySelector("#generated-at");
+      const locationIdEl = document.querySelector("#location-id");
+      const partnerLocationSelect = document.querySelector("#partner-location-select");
+      const sidebarLocationNameEl = document.querySelector("#sidebar-location-name");
+      const businessAvatarEl = document.querySelector(".business-avatar");
+      const toastEl = document.querySelector("#toast");
+      const availabilityDialog = document.querySelector("#availability-dialog");
+      const availabilityForm = document.querySelector("#availability-form");
+      const capacityTemplateSelect = document.querySelector("#capacity-template-select");
+      const bookingDialog = document.querySelector("#booking-dialog");
+      const bookingDetailEl = document.querySelector("#booking-detail");
+      const plannerPreviewEl = document.querySelector("#planner-preview");
+      const plannerSlotCountEl = document.querySelector("#planner-slot-count");
+      const plannerVehicleCountEl = document.querySelector("#planner-vehicle-count");
+      const plannerCadenceEl = document.querySelector("#planner-cadence");
+      const mobileMenuButton = document.querySelector(".mobile-menu");
+      const sidebarEl = document.querySelector(".sidebar");
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      let dashboardCache = null;
+      let activeQueueFilter = "attention";
+      let selectedBookingId = null;
+      let capacityTemplates = [];
+      let selectedPartnerLocationId =
+        new URLSearchParams(window.location.search).get("partnerLocationId") || partnerLocationSelect.value;
+      if (!partnerLocations[selectedPartnerLocationId]) {
+        selectedPartnerLocationId = "loc_demo_001";
+      }
+      partnerLocationSelect.value = selectedPartnerLocationId;
+
+      const nextStatusByStatus = {
+        pending_payment: { status: "confirmed", label: "Confirm booking" },
+        confirmed: { status: "checked_in", label: "Check in vehicle" },
+        checked_in: { status: "in_service", label: "Start service" },
+        in_service: { status: "completed", label: "Complete & capture" },
+      };
+      const cancellableStatuses = new Set(["pending_payment", "confirmed", "checked_in"]);
+      const serviceDurations = {
+        wash_basic: 30,
+        wash_premium: 60,
+        detail_interior: 90,
+      };
+
+      mobileMenuButton.addEventListener("click", () => {
+        sidebarEl.classList.toggle("is-open");
+      });
+
+      document.querySelectorAll(".nav-item").forEach((item) => {
+        item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
+      });
+
+      function partnerHeaders() {
+        return {
+          "x-prima-user-id": "partner_demo_001",
+          "x-prima-role": "partner",
+          "x-prima-organization-id": partnerLocations[selectedPartnerLocationId].organizationId,
+        };
+      }
+
+      function partnerQuery() {
+        return `partnerLocationId=${encodeURIComponent(selectedPartnerLocationId)}`;
+      }
+
+      async function requestJson(path, requestHeaders = partnerHeaders()) {
+        const response = await fetch(`${apiBase}${path}`, { headers: requestHeaders });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Request failed");
+        }
+
+        return payload.data;
+      }
+
+      async function loadDashboard() {
+        const [dashboard, availability, templates, mavo] = await Promise.all([
+          requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
+          requestJson(`/v1/partner/availability?${partnerQuery()}`),
+          requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`),
+          requestJson(`/v1/analytics/mavo?month=${currentMonth}`, {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          }),
+        ]);
+
+        renderDashboard(dashboard, mavo);
+        renderAvailability(availability);
+        renderCapacityTemplates(templates);
+      }
+
+      function renderDashboard(data, mavo) {
+        dashboardCache = { data, mavo };
+        const selectedPartner = partnerLocations[selectedPartnerLocationId];
+        locationIdEl.textContent = selectedPartner.name;
+        sidebarLocationNameEl.textContent = selectedPartner.name;
+        businessAvatarEl.textContent = selectedPartner.avatar;
+        document.querySelector(".confidence-item strong").textContent = selectedPartner.hours;
+        generatedAtEl.textContent = new Date(data.generatedAt).toLocaleTimeString();
+        const metricByLabel = new Map(data.metrics.map((metric) => [metric.label, metric]));
+        const primaryMetrics = [
+          metricByLabel.get("Bookings"),
+          metricByLabel.get("Expected revenue"),
+          metricByLabel.get("Payment risk"),
+          metricByLabel.get("Captured revenue"),
+        ].filter(Boolean);
+
+        metricsEl.innerHTML = primaryMetrics
+          .map(
+            (metric, index) => `
+              <article class="metric ${index === 2 ? "is-attention" : index === 3 ? "is-positive" : ""}">
+                <span>${metric.label}</span>
+                <strong>${metric.value}</strong>
+                <small class="muted">${metric.delta || ""}</small>
+              </article>
+            `,
+          )
+          .join("");
+
+        secondaryMetricsEl.innerHTML = `
+          <span><strong>${metricByLabel.get("Authorized revenue")?.value || "$0.00"}</strong> authorized</span>
+          <span><strong>${metricByLabel.get("Active owners")?.value || "0"}</strong> active owners</span>
+          <span><strong>${mavo.monthlyActiveVehicleOwners}</strong> monthly active vehicle owners</span>
+        `;
+
+        const filteredQueue = filterQueue(data.queue, activeQueueFilter);
+
+        queueEl.innerHTML =
+          filteredQueue.length === 0
+            ? `<div class="empty">Nothing needs attention right now. New bookings will appear here automatically.</div>`
+            : filteredQueue
+                .map(
+                  (item) => `
+                    <div class="queue-row ${workflowClass(item)}" data-open-booking-id="${item.bookingId}" tabindex="0" role="button" aria-label="Open booking ${item.bookingId.slice(-6).toUpperCase()} details">
+                      <div class="queue-time">
+                        <strong>${formatTime(item.scheduledStartAt)}</strong>
+                        <span>${formatRelativeDay(item.scheduledStartAt)}</span>
+                      </div>
+                      <div>
+                        <strong>${formatService(item.serviceCode)}</strong><br />
+                        <span class="muted">Vehicle appointment · Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
+                        <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
+                        ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
+                      </div>
+                      <div class="queue-status">
+                        <div class="booking-stage">
+                          <span>Current stage</span>
+                          <strong>${formatStatus(item.status)}</strong>
+                        </div>
+                        ${renderWorkflowRail(item.status)}
+                        <div class="command-panel">
+                          <span class="action-hint">${item.actionHint}</span>
+                          <div class="queue-actions">
+                            <button class="action" type="button" data-open-booking-button="${item.bookingId}">View details</button>
+                            ${renderActionButton(item)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("");
+
+        auditEl.innerHTML =
+          data.auditEvents.length === 0
+            ? `<div class="empty">No recent activity. Operational updates will appear here.</div>`
+            : data.auditEvents
+                .map(
+                  (event) => `
+                    <div class="audit-row">
+                      <div class="badge">✓</div>
+                      <div>
+                        <strong>${formatActivity(event)}</strong><br />
+                        <span class="muted">${formatRelativeTime(event.createdAt)}</span>
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("");
+      }
+
+      function renderAvailability(slots) {
+        const upcomingSlots = slots
+          .filter((slot) => new Date(slot.endsAt).getTime() > Date.now())
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+        const groupedSlots = Object.groupBy(upcomingSlots, (slot) => new Date(slot.startsAt).toDateString());
+
+        availabilityEl.innerHTML =
+          upcomingSlots.length === 0
+            ? `<div class="empty">No upcoming availability. Add a service window to start accepting bookings.</div>`
+            : Object.entries(groupedSlots)
+                .map(
+                  ([dateKey, daySlots]) => `
+                    <div class="availability-day">
+                      <div class="day-label">
+                        <strong>${formatDayHeading(dateKey)}</strong>
+                        <span>${daySlots.length} service ${daySlots.length === 1 ? "window" : "windows"}</span>
+                      </div>
+                      <div class="day-slots">
+                        ${daySlots.map(renderAvailabilitySlot).join("")}
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("");
+      }
+
+      function renderAvailabilitySlot(slot) {
+        const usedPercent =
+          slot.capacity > 0 ? Math.min(100, Math.round(((slot.bookedCount || 0) / slot.capacity) * 100)) : 0;
+
+        return `
+          <div class="slot-row ${slot.closedAt ? "is-closed" : ""}">
+            <div class="slot-time">
+              <strong>${formatTime(slot.startsAt)}–${formatTime(slot.endsAt)}</strong>
+              <span>${slot.closedAt ? "Closed" : "Open for booking"}</span>
+            </div>
+            <div class="slot-capacity">
+              <div class="slot-capacity-copy">
+                <span>${slot.serviceCodes.map(formatService).join(" · ")}</span>
+                <strong>${slot.bookedCount || 0}/${slot.capacity} booked</strong>
+              </div>
+              <div class="slot-meter" aria-label="${usedPercent}% capacity used">
+                <span style="width: ${usedPercent}%"></span>
+              </div>
+            </div>
+            <div class="queue-actions">
+              <span class="${slot.closedAt ? "payment-chip is-blocked" : "payment-chip is-authorized"}">
+                ${slot.closedAt ? "Closed" : `${slot.availableCount} open`}
+              </span>
+              ${
+                slot.closedAt
+                  ? `<button class="action" data-open-slot-id="${slot.id}">Reopen</button>`
+                  : `<button class="action danger" data-close-slot-id="${slot.id}">Close</button>`
+              }
+            </div>
+          </div>
+        `;
+      }
+
+      function renderCapacityTemplates(templates) {
+        capacityTemplates = templates;
+        const selected = capacityTemplateSelect.value;
+        capacityTemplateSelect.innerHTML =
+          `<option value="">Create a new capacity template</option>` +
+          templates
+            .map((template) => `<option value="${template.id}">${template.name}</option>`)
+            .join("");
+
+        if (selected && templates.some((template) => template.id === selected)) {
+          capacityTemplateSelect.value = selected;
+        }
+      }
+
+      function applyCapacityTemplate(template) {
+        if (!template) {
+          return;
+        }
+
+        document.querySelector("#planner-name").value = template.name;
+        document.querySelector("#planner-open").value = template.openTime;
+        document.querySelector("#planner-close").value = template.closeTime;
+        document.querySelector("#planner-staff").value = template.staffCount;
+        document.querySelector("#planner-bays").value = template.bayCount;
+        document.querySelector("#planner-service").value = template.serviceCodes.join(",");
+        document.querySelector("#planner-duration").value = String(template.slotDurationMinutes);
+        document.querySelector("#planner-buffer").value = template.bufferMinutes;
+        updatePlannerPreview();
+      }
+
+      function filterQueue(queue, filter) {
+        if (filter === "attention") {
+          return queue.filter((item) => item.status === "pending_payment");
+        }
+
+        if (filter === "upcoming") {
+          return queue.filter((item) => ["pending_payment", "confirmed"].includes(item.status));
+        }
+
+        if (filter === "active") {
+          return queue.filter((item) => ["checked_in", "in_service"].includes(item.status));
+        }
+
+        return queue;
+      }
+
+      function workflowClass(item) {
+        if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
+          return "is-blocked";
+        }
+
+        if (["checked_in", "in_service"].includes(item.status)) {
+          return "is-active";
+        }
+
+        return "";
+      }
+
+      function renderWorkflowRail(status) {
+        const workflow = ["confirmed", "checked_in", "in_service", "completed"];
+        const activeIndex = workflow.indexOf(status);
+
+        if (status === "pending_payment") {
+          return `
+            <div class="workflow-rail" aria-label="Booking workflow progress">
+              ${workflow.map(() => `<span class="workflow-step"></span>`).join("")}
+            </div>
+          `;
+        }
+
+        if (status === "cancelled") {
+          return "";
+        }
+
+        return `
+          <div class="workflow-rail" aria-label="Booking workflow progress">
+            ${workflow
+              .map((step, index) => {
+                const stateClass = index < activeIndex ? "is-complete" : index === activeIndex ? "is-active" : "";
+                return `<span class="workflow-step ${stateClass}" title="${formatStatus(step)}"></span>`;
+              })
+              .join("")}
+          </div>
+        `;
+      }
+
+      function showToast(message, tone = "success") {
+        toastEl.textContent = `${tone === "error" ? "Could not update: " : ""}${message}`;
+        toastEl.style.borderColor = tone === "error" ? "rgba(255, 153, 153, 0.5)" : "rgba(102, 245, 160, 0.4)";
+        toastEl.classList.add("is-visible");
+        window.clearTimeout(showToast.timeoutId);
+        showToast.timeoutId = window.setTimeout(() => toastEl.classList.remove("is-visible"), 3600);
+      }
+
+      function renderActionButton(item) {
+        const next = nextStatusByStatus[item.status];
+        const cancelButton = cancellableStatuses.has(item.status)
+          ? `<button class="action danger" data-cancel-booking-id="${item.bookingId}">Cancel</button>`
+          : "";
+
+        if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
+          const label = item.paymentStatus === "requires_authorization" ? "Needs authorization" : "No payment hold";
+          return `
+            <div class="blocker-card">${label}. Ask the customer to authorize payment before confirming.</div>
+            ${cancelButton}
+          `;
+        }
+
+        const nextButton = next
+          ? `<button class="action primary-command" data-booking-id="${item.bookingId}" data-next-status="${next.status}">${next.label}</button>`
+          : "";
+
+        return `${nextButton}${cancelButton}`;
+      }
+
+      function openBookingDrawer(bookingId) {
+        selectedBookingId = bookingId;
+        renderBookingDrawer();
+        bookingDialog.showModal();
+      }
+
+      function renderBookingDrawer() {
+        const item = findQueueItem(selectedBookingId);
+
+        if (!item) {
+          bookingDetailEl.innerHTML = `
+            <div class="empty">
+              Booking is no longer in the current queue. Refresh the dashboard and try again.
+            </div>
+          `;
+          return;
+        }
+
+        const next = nextStatusByStatus[item.status];
+        const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
+        const nextAction = paymentBlocked
+          ? "Customer payment authorization is required before partner confirmation."
+          : next
+            ? `Recommended next action: ${next.label}.`
+            : item.status === "completed"
+              ? "This booking is complete. No further action is required."
+              : "No forward action is currently available.";
+
+        bookingDetailEl.innerHTML = `
+          <div class="drawer-body">
+            <section class="drawer-hero">
+              <div class="drawer-title-row">
+                <div>
+                  <p class="eyebrow">Ref ${item.bookingId.slice(-8).toUpperCase()}</p>
+                  <h2>${formatService(item.serviceCode)}</h2>
+                  <p class="section-description">${formatRelativeDay(item.scheduledStartAt)} at ${formatTime(item.scheduledStartAt)}</p>
+                </div>
+                <span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
+              </div>
+              ${paymentBlocked ? `<div class="blocker-card">Payment blocked. Do not confirm until the customer authorizes payment.</div>` : ""}
+              <p class="action-hint">${nextAction}</p>
+            </section>
+
+            <section class="detail-grid">
+              <div class="detail-item"><span>Status</span><strong>${formatStatus(item.status)}</strong></div>
+              <div class="detail-item"><span>Payment</span><strong>${formatPaymentStatus(item.paymentStatus)}</strong></div>
+              <div class="detail-item"><span>Amount</span><strong>${item.paymentAmount ? formatMoney(item.paymentAmount) : "No payment intent"}</strong></div>
+              <div class="detail-item"><span>Appointment</span><strong>${formatRelativeDay(item.scheduledStartAt)}, ${formatTime(item.scheduledStartAt)}</strong></div>
+            </section>
+
+            <section>
+              <p class="eyebrow">Operational timeline</p>
+              <div class="drawer-timeline">${renderDrawerTimeline(item.status)}</div>
+            </section>
+
+            <section class="dialog-actions">
+              ${renderDrawerActions(item)}
+            </section>
+          </div>
+        `;
+      }
+
+      function renderDrawerTimeline(status) {
+        if (status === "cancelled") {
+          return `
+            <div class="timeline-row">
+              <span class="timeline-dot is-active"></span>
+              <div class="timeline-copy"><strong>Cancelled</strong><span>Booking cancelled before completion.</span></div>
+            </div>
+          `;
+        }
+
+        const workflow = [
+          ["confirmed", "Confirmed", "Payment authorized and partner confirmation completed."],
+          ["checked_in", "Checked in", "Vehicle received at the location."],
+          ["in_service", "In service", "Care work is underway."],
+          ["completed", "Completed", "Service completed and payment captured."],
+        ];
+        const activeIndex = workflow.findIndex(([step]) => step === status);
+
+        return workflow
+          .map(([step, label, body], index) => {
+            const className = activeIndex > index ? "is-complete" : activeIndex === index ? "is-active" : "";
+            return `
+              <div class="timeline-row">
+                <span class="timeline-dot ${className}"></span>
+                <div class="timeline-copy"><strong>${label}</strong><span>${body}</span></div>
+              </div>
+            `;
+          })
+          .join("");
+      }
+
+      function renderDrawerActions(item) {
+        const next = nextStatusByStatus[item.status];
+        const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
+        const nextButton =
+          next && !paymentBlocked
+            ? `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
+            : "";
+        const blockedButton =
+          next && paymentBlocked
+            ? `<button class="action" type="button" disabled>Payment authorization required</button>`
+            : "";
+        const cancelButton = cancellableStatuses.has(item.status)
+          ? `<button class="action danger" type="button" data-drawer-cancel>Cancel booking</button>`
+          : "";
+
+        return `${nextButton}${blockedButton}${cancelButton}<button class="action" type="button" data-close-booking-dialog>Close</button>`;
+      }
+
+      function findQueueItem(bookingId) {
+        return dashboardCache?.data?.queue?.find((item) => item.bookingId === bookingId);
+      }
+
+      function formatStatus(status) {
+        return status.replaceAll("_", " ");
+      }
+
+      function formatService(code) {
+        const serviceNames = {
+          wash_basic: "Essential Wash",
+          wash_premium: "Premium Detail",
+          detail_interior: "Interior Detail",
+        };
+
+        return serviceNames[code] || code.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function formatTime(value) {
+        return new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      }
+
+      function formatRelativeDay(value) {
+        const date = new Date(value);
+        const today = new Date();
+        const tomorrow = new Date();
+        tomorrow.setDate(today.getDate() + 1);
+
+        if (date.toDateString() === today.toDateString()) {
+          return "Today";
+        }
+
+        if (date.toDateString() === tomorrow.toDateString()) {
+          return "Tomorrow";
+        }
+
+        return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      }
+
+      function formatDayHeading(value) {
+        const date = new Date(value);
+        const relative = formatRelativeDay(date);
+
+        if (relative === "Today" || relative === "Tomorrow") {
+          return `${relative}, ${date.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+        }
+
+        return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      }
+
+      function formatRelativeTime(value) {
+        const elapsedMinutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+
+        if (elapsedMinutes < 1) {
+          return "Just now";
+        }
+
+        if (elapsedMinutes < 60) {
+          return `${elapsedMinutes} min ago`;
+        }
+
+        return new Date(value).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+
+      function formatActivity(event) {
+        const actionNames = {
+          booking_created: "New booking received",
+          booking_status_updated: "Booking status updated",
+          booking_cancelled: "Booking cancelled",
+          payment_authorized: "Payment authorized",
+          payment_captured: "Payment captured",
+          availability_created: "Availability added",
+          availability_updated: "Availability updated",
+          service_record_created: "Service completed",
+        };
+
+        return actionNames[event.action] || event.action.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function paymentTone(status) {
+        if (status === "authorized") {
+          return "is-authorized";
+        }
+
+        if (status === "captured") {
+          return "is-captured";
+        }
+
+        if (!status || status === "requires_authorization") {
+          return "is-blocked";
+        }
+
+        return "";
+      }
+
+      function formatPaymentStatus(status) {
+        return status ? status.replaceAll("_", " ") : "no payment intent";
+      }
+
+      function formatMoney(price) {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: price.currency,
+        }).format(price.amountMinor / 100);
+      }
+
+      async function updateBookingStatus(bookingId, status) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/status`, {
+          method: "PATCH",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Status update failed");
+        }
+
+        return payload.data;
+      }
+
+      async function cancelBooking(bookingId) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/cancel`, {
+          method: "POST",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ reason: "partner_requested" }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Cancellation failed");
+        }
+
+        return payload.data;
+      }
+
+      document.addEventListener("click", async (event) => {
+        const explicitOpenButton = event.target.closest("button[data-open-booking-button]");
+
+        if (explicitOpenButton) {
+          openBookingDrawer(explicitOpenButton.dataset.openBookingButton);
+          return;
+        }
+
+        const rowOpenTarget = event.target.closest("[data-open-booking-id]");
+
+        if (rowOpenTarget && !event.target.closest("button")) {
+          openBookingDrawer(rowOpenTarget.dataset.openBookingId);
+          return;
+        }
+
+        const closeBookingDialogButton = event.target.closest("[data-close-booking-dialog]");
+
+        if (closeBookingDialogButton) {
+          bookingDialog.close();
+          return;
+        }
+
+        const drawerNextButton = event.target.closest("button[data-drawer-next-status]");
+
+        if (drawerNextButton) {
+          if (!selectedBookingId) {
+            return;
+          }
+
+          if (
+            drawerNextButton.dataset.drawerNextStatus === "completed" &&
+            !window.confirm("Mark this booking complete and capture the authorized payment?")
+          ) {
+            return;
+          }
+
+          drawerNextButton.disabled = true;
+
+          try {
+            await updateBookingStatus(selectedBookingId, drawerNextButton.dataset.drawerNextStatus);
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast(`Booking moved to ${formatStatus(drawerNextButton.dataset.drawerNextStatus)}.`);
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            drawerNextButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const drawerCancelButton = event.target.closest("button[data-drawer-cancel]");
+
+        if (drawerCancelButton) {
+          if (!selectedBookingId || !window.confirm("Cancel this booking? Any authorized payment hold will be released.")) {
+            return;
+          }
+
+          drawerCancelButton.disabled = true;
+
+          try {
+            await cancelBooking(selectedBookingId);
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Booking cancelled.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            drawerCancelButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const button = event.target.closest("button[data-booking-id]");
+
+        if (button) {
+          if (
+            button.dataset.nextStatus === "completed" &&
+            !window.confirm("Mark this booking complete and capture the authorized payment?")
+          ) {
+            return;
+          }
+
+          button.disabled = true;
+
+          try {
+            await updateBookingStatus(button.dataset.bookingId, button.dataset.nextStatus);
+            await loadDashboard();
+            showToast(`Booking moved to ${formatStatus(button.dataset.nextStatus)}.`);
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+
+          return;
+        }
+
+        const cancelButton = event.target.closest("button[data-cancel-booking-id]");
+
+        if (cancelButton) {
+          if (!window.confirm("Cancel this booking? Any authorized payment hold will be released.")) {
+            return;
+          }
+
+          cancelButton.disabled = true;
+
+          try {
+            await cancelBooking(cancelButton.dataset.cancelBookingId);
+            await loadDashboard();
+            showToast("Booking cancelled.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            cancelButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const closeSlotButton = event.target.closest("button[data-close-slot-id]");
+
+        if (closeSlotButton) {
+          if (!window.confirm("Close this availability window? Existing bookings will remain scheduled.")) {
+            return;
+          }
+
+          closeSlotButton.disabled = true;
+
+          try {
+            await updateAvailabilitySlot(closeSlotButton.dataset.closeSlotId, { closed: true });
+            await loadDashboard();
+            showToast("Availability closed.");
+          } catch (error) {
+            showToast(error.message, "error");
+          }
+
+          return;
+        }
+
+        const openSlotButton = event.target.closest("button[data-open-slot-id]");
+
+        if (openSlotButton) {
+          openSlotButton.disabled = true;
+
+          try {
+            await updateAvailabilitySlot(openSlotButton.dataset.openSlotId, { closed: false });
+            await loadDashboard();
+            showToast("Availability reopened.");
+          } catch (error) {
+            showToast(error.message, "error");
+          }
+
+          return;
+        }
+
+        const createSlotButton = event.target.closest("button[data-create-slot]");
+
+        if (!createSlotButton) {
+          return;
+        }
+
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        document.querySelector("#planner-date").value = tomorrow.toISOString().slice(0, 10);
+        if (!capacityTemplateSelect.value && capacityTemplates[0]) {
+          capacityTemplateSelect.value = capacityTemplates[0].id;
+          applyCapacityTemplate(capacityTemplates[0]);
+        }
+        updatePlannerPreview();
+        availabilityDialog.showModal();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        const rowOpenTarget = event.target.closest?.("[data-open-booking-id]");
+
+        if (!rowOpenTarget || !["Enter", " "].includes(event.key)) {
+          return;
+        }
+
+        event.preventDefault();
+        openBookingDrawer(rowOpenTarget.dataset.openBookingId);
+      });
+
+      bookingDialog.addEventListener("close", () => {
+        selectedBookingId = null;
+      });
+
+      async function updateAvailabilitySlot(slotId, input) {
+        const response = await fetch(`${apiBase}/v1/partner/availability/${slotId}`, {
+          method: "PATCH",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Availability update failed");
+        }
+
+        return payload.data;
+      }
+
+      async function createAvailabilitySlot(input) {
+        const response = await fetch(`${apiBase}/v1/partner/availability`, {
+          method: "POST",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            partnerLocationId: selectedPartnerLocationId,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            capacity: input.capacity,
+            serviceCodes: input.serviceCodes,
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Availability create failed");
+        }
+
+        return payload.data;
+      }
+
+      async function saveCapacityTemplate(input) {
+        const method = input.id ? "PATCH" : "POST";
+        const path = input.id ? `/v1/partner/capacity-templates/${input.id}` : "/v1/partner/capacity-templates";
+        const response = await fetch(`${apiBase}${path}`, {
+          method,
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            ...(!input.id ? { partnerLocationId: selectedPartnerLocationId } : {}),
+            name: input.name,
+            openTime: input.openTime,
+            closeTime: input.closeTime,
+            staffCount: input.staffCount,
+            bayCount: input.bayCount,
+            serviceCodes: input.serviceCodes,
+            slotDurationMinutes: input.slotDurationMinutes,
+            bufferMinutes: input.bufferMinutes,
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Capacity template save failed");
+        }
+
+        return payload.data;
+      }
+
+      async function generateCapacityFromTemplate(templateId, date) {
+        const response = await fetch(`${apiBase}/v1/partner/capacity-templates/${templateId}/generate`, {
+          method: "POST",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ date }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Capacity generation failed");
+        }
+
+        return payload.data;
+      }
+
+      function readPlannerInput() {
+        const form = new FormData(availabilityForm);
+        const serviceCodes = String(form.get("service") || "")
+          .split(",")
+          .map((service) => service.trim())
+          .filter(Boolean);
+        const selectedDuration = form.get("duration");
+        const autoDuration = Math.max(...serviceCodes.map((service) => serviceDurations[service] || 60));
+
+        return {
+          templateId: String(form.get("templateId") || ""),
+          name: String(form.get("name") || ""),
+          date: String(form.get("date") || ""),
+          open: String(form.get("open") || ""),
+          close: String(form.get("close") || ""),
+          staff: Number(form.get("staff")),
+          bays: Number(form.get("bays")),
+          serviceCodes,
+          durationMinutes: selectedDuration === "auto" ? autoDuration : Number(selectedDuration),
+          bufferMinutes: Number(form.get("buffer")),
+        };
+      }
+
+      function plannerTemplatePayload(input) {
+        return {
+          ...(input.templateId ? { id: input.templateId } : {}),
+          name: input.name || "Capacity template",
+          openTime: input.open,
+          closeTime: input.close,
+          staffCount: input.staff,
+          bayCount: input.bays,
+          serviceCodes: input.serviceCodes,
+          slotDurationMinutes: input.durationMinutes,
+          bufferMinutes: input.bufferMinutes,
+        };
+      }
+
+      function generateAvailabilityPlan(input) {
+        const capacity = Math.max(1, Math.min(input.staff || 1, input.bays || 1));
+        const cadenceMinutes = input.durationMinutes + input.bufferMinutes;
+        const startsAt = new Date(`${input.date}T${input.open}`);
+        const closesAt = new Date(`${input.date}T${input.close}`);
+        const slots = [];
+
+        if (
+          !input.date ||
+          !input.open ||
+          !input.close ||
+          !Number.isFinite(startsAt.getTime()) ||
+          !Number.isFinite(closesAt.getTime()) ||
+          closesAt <= startsAt ||
+          cadenceMinutes <= 0 ||
+          input.serviceCodes.length === 0
+        ) {
+          return { capacity, cadenceMinutes, slots };
+        }
+
+        for (
+          let cursor = new Date(startsAt);
+          cursor.getTime() + input.durationMinutes * 60_000 <= closesAt.getTime();
+          cursor = new Date(cursor.getTime() + cadenceMinutes * 60_000)
+        ) {
+          const endsAt = new Date(cursor.getTime() + input.durationMinutes * 60_000);
+          slots.push({
+            startsAt: cursor.toISOString(),
+            endsAt: endsAt.toISOString(),
+            capacity,
+            serviceCodes: input.serviceCodes,
+          });
+        }
+
+        return { capacity, cadenceMinutes, slots };
+      }
+
+      function updatePlannerPreview() {
+        const input = readPlannerInput();
+        const plan = generateAvailabilityPlan(input);
+
+        plannerSlotCountEl.textContent = String(plan.slots.length);
+        plannerVehicleCountEl.textContent = String(plan.slots.length * plan.capacity);
+        plannerCadenceEl.textContent = plan.slots.length > 0 ? `${plan.cadenceMinutes} min` : "—";
+
+        plannerPreviewEl.innerHTML =
+          plan.slots.length === 0
+            ? "Set valid open hours, resources, and service mix to preview generated slots."
+            : plan.slots
+                .slice(0, 8)
+                .map(
+                  (slot) =>
+                    `<div><strong>${formatTime(slot.startsAt)}–${formatTime(slot.endsAt)}</strong> · ${slot.capacity} vehicle capacity · ${slot.serviceCodes.map(formatService).join(" + ")}</div>`,
+                )
+                .join("") +
+              (plan.slots.length > 8 ? `<div class="muted">+ ${plan.slots.length - 8} more slots</div>` : "");
+
+        return plan;
+      }
+
+      document.querySelectorAll("[data-close-dialog]").forEach((button) => {
+        button.addEventListener("click", () => availabilityDialog.close());
+      });
+
+      availabilityForm.addEventListener("input", updatePlannerPreview);
+
+      capacityTemplateSelect.addEventListener("change", () => {
+        const template = capacityTemplates.find((item) => item.id === capacityTemplateSelect.value);
+        applyCapacityTemplate(template);
+      });
+
+      document.querySelector("[data-save-capacity-template]").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const input = readPlannerInput();
+        button.disabled = true;
+
+        try {
+          const template = await saveCapacityTemplate(plannerTemplatePayload(input));
+          await loadDashboard();
+          capacityTemplateSelect.value = template.id;
+          showToast("Capacity template saved.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      availabilityForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = event.submitter;
+        const input = readPlannerInput();
+        const plan = updatePlannerPreview();
+
+        if (plan.slots.length === 0) {
+          showToast("Planner needs valid hours, resources, and services.", "error");
+          return;
+        }
+
+        if (!window.confirm(`Generate ${plan.slots.length} slots with ${plan.capacity} vehicle capacity each?`)) {
+          return;
+        }
+
+        submitButton.disabled = true;
+
+        try {
+          const template = await saveCapacityTemplate(plannerTemplatePayload(input));
+          const generated = await generateCapacityFromTemplate(template.id, input.date);
+          availabilityDialog.close();
+          await loadDashboard();
+          showToast(`Saved template and generated ${generated.slots.length} availability slots.`);
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      document.querySelectorAll("[data-queue-filter]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeQueueFilter = button.dataset.queueFilter;
+          document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
+            chip.setAttribute("aria-pressed", String(chip === button));
+          });
+
+          if (dashboardCache) {
+            renderDashboard(dashboardCache.data, dashboardCache.mavo);
+          }
+        });
+      });
+
+      partnerLocationSelect.addEventListener("change", async () => {
+        selectedPartnerLocationId = partnerLocationSelect.value;
+        selectedBookingId = null;
+        activeQueueFilter = "attention";
+        document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
+          chip.setAttribute("aria-pressed", String(chip.dataset.queueFilter === activeQueueFilter));
+        });
+        const url = new URL(window.location.href);
+        url.searchParams.set("partnerLocationId", selectedPartnerLocationId);
+        window.history.replaceState({}, "", url);
+
+        try {
+          await loadDashboard();
+          showToast(`Switched to ${partnerLocations[selectedPartnerLocationId].name}.`);
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      });
+
+      loadDashboard().catch((error) => {
+        metricsEl.innerHTML = `
+          <div class="error">
+            ${error.message}. Confirm the API is running at ${apiBase}, then refresh. If this is a local browser
+            CORS issue, restart the API after pulling the latest code.
+          </div>
+        `;
+      });
+    </script>
+  </body>
+</html>
