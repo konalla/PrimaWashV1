@@ -17,6 +17,7 @@ import type {
   CreateVehicleRequest,
   PaymentIntent,
   PartnerLocation,
+  PrimaWashDay,
   Property,
   ServiceOffering,
   ServiceRecord,
@@ -108,6 +109,7 @@ export const primaApi = {
   },
   createPropertyInterest: (input: CreatePropertyInterestRequest) =>
     request<CreatePropertyInterestResponse>('/v1/property-interests', { method: 'POST', body: JSON.stringify(input) }),
+  primaWashDays: (propertyId: string) => request<readonly PrimaWashDay[]>(`/v1/properties/${propertyId}/prima-wash-days`),
   services: () => request<readonly ServiceOffering[]>('/v1/services'),
   partners: (serviceCode?: string) =>
     request<readonly PartnerLocation[]>(`/v1/partners${serviceCode ? `?serviceCode=${encodeURIComponent(serviceCode)}` : ''}`),

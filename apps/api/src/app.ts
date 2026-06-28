@@ -273,6 +273,31 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    const propertyPrimaWashDaysMatch = requestUrl.pathname.match(/^\/v1\/properties\/([^/]+)\/prima-wash-days$/);
+
+    if (request.method === "GET" && propertyPrimaWashDaysMatch) {
+      try {
+        requireActor(request);
+        const propertyId = propertyPrimaWashDaysMatch[1];
+
+        if (!propertyId) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        const visibleStatuses = new Set(["planned", "approved", "active"]);
+        const now = Date.now();
+        const days = await options.repositories.condoOperations.listPrimaWashDays({ propertyId });
+
+        sendJson(response, 200, {
+          data: days.filter((day) => visibleStatuses.has(day.status) && new Date(day.endsAt).getTime() >= now),
+        });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/property-leads") {
       try {
         const actor = requireActor(request);

@@ -368,6 +368,39 @@ describe("Prima Wash API", () => {
     assert.equal(listPayload.data.filter((day) => createdIds.has(day.id)).length, 3);
   });
 
+  it("lets authenticated residents see upcoming Prima Wash Days for their condo", async () => {
+    const startsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const endsAt = new Date(startsAt.getTime() + 4 * 60 * 60 * 1000);
+    const createResponse = await fetch(`${baseUrl}/v1/internal/prima-wash-days`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        propertyId: "prop_sg_marina_one",
+        partnerLocationId: "loc_demo_001",
+        approvedServiceArea: "Basement visitor lots B1",
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        capacity: 12,
+        serviceCodes: ["wash_basic", "wash_premium"],
+        status: "approved",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<PrimaWashDay>;
+    const response = await fetch(`${baseUrl}/v1/properties/prop_sg_marina_one/prima-wash-days`, {
+      headers: customerHeaders,
+    });
+    const payload = (await response.json()) as ApiResponse<PrimaWashDay[]>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(response.status, 200);
+    assert.ok(payload.data.some((day) => day.id === createPayload.data.id));
+    assert.ok(payload.data.every((day) => day.propertyId === "prop_sg_marina_one"));
+    assert.ok(payload.data.every((day) => ["planned", "approved", "active"].includes(day.status)));
+  });
+
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {
     const session = await createCustomerSession("garage@example.com");
     const headers = {

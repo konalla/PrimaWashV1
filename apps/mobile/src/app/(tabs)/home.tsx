@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useCallback, useState } from 'react';
-import type { CustomerProfile, Vehicle } from '@prima-wash/contracts';
+import type { CustomerProfile, PrimaWashDay, Vehicle } from '@prima-wash/contracts';
 
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
@@ -16,17 +16,50 @@ export default function HomeScreen() {
   const { session } = useAuth();
   const [profileName, setProfileName] = useState(session?.user.displayName ?? 'there');
   const [profile, setProfile] = useState<CustomerProfile>();
+  const [primaWashDays, setPrimaWashDays] = useState<readonly PrimaWashDay[]>([]);
   const [vehicle, setVehicle] = useState<Vehicle>();
+  const nextPrimaWashDay = primaWashDays[0];
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([primaApi.vehicles(), primaApi.profile()])
-        .then(([vehicles, profile]) => {
+      let active = true;
+
+      async function loadHome() {
+        try {
+          const [vehicles, profile] = await Promise.all([primaApi.vehicles(), primaApi.profile()]);
+
+          if (!active) {
+            return;
+          }
+
           setVehicle(vehicles.find((item) => item.isPrimary) ?? vehicles[0]);
           setProfileName(profile.displayName);
           setProfile(profile);
-        })
-        .catch(() => setVehicle(undefined));
+          const propertyId = profile.residentialProfile?.propertyId;
+
+          if (propertyId && profile.residentialProfile?.residenceType === 'multi_unit_private') {
+            const days = await primaApi.primaWashDays(propertyId);
+
+            if (active) {
+              setPrimaWashDays(days);
+            }
+            return;
+          }
+
+          setPrimaWashDays([]);
+        } catch {
+          if (active) {
+            setVehicle(undefined);
+            setPrimaWashDays([]);
+          }
+        }
+      }
+
+      void loadHome();
+
+      return () => {
+        active = false;
+      };
     }, []),
   );
 
@@ -67,6 +100,24 @@ export default function HomeScreen() {
               : 'Use the marketplace flow to compare verified partners and appointment times.'}
           </Text>
         </Surface>
+      ) : null}
+
+      {nextPrimaWashDay ? (
+        <Pressable onPress={() => router.push('/condo/prima-wash-days' as never)}>
+          <Surface accent>
+            <View style={styles.inlineHeader}>
+              <Text style={styles.cardEyebrow}>PRIMA WASH DAY</Text>
+              <StatusChip>{nextPrimaWashDay.status}</StatusChip>
+            </View>
+            <Text style={styles.cardTitle}>{formatAppointment(nextPrimaWashDay.startsAt)}</Text>
+            <Text style={styles.body}>
+              {nextPrimaWashDay.propertyName} - {nextPrimaWashDay.approvedServiceArea}
+            </Text>
+            <Text style={styles.body}>
+              {nextPrimaWashDay.capacity} vehicles available for {nextPrimaWashDay.serviceCodes.map(formatService).join(', ')}.
+            </Text>
+          </Surface>
+        </Pressable>
       ) : null}
 
       <Surface accent>
@@ -129,8 +180,8 @@ export default function HomeScreen() {
       </Surface>
 
       <PrimaryButton
-        label={profile?.residentialProfile?.residenceType === 'multi_unit_private' ? 'Find trusted care nearby for now' : 'Find trusted care nearby'}
-        onPress={() => router.push('/partners')}
+        label={nextPrimaWashDay ? 'View condo service days' : profile?.residentialProfile?.residenceType === 'multi_unit_private' ? 'Find trusted care nearby for now' : 'Find trusted care nearby'}
+        onPress={() => (nextPrimaWashDay ? router.push('/condo/prima-wash-days' as never) : router.push('/partners'))}
       />
     </AppScreen>
   );

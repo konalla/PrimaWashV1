@@ -56,6 +56,7 @@ function Navigation() {
         <Stack.Screen name="booking/review" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/confirmed" options={{ animation: 'fade' }} />
         <Stack.Screen name="booking/detail" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="condo/prima-wash-days" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="garage/vehicle" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
         <Stack.Screen name="profile/payment-methods" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile/notifications" options={{ animation: 'slide_from_right' }} />
