@@ -272,6 +272,11 @@ export interface PartnerQueueItem {
   readonly scheduledStartAt: string;
 }
 
+export interface PrimaWashDayBookingItem extends PartnerQueueItem {
+  readonly primaWashDayId: string;
+  readonly scheduledEndAt: string;
+}
+
 export interface PartnerDashboardResponse {
   readonly partnerLocationId: string;
   readonly generatedAt: string;

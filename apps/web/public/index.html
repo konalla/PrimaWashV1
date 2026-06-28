@@ -868,13 +868,19 @@
 
       .wash-day-row {
         display: grid;
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: 1fr auto auto auto;
         gap: 12px;
         align-items: center;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         padding: 14px;
         background: var(--panel-2);
+      }
+
+      .wash-day-queue-note {
+        margin-top: 6px;
+        color: var(--soft);
+        font-size: 12px;
       }
 
       .confidence-item {
@@ -1655,6 +1661,9 @@
       const sidebarEl = document.querySelector(".sidebar");
       const currentMonth = new Date().toISOString().slice(0, 7);
       let dashboardCache = null;
+      let primaWashDaysCache = [];
+      let primaWashDayBookingsCache = [];
+      let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "attention";
       let selectedBookingId = null;
       let capacityTemplates = [];
@@ -1719,7 +1728,7 @@
       }
 
       async function loadDashboard() {
-        const [dashboard, availability, templates, mavo, condoLeads, primaWashDays] = await Promise.all([
+        const [dashboard, availability, templates, mavo, condoLeads, primaWashDays, primaWashDayBookings] = await Promise.all([
           requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
           requestJson(`/v1/partner/availability?${partnerQuery()}`),
           requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`),
@@ -1735,13 +1744,22 @@
             "x-prima-user-id": "usr_internal_dashboard",
             "x-prima-role": "internal",
           }),
+          requestJson(`/v1/internal/prima-wash-day-bookings`, {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          }),
         ]);
 
+        primaWashDayBookingsCache = primaWashDayBookings;
+        primaWashDaysCache = primaWashDays;
         renderDashboard(dashboard, mavo);
         renderCondoLeads(condoLeads);
-        renderPrimaWashDays(primaWashDays, condoLeads);
+        renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
         renderAvailability(availability);
         renderCapacityTemplates(templates);
+        if (selectedPrimaWashDayQueueId) {
+          renderPrimaWashDayQueue(selectedPrimaWashDayQueueId);
+        }
       }
 
       function renderCondoLeads(leads) {
@@ -1798,7 +1816,7 @@
                 .join("");
       }
 
-      function renderPrimaWashDays(days, leads) {
+      function renderPrimaWashDays(days, leads, bookings) {
         washDayPropertySelect.innerHTML = leads
           .map((lead) => `<option value="${lead.id}">${escapeHtml(lead.name)}</option>`)
           .join("");
@@ -1816,18 +1834,32 @@
           upcomingDays.length === 0
             ? `<div class="empty">No upcoming Prima Wash Days yet. Create as many property service days as the condo needs.</div>`
             : upcomingDays
-                .map(
-                  (day) => `
+                .map((day) => {
+                  const dayBookings = bookings.filter((booking) => booking.primaWashDayId === day.id);
+                  const confirmedCount = dayBookings.filter((booking) => ["confirmed", "checked_in", "in_service", "completed"].includes(booking.status)).length;
+                  const paymentBlockedCount = dayBookings.filter((booking) => booking.status === "pending_payment" && booking.paymentStatus !== "authorized").length;
+                  const bookedCount = dayBookings.filter((booking) => booking.status !== "cancelled").length;
+                  const openCount = Math.max(0, day.capacity - bookedCount);
+                  const usedPercent = day.capacity > 0 ? Math.min(100, Math.round((bookedCount / day.capacity) * 100)) : 0;
+
+                  return `
                     <article class="wash-day-row">
                       <div>
                         <strong>${escapeHtml(day.propertyName)}</strong>
+                        <div class="wash-day-queue-note">
+                          ${bookedCount}/${day.capacity} booked - ${confirmedCount} confirmed${paymentBlockedCount ? " - " + paymentBlockedCount + " payment blocked" : ""}
+                        </div>
+                        <div class="slot-meter" aria-label="${usedPercent}% Prima Wash Day capacity used">
+                          <span style="width: ${usedPercent}%"></span>
+                        </div>
                         <p class="muted">${formatDayHeading(day.startsAt)} · ${formatTime(day.startsAt)}-${formatTime(day.endsAt)} · ${escapeHtml(day.approvedServiceArea)}</p>
                       </div>
-                      <span class="lead-chip">${day.capacity} vehicles</span>
+                      <span class="lead-chip">${openCount} open</span>
                       <span class="lead-chip ${day.status === "planned" ? "is-warning" : ""}">${formatStatus(day.status)}</span>
+                      <button class="action" type="button" data-prima-wash-day-queue="${day.id}">View queue</button>
                     </article>
-                  `,
-                )
+                  `;
+                })
                 .join("");
       }
 
@@ -1866,6 +1898,10 @@
         `;
 
         const filteredQueue = filterQueue(data.queue, activeQueueFilter);
+
+        if (!selectedPrimaWashDayQueueId) {
+          resetMainQueueHeading();
+        }
 
         queueEl.innerHTML =
           filteredQueue.length === 0
@@ -1919,6 +1955,69 @@
                   `,
                 )
                 .join("");
+      }
+
+      function renderPrimaWashDayQueue(dayId) {
+        const day = primaWashDaysCache.find((item) => item.id === dayId);
+        const dayBookings = primaWashDayBookingsCache
+          .filter((booking) => booking.primaWashDayId === dayId)
+          .sort((a, b) => a.scheduledStartAt.localeCompare(b.scheduledStartAt));
+
+        selectedPrimaWashDayQueueId = dayId;
+        activeQueueFilter = "all";
+        document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
+          chip.setAttribute("aria-pressed", "false");
+        });
+
+        document.querySelector("#queue-section .section-heading h2").textContent = day
+          ? `${day.propertyName} queue`
+          : "Prima Wash Day queue";
+        document.querySelector("#queue-section .sync-label").textContent = day
+          ? `${formatDayHeading(day.startsAt)} at ${formatTime(day.startsAt)}`
+          : "Sorted by service time";
+
+        queueEl.innerHTML =
+          dayBookings.length === 0
+            ? `<div class="empty">No bookings yet for this Prima Wash Day.</div>`
+            : dayBookings
+                .map(
+                  (item) => `
+                    <div class="queue-row ${workflowClass(item)}" data-open-booking-id="${item.bookingId}" tabindex="0" role="button" aria-label="Open booking ${item.bookingId.slice(-6).toUpperCase()} details">
+                      <div class="queue-time">
+                        <strong>${formatTime(item.scheduledStartAt)}</strong>
+                        <span>${formatRelativeDay(item.scheduledStartAt)}</span>
+                      </div>
+                      <div>
+                        <strong>${formatService(item.serviceCode)}</strong><br />
+                        <span class="muted">Condo day booking - Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
+                        <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
+                        ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
+                      </div>
+                      <div class="queue-status">
+                        <div class="booking-stage">
+                          <span>Current stage</span>
+                          <strong>${formatStatus(item.status)}</strong>
+                        </div>
+                        ${renderWorkflowRail(item.status)}
+                        <div class="command-panel">
+                          <span class="action-hint">${item.actionHint}</span>
+                          <div class="queue-actions">
+                            <button class="action" type="button" data-open-booking-button="${item.bookingId}">View details</button>
+                            ${renderActionButton(item)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  `,
+                )
+                .join("");
+
+        document.querySelector("#queue-section").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function resetMainQueueHeading() {
+        document.querySelector("#queue-section .section-heading h2").textContent = "Bookings to manage";
+        document.querySelector("#queue-section .sync-label").textContent = "Sorted by urgency";
       }
 
       function renderAvailability(slots) {
@@ -2220,7 +2319,10 @@
       }
 
       function findQueueItem(bookingId) {
-        return dashboardCache?.data?.queue?.find((item) => item.bookingId === bookingId);
+        return (
+          dashboardCache?.data?.queue?.find((item) => item.bookingId === bookingId) ||
+          primaWashDayBookingsCache.find((item) => item.bookingId === bookingId)
+        );
       }
 
       function formatStatus(status) {
@@ -2443,6 +2545,13 @@
             savePropertyLeadButton.disabled = false;
           }
 
+          return;
+        }
+
+        const primaWashDayQueueButton = event.target.closest("button[data-prima-wash-day-queue]");
+
+        if (primaWashDayQueueButton) {
+          renderPrimaWashDayQueue(primaWashDayQueueButton.dataset.primaWashDayQueue);
           return;
         }
 
@@ -2913,6 +3022,7 @@
 
       document.querySelectorAll("[data-queue-filter]").forEach((button) => {
         button.addEventListener("click", () => {
+          selectedPrimaWashDayQueueId = null;
           activeQueueFilter = button.dataset.queueFilter;
           document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
             chip.setAttribute("aria-pressed", String(chip === button));
@@ -2927,6 +3037,7 @@
       partnerLocationSelect.addEventListener("change", async () => {
         selectedPartnerLocationId = partnerLocationSelect.value;
         selectedBookingId = null;
+        selectedPrimaWashDayQueueId = null;
         activeQueueFilter = "attention";
         document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
           chip.setAttribute("aria-pressed", String(chip.dataset.queueFilter === activeQueueFilter));

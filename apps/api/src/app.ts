@@ -27,6 +27,7 @@ import type {
   PartnerAvailabilitySlot,
   PaymentIntent,
   PaymentStatus,
+  PrimaWashDayBookingItem,
   ResidenceType,
   SchedulingConfig,
   ServiceRecord,
@@ -386,6 +387,24 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const propertyId = requestUrl.searchParams.get("propertyId") ?? undefined;
         sendJson(response, 200, {
           data: await options.repositories.condoOperations.listPrimaWashDays(propertyId ? { propertyId } : {}),
+        });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-day-bookings") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const primaWashDayId = requestUrl.searchParams.get("primaWashDayId") ?? undefined;
+        const bookings = (await options.repositories.bookings.list())
+          .filter((booking) => booking.primaWashDayId)
+          .filter((booking) => !primaWashDayId || booking.primaWashDayId === primaWashDayId);
+        const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
+        sendJson(response, 200, {
+          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -2073,6 +2092,32 @@ async function buildPaymentLookup(
   );
 
   return new Map(entries.filter((entry): entry is readonly [string, PaymentIntent] => Boolean(entry)));
+}
+
+function buildPrimaWashDayBookingItems(
+  bookings: readonly Booking[],
+  paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
+): readonly PrimaWashDayBookingItem[] {
+  return bookings
+    .filter((booking): booking is Booking & { readonly primaWashDayId: string } => Boolean(booking.primaWashDayId))
+    .slice()
+    .sort((a, b) => a.scheduledStartAt.localeCompare(b.scheduledStartAt) || a.createdAt.localeCompare(b.createdAt))
+    .map((booking) => {
+      const payment = paymentByBookingId.get(booking.id);
+
+      return {
+        bookingId: booking.id,
+        primaWashDayId: booking.primaWashDayId,
+        vehicleId: booking.vehicleId,
+        ownerId: booking.ownerId,
+        serviceCode: booking.serviceCode,
+        status: booking.status,
+        ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
+        actionHint: getPartnerActionHint(booking, payment),
+        scheduledStartAt: booking.scheduledStartAt,
+        scheduledEndAt: booking.scheduledEndAt,
+      };
+    });
 }
 
 function getPartnerActionHint(booking: Booking, payment?: PaymentIntent): string {
