@@ -642,7 +642,8 @@
       }
 
       .field input,
-      .field select {
+      .field select,
+      .field textarea {
         width: 100%;
         min-height: 46px;
         border: 1px solid var(--line);
@@ -650,6 +651,11 @@
         padding: 10px 12px;
         background: rgba(0, 0, 0, 0.24);
         color: var(--ink);
+      }
+
+      .field textarea {
+        min-height: 92px;
+        resize: vertical;
       }
 
       .dialog-actions {
@@ -1609,6 +1615,83 @@
       </form>
     </dialog>
 
+    <dialog id="ops-profile-dialog" aria-labelledby="ops-profile-dialog-title">
+      <form class="dialog-body" id="ops-profile-form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Condo operations</p>
+            <h2 id="ops-profile-dialog-title">Operational profile</h2>
+            <p class="section-description" id="ops-profile-property-name">Configure management-approved site rules.</p>
+          </div>
+          <button class="action" type="button" data-close-ops-dialog>Close</button>
+        </div>
+        <input type="hidden" name="propertyId" />
+        <div class="dialog-grid">
+          <div class="field field-wide">
+            <label for="ops-approved-areas">Approved service areas</label>
+            <textarea id="ops-approved-areas" name="approvedServiceAreas" placeholder="One area per line, e.g. Basement visitor lots B1 near lift lobby"></textarea>
+          </div>
+          <div class="field">
+            <label for="ops-water-policy">Water policy</label>
+            <select id="ops-water-policy" name="waterPolicy">
+              <option value="rinseless_required">Rinseless required</option>
+              <option value="no_water_access">No water access</option>
+              <option value="water_access_available">Water access available</option>
+              <option value="standard">Standard</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ops-movement-policy">Vehicle movement</label>
+            <select id="ops-movement-policy" name="vehicleMovementPolicy">
+              <option value="not_allowed">No movement allowed</option>
+              <option value="within_property_allowed">Within property allowed</option>
+              <option value="pickup_return_allowed">Pickup and return allowed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ops-simultaneous-capacity">Simultaneous capacity</label>
+            <input id="ops-simultaneous-capacity" name="simultaneousVehicleCapacity" type="number" min="1" value="1" required />
+          </div>
+          <div class="field">
+            <label for="ops-services">Available services</label>
+            <select id="ops-services" name="availableServiceCodes">
+              <option value="wash_basic,wash_premium">Basic + premium wash</option>
+              <option value="wash_basic">Basic wash</option>
+              <option value="wash_premium">Premium wash</option>
+              <option value="detail_interior">Interior detail</option>
+              <option value="wash_basic,wash_premium,detail_interior">All services</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ops-onsite">On-site service</label>
+            <select id="ops-onsite" name="onsiteServiceAllowed">
+              <option value="true">Allowed</option>
+              <option value="false">Not allowed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ops-pickup-return">Pickup / return</label>
+            <select id="ops-pickup-return" name="pickupReturnAllowed">
+              <option value="false">Not allowed</option>
+              <option value="true">Allowed</option>
+            </select>
+          </div>
+          <div class="field field-wide">
+            <label for="ops-instructions">Technician instructions</label>
+            <textarea id="ops-instructions" name="operatingInstructions" placeholder="Security check-in, staging, cones, lift lobby notes, timing rules"></textarea>
+          </div>
+          <div class="field field-wide">
+            <label for="ops-safety">Safety requirements</label>
+            <textarea id="ops-safety" name="safetyRequirements" placeholder="Walkways clear, water containment, equipment restrictions"></textarea>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="action" type="button" data-close-ops-dialog>Cancel</button>
+          <button class="action primary" type="submit">Save operations profile</button>
+        </div>
+      </form>
+    </dialog>
+
     <script>
       const apiBase = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:3001";
       const partnerLocations = {
@@ -1653,6 +1736,9 @@
       const capacityTemplateSelect = document.querySelector("#capacity-template-select");
       const bookingDialog = document.querySelector("#booking-dialog");
       const bookingDetailEl = document.querySelector("#booking-detail");
+      const opsProfileDialog = document.querySelector("#ops-profile-dialog");
+      const opsProfileForm = document.querySelector("#ops-profile-form");
+      const opsProfilePropertyNameEl = document.querySelector("#ops-profile-property-name");
       const plannerPreviewEl = document.querySelector("#planner-preview");
       const plannerSlotCountEl = document.querySelector("#planner-slot-count");
       const plannerVehicleCountEl = document.querySelector("#planner-vehicle-count");
@@ -1661,6 +1747,7 @@
       const sidebarEl = document.querySelector(".sidebar");
       const currentMonth = new Date().toISOString().slice(0, 7);
       let dashboardCache = null;
+      let condoLeadsCache = [];
       let primaWashDaysCache = [];
       let primaWashDayBookingsCache = [];
       let selectedPrimaWashDayQueueId = null;
@@ -1752,6 +1839,7 @@
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
+        condoLeadsCache = condoLeads;
         renderDashboard(dashboard, mavo);
         renderCondoLeads(condoLeads);
         renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
@@ -1808,6 +1896,7 @@
                         </div>
                       </form>
                       <div class="queue-actions">
+                        <button class="action" type="button" data-configure-ops-profile="${lead.id}">Configure ops</button>
                         <button class="action primary-command" type="button" data-save-property-lead="${lead.id}">Save lead</button>
                       </div>
                     </article>
@@ -2325,6 +2414,69 @@
         );
       }
 
+      async function openOperationalProfileDialog(propertyId) {
+        const lead = condoLeadsCache.find((item) => item.id === propertyId);
+        opsProfileForm.reset();
+        opsProfileForm.elements.propertyId.value = propertyId;
+        opsProfilePropertyNameEl.textContent = lead
+          ? `${lead.name} - configure management-approved site rules.`
+          : "Configure management-approved site rules.";
+        opsProfileDialog.showModal();
+
+        try {
+          const profile = await fetchOperationalProfile(propertyId);
+          populateOperationalProfileForm(profile);
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      }
+
+      function populateOperationalProfileForm(profile) {
+        const defaults = {
+          approvedServiceAreas: [],
+          waterPolicy: "rinseless_required",
+          vehicleMovementPolicy: "not_allowed",
+          simultaneousVehicleCapacity: 1,
+          availableServiceCodes: ["wash_basic", "wash_premium"],
+          onsiteServiceAllowed: true,
+          pickupReturnAllowed: false,
+          operatingInstructions: "",
+          safetyRequirements: "",
+        };
+        const values = { ...defaults, ...(profile || {}) };
+
+        opsProfileForm.elements.approvedServiceAreas.value = values.approvedServiceAreas.join("\n");
+        opsProfileForm.elements.waterPolicy.value = values.waterPolicy;
+        opsProfileForm.elements.vehicleMovementPolicy.value = values.vehicleMovementPolicy;
+        opsProfileForm.elements.simultaneousVehicleCapacity.value = String(values.simultaneousVehicleCapacity);
+        opsProfileForm.elements.availableServiceCodes.value = values.availableServiceCodes.join(",");
+        opsProfileForm.elements.onsiteServiceAllowed.value = String(values.onsiteServiceAllowed);
+        opsProfileForm.elements.pickupReturnAllowed.value = String(values.pickupReturnAllowed);
+        opsProfileForm.elements.operatingInstructions.value = values.operatingInstructions || "";
+        opsProfileForm.elements.safetyRequirements.value = values.safetyRequirements || "";
+      }
+
+      function readOperationalProfileInput() {
+        const form = new FormData(opsProfileForm);
+        return {
+          approvedServiceAreas: String(form.get("approvedServiceAreas") || "")
+            .split(/\r?\n/)
+            .map((area) => area.trim())
+            .filter(Boolean),
+          waterPolicy: String(form.get("waterPolicy")),
+          vehicleMovementPolicy: String(form.get("vehicleMovementPolicy")),
+          simultaneousVehicleCapacity: Number(form.get("simultaneousVehicleCapacity")),
+          availableServiceCodes: String(form.get("availableServiceCodes") || "")
+            .split(",")
+            .map((service) => service.trim())
+            .filter(Boolean),
+          onsiteServiceAllowed: String(form.get("onsiteServiceAllowed")) === "true",
+          pickupReturnAllowed: String(form.get("pickupReturnAllowed")) === "true",
+          operatingInstructions: String(form.get("operatingInstructions") || "").trim(),
+          safetyRequirements: String(form.get("safetyRequirements") || "").trim(),
+        };
+      }
+
       function formatStatus(status) {
         return status.replaceAll("_", " ");
       }
@@ -2488,6 +2640,45 @@
         return payload.data;
       }
 
+      async function fetchOperationalProfile(propertyId) {
+        const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/operational-profile`, {
+          headers: {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          },
+        });
+        const payload = await response.json();
+
+        if (response.status === 404) {
+          return null;
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Operational profile load failed");
+        }
+
+        return payload.data;
+      }
+
+      async function saveOperationalProfile(propertyId, input) {
+        const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/operational-profile`, {
+          method: "PATCH",
+          headers: {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Operational profile save failed");
+        }
+
+        return payload.data;
+      }
+
       async function cancelBooking(bookingId) {
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/cancel`, {
           method: "POST",
@@ -2543,6 +2734,20 @@
             showToast(error.message, "error");
           } finally {
             savePropertyLeadButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const configureOpsButton = event.target.closest("button[data-configure-ops-profile]");
+
+        if (configureOpsButton) {
+          configureOpsButton.disabled = true;
+
+          try {
+            await openOperationalProfileDialog(configureOpsButton.dataset.configureOpsProfile);
+          } finally {
+            configureOpsButton.disabled = false;
           }
 
           return;
@@ -2934,6 +3139,10 @@
         button.addEventListener("click", () => availabilityDialog.close());
       });
 
+      document.querySelectorAll("[data-close-ops-dialog]").forEach((button) => {
+        button.addEventListener("click", () => opsProfileDialog.close());
+      });
+
       availabilityForm.addEventListener("input", updatePlannerPreview);
 
       capacityTemplateSelect.addEventListener("change", () => {
@@ -3013,6 +3222,23 @@
           });
           await loadDashboard();
           showToast("Prima Wash Day created.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      opsProfileForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = event.submitter;
+        const propertyId = opsProfileForm.elements.propertyId.value;
+        submitButton.disabled = true;
+
+        try {
+          await saveOperationalProfile(propertyId, readOperationalProfileInput());
+          opsProfileDialog.close();
+          showToast("Operational profile saved.");
         } catch (error) {
           showToast(error.message, "error");
         } finally {
