@@ -1,4 +1,4 @@
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { colors } from '@/constants/design';
@@ -8,9 +8,9 @@ import { LocationProvider } from '@/context/location-context';
 import { NotificationProvider } from '@/context/notification-context';
 
 const primaTheme = {
-  ...DarkTheme,
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
+    ...DefaultTheme.colors,
     background: colors.canvas,
     card: colors.canvas,
     border: colors.border,
@@ -26,7 +26,7 @@ export default function RootLayout() {
         <LocationProvider>
           <NotificationProvider>
             <BookingProvider>
-              <StatusBar style="light" />
+              <StatusBar style="dark" />
               <Navigation />
             </BookingProvider>
           </NotificationProvider>
