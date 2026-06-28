@@ -9,11 +9,12 @@ export interface ApiErrorResponse {
   readonly details?: unknown;
 }
 
-export type ActorRole = "customer" | "partner" | "fleet" | "internal";
+export type ActorRole = "customer" | "partner" | "fleet" | "internal" | "property_manager";
 
 export interface Actor {
   readonly userId: string;
   readonly organizationId?: string;
+  readonly propertyId?: string;
   readonly role: ActorRole;
 }
 
@@ -275,6 +276,31 @@ export interface PartnerQueueItem {
 export interface PrimaWashDayBookingItem extends PartnerQueueItem {
   readonly primaWashDayId: string;
   readonly scheduledEndAt: string;
+}
+
+export interface PropertyManagementProperty {
+  readonly id: string;
+  readonly name: string;
+  readonly addressLine1?: string;
+  readonly city: string;
+  readonly region: string;
+  readonly countryCode: string;
+  readonly activationStatus: PropertyActivationStatus;
+  readonly interestCount: number;
+}
+
+export interface PropertyManagementPrimaWashDay extends PrimaWashDay {
+  readonly bookedCount: number;
+  readonly openCount: number;
+  readonly confirmedCount: number;
+  readonly paymentBlockedCount: number;
+}
+
+export interface PropertyManagementDashboardResponse {
+  readonly property: PropertyManagementProperty;
+  readonly operationalProfile?: CondoOperationalProfile;
+  readonly upcomingPrimaWashDays: readonly PropertyManagementPrimaWashDay[];
+  readonly generatedAt: string;
 }
 
 export interface PartnerDashboardResponse {

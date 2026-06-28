@@ -22,11 +22,13 @@ export function getActor(request: IncomingMessage): Actor | undefined {
   const roleHeader = getHeaderValue(request, "x-prima-role");
   const role = isActorRole(roleHeader) ? roleHeader : "customer";
   const organizationId = getHeaderValue(request, "x-prima-organization-id");
+  const propertyId = getHeaderValue(request, "x-prima-property-id");
 
   return {
     userId,
     role,
     ...(organizationId ? { organizationId } : {}),
+    ...(propertyId ? { propertyId } : {}),
   };
 }
 
@@ -74,6 +76,20 @@ export function assertPartnerOrInternal(actor: Actor): void {
   }
 }
 
+export function assertPropertyManagerAccess(actor: Actor, propertyId: string): void {
+  if (actor.role === "internal") {
+    return;
+  }
+
+  if (actor.role !== "property_manager") {
+    throw new Error("property_manager_role_required");
+  }
+
+  if (actor.propertyId !== propertyId) {
+    throw new Error("forbidden_property_scope");
+  }
+}
+
 function getHeaderValue(request: IncomingMessage, name: string): string | undefined {
   const value = request.headers[name];
 
@@ -85,5 +101,5 @@ function getHeaderValue(request: IncomingMessage, name: string): string | undefi
 }
 
 function isActorRole(value: string | undefined): value is ActorRole {
-  return value === "customer" || value === "partner" || value === "fleet" || value === "internal";
+  return value === "customer" || value === "partner" || value === "fleet" || value === "internal" || value === "property_manager";
 }

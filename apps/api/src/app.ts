@@ -28,6 +28,7 @@ import type {
   PaymentIntent,
   PaymentStatus,
   PrimaWashDayBookingItem,
+  PropertyManagementDashboardResponse,
   ResidenceType,
   SchedulingConfig,
   ServiceRecord,
@@ -40,7 +41,7 @@ import type {
   UpdateCapacityTemplateRequest,
   UpdateSchedulingConfigRequest,
 } from "@prima-wash/contracts";
-import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, requireActor } from "./http/auth.js";
+import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, assertPropertyManagerAccess, requireActor } from "./http/auth.js";
 import { readJsonBody } from "./http/body.js";
 import { attachRequestLogging, type RequestContext } from "./http/request-log.js";
 import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
@@ -295,6 +296,75 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         });
       } catch (error) {
         sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/management/property-dashboard") {
+      try {
+        const actor = requireActor(request);
+        const propertyId = requestUrl.searchParams.get("propertyId") ?? actor.propertyId;
+
+        if (!propertyId) {
+          sendError(response, 400, "validation_failed", "propertyId is required");
+          return;
+        }
+
+        assertPropertyManagerAccess(actor, propertyId);
+        const dashboard = await buildPropertyManagementDashboard(options.repositories, propertyId);
+
+        if (!dashboard) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        sendJson(response, 200, { data: dashboard });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    const managementOperationalProfileMatch = requestUrl.pathname.match(/^\/v1\/management\/properties\/([^/]+)\/operational-profile$/);
+
+    if (request.method === "PATCH" && managementOperationalProfileMatch) {
+      try {
+        const actor = requireActor(request);
+        const propertyId = managementOperationalProfileMatch[1];
+
+        if (!propertyId) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        assertPropertyManagerAccess(actor, propertyId);
+        const input = await readJsonBody<UpdateCondoOperationalProfileRequest>(request);
+        const errors = validateOperationalProfile(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Operational profile payload is invalid", errors);
+          return;
+        }
+
+        const profile = await options.repositories.condoOperations.upsertOperationalProfile(propertyId, input);
+        await options.repositories.audit.record({
+          actor,
+          action: "property.operational_profile_manager_updated",
+          resourceType: "property",
+          resourceId: propertyId,
+          requestId: requestContext.requestId,
+          metadata: {
+            approvedServiceAreaCount: profile.approvedServiceAreas.length,
+            simultaneousVehicleCapacity: profile.simultaneousVehicleCapacity,
+            onsiteServiceAllowed: profile.onsiteServiceAllowed,
+            pickupReturnAllowed: profile.pickupReturnAllowed,
+          },
+        });
+        sendJson(response, 200, { data: profile });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Operational profile request could not be processed", String(error));
+        }
       }
       return;
     }
@@ -1931,6 +2001,16 @@ function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown
     return true;
   }
 
+  if (message === "property_manager_role_required") {
+    sendError(response, 403, message, "Property manager role is required");
+    return true;
+  }
+
+  if (message === "forbidden_property_scope") {
+    sendError(response, 403, message, "Actor is not allowed to access this property");
+    return true;
+  }
+
   return false;
 }
 
@@ -2118,6 +2198,61 @@ function buildPrimaWashDayBookingItems(
         scheduledEndAt: booking.scheduledEndAt,
       };
     });
+}
+
+async function buildPropertyManagementDashboard(
+  repositories: Repositories,
+  propertyId: string,
+): Promise<PropertyManagementDashboardResponse | undefined> {
+  const property = await repositories.properties.get(propertyId);
+
+  if (!property) {
+    return undefined;
+  }
+
+  const operationalProfile = await repositories.condoOperations.getOperationalProfile(propertyId);
+  const days = await repositories.condoOperations.listPrimaWashDays({ propertyId });
+  const bookings = (await repositories.bookings.list()).filter((booking) => booking.primaWashDayId);
+  const paymentByBookingId = await buildPaymentLookup(repositories, bookings);
+  const visibleStatuses = new Set(["planned", "approved", "active"]);
+  const now = Date.now();
+
+  return {
+    property: {
+      id: property.id,
+      name: property.name,
+      ...(property.addressLine1 ? { addressLine1: property.addressLine1 } : {}),
+      city: property.city,
+      region: property.region,
+      countryCode: property.countryCode,
+      activationStatus: property.activationStatus,
+      interestCount: property.interestCount,
+    },
+    ...(operationalProfile ? { operationalProfile } : {}),
+    upcomingPrimaWashDays: days
+      .filter((day) => visibleStatuses.has(day.status) && new Date(day.endsAt).getTime() >= now)
+      .map((day) => {
+        const dayBookings = bookings.filter((booking) => booking.primaWashDayId === day.id);
+        const bookedCount = dayBookings.filter((booking) => booking.status !== "cancelled").length;
+        const confirmedCount = dayBookings.filter((booking) =>
+          ["confirmed", "checked_in", "in_service", "completed"].includes(booking.status),
+        ).length;
+        const paymentBlockedCount = dayBookings.filter((booking) => {
+          const payment = paymentByBookingId.get(booking.id);
+          return booking.status === "pending_payment" && payment?.status !== "authorized";
+        }).length;
+
+        return {
+          ...day,
+          bookedCount,
+          openCount: Math.max(0, day.capacity - bookedCount),
+          confirmedCount,
+          paymentBlockedCount,
+        };
+      })
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 function getPartnerActionHint(booking: Booking, payment?: PaymentIntent): string {

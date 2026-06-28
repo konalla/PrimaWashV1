@@ -21,6 +21,7 @@ import type {
   PaymentIntent,
   PrimaWashDayBookingItem,
   Property,
+  PropertyManagementDashboardResponse,
   PropertyLead,
   CondoOperationalProfile,
   PrimaWashDay,
@@ -50,6 +51,12 @@ const partnerHeaders = {
 const internalHeaders = {
   "x-prima-user-id": "usr_internal_001",
   "x-prima-role": "internal",
+};
+
+const propertyManagerHeaders = {
+  "x-prima-user-id": "mgr_marina_001",
+  "x-prima-role": "property_manager",
+  "x-prima-property-id": "prop_sg_marina_one",
 };
 
 describe("Prima Wash API", () => {
@@ -329,6 +336,59 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.approvedServiceAreas.length, 2);
     assert.equal(payload.data.simultaneousVehicleCapacity, 4);
     assert.equal(payload.data.pickupReturnAllowed, true);
+  });
+
+  it("lets property managers view a scoped condo management dashboard without internal lead fields", async () => {
+    const response = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_marina_one`, {
+      headers: propertyManagerHeaders,
+    });
+    const payload = (await response.json()) as ApiResponse<PropertyManagementDashboardResponse>;
+    const serialized = JSON.stringify(payload.data);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.property.id, "prop_sg_marina_one");
+    assert.equal(payload.data.property.name, "Marina One Residences");
+    assert.ok(!serialized.includes("internalOwner"));
+    assert.ok(!serialized.includes("outreachNotes"));
+    assert.ok(Array.isArray(payload.data.upcomingPrimaWashDays));
+  });
+
+  it("blocks property managers from viewing another condo dashboard", async () => {
+    const response = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_reflections`, {
+      headers: propertyManagerHeaders,
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "forbidden_property_scope");
+  });
+
+  it("lets property managers update their scoped operational profile", async () => {
+    const response = await fetch(`${baseUrl}/v1/management/properties/prop_sg_marina_one/operational-profile`, {
+      method: "PATCH",
+      headers: {
+        ...propertyManagerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        approvedServiceAreas: ["Visitor lots near Tower 1"],
+        operatingInstructions: "Management office requires security notification before setup.",
+        waterPolicy: "no_water_access",
+        vehicleMovementPolicy: "within_property_allowed",
+        onsiteServiceAllowed: true,
+        pickupReturnAllowed: false,
+        simultaneousVehicleCapacity: 2,
+        availableServiceCodes: ["wash_basic"],
+        safetyRequirements: "Keep resident lift lobby clear.",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<CondoOperationalProfile>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.propertyId, "prop_sg_marina_one");
+    assert.deepEqual(payload.data.approvedServiceAreas, ["Visitor lots near Tower 1"]);
+    assert.equal(payload.data.waterPolicy, "no_water_access");
+    assert.equal(payload.data.vehicleMovementPolicy, "within_property_allowed");
   });
 
   it("allows multiple Prima Wash Days for the same condo without a weekly or monthly cap", async () => {

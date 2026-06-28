@@ -1693,7 +1693,10 @@
     </dialog>
 
     <script>
-      const apiBase = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:3001";
+      const urlParams = new URLSearchParams(location.search);
+      const apiBase = urlParams.get("api") || "http://127.0.0.1:3001";
+      const portalMode = urlParams.get("portal") || "admin";
+      const managementPropertyId = urlParams.get("propertyId") || "prop_sg_marina_one";
       const partnerLocations = {
         loc_demo_001: {
           name: "Prima Wash Central",
@@ -1755,7 +1758,7 @@
       let selectedBookingId = null;
       let capacityTemplates = [];
       let selectedPartnerLocationId =
-        new URLSearchParams(window.location.search).get("partnerLocationId") || partnerLocationSelect.value;
+        urlParams.get("partnerLocationId") || partnerLocationSelect.value;
       if (!partnerLocations[selectedPartnerLocationId]) {
         selectedPartnerLocationId = "loc_demo_001";
       }
@@ -1814,6 +1817,32 @@
         return payload.data;
       }
 
+      function managementHeaders() {
+        return {
+          "x-prima-user-id": "mgr_demo_001",
+          "x-prima-role": "property_manager",
+          "x-prima-property-id": managementPropertyId,
+        };
+      }
+
+      async function managementRequestJson(path, init = {}) {
+        const response = await fetch(`${apiBase}${path}`, {
+          ...init,
+          headers: {
+            ...managementHeaders(),
+            ...(init.body ? { "content-type": "application/json" } : {}),
+            ...(init.headers || {}),
+          },
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Request failed");
+        }
+
+        return payload.data;
+      }
+
       async function loadDashboard() {
         const [dashboard, availability, templates, mavo, condoLeads, primaWashDays, primaWashDayBookings] = await Promise.all([
           requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
@@ -1848,6 +1877,215 @@
         if (selectedPrimaWashDayQueueId) {
           renderPrimaWashDayQueue(selectedPrimaWashDayQueueId);
         }
+      }
+
+      async function loadManagementPortal() {
+        const dashboard = await managementRequestJson(
+          `/v1/management/property-dashboard?propertyId=${encodeURIComponent(managementPropertyId)}`,
+        );
+        renderManagementPortal(dashboard);
+      }
+
+      function renderManagementPortal(data) {
+        const profile = data.operationalProfile || {
+          approvedServiceAreas: [],
+          waterPolicy: "rinseless_required",
+          vehicleMovementPolicy: "not_allowed",
+          simultaneousVehicleCapacity: 1,
+          availableServiceCodes: ["wash_basic", "wash_premium"],
+          onsiteServiceAllowed: true,
+          pickupReturnAllowed: false,
+          operatingInstructions: "",
+          safetyRequirements: "",
+        };
+
+        document.body.innerHTML = `
+          <main style="margin: 0 auto; padding: 28px 0 48px;">
+            <header class="topbar" style="position: static;">
+              <div class="location-selector">
+                <span class="location-kicker">Office management portal</span>
+                <strong>${escapeHtml(data.property.name)}</strong>
+              </div>
+              <div class="topbar-actions">
+                <span class="pill"><span class="dot"></span> ${formatStatus(data.property.activationStatus)}</span>
+              </div>
+            </header>
+
+            <section class="hero" id="overview">
+              <div class="card">
+                <p class="eyebrow">Condo operations</p>
+                <h1>${escapeHtml(data.property.name)}</h1>
+                <p>${escapeHtml(data.property.addressLine1 || data.property.region)}. Review approved service rules, upcoming Prima Wash Days, and resident demand.</p>
+              </div>
+              <aside class="card">
+                <p class="eyebrow">Property status</p>
+                <div class="confidence">
+                  <div class="confidence-item"><span class="muted">Resident signals</span><strong>${data.property.interestCount}</strong></div>
+                  <div class="confidence-item"><span class="muted">Upcoming days</span><strong>${data.upcomingPrimaWashDays.length}</strong></div>
+                  <div class="confidence-item"><span class="muted">Service capacity</span><strong>${profile.simultaneousVehicleCapacity}</strong></div>
+                  <div class="confidence-item"><span class="muted">Last synced</span><strong>${new Date(data.generatedAt).toLocaleTimeString()}</strong></div>
+                </div>
+              </aside>
+            </section>
+
+            <section class="card availability-card">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Approved operating rules</p>
+                  <h2>Site profile</h2>
+                  <p class="section-description">These rules control how Prima Wash operates inside your property.</p>
+                </div>
+                <span class="pill">${formatStatus(profile.waterPolicy)}</span>
+              </div>
+              <form class="dialog-grid" id="management-profile-form">
+                <div class="field field-wide">
+                  <label for="management-approved-areas">Approved service areas</label>
+                  <textarea id="management-approved-areas" name="approvedServiceAreas">${escapeHtml(profile.approvedServiceAreas.join("\n"))}</textarea>
+                </div>
+                <div class="field">
+                  <label for="management-water-policy">Water policy</label>
+                  <select id="management-water-policy" name="waterPolicy">${renderOptions(["rinseless_required", "no_water_access", "water_access_available", "standard"], profile.waterPolicy)}</select>
+                </div>
+                <div class="field">
+                  <label for="management-movement-policy">Vehicle movement</label>
+                  <select id="management-movement-policy" name="vehicleMovementPolicy">${renderOptions(["not_allowed", "within_property_allowed", "pickup_return_allowed"], profile.vehicleMovementPolicy)}</select>
+                </div>
+                <div class="field">
+                  <label for="management-capacity">Simultaneous capacity</label>
+                  <input id="management-capacity" name="simultaneousVehicleCapacity" type="number" min="1" value="${profile.simultaneousVehicleCapacity}" required />
+                </div>
+                <div class="field">
+                  <label for="management-services">Services</label>
+                  <select id="management-services" name="availableServiceCodes">${renderServiceMixOptions(profile.availableServiceCodes)}</select>
+                </div>
+                <div class="field">
+                  <label for="management-onsite">On-site service</label>
+                  <select id="management-onsite" name="onsiteServiceAllowed">${renderBooleanOptions(profile.onsiteServiceAllowed)}</select>
+                </div>
+                <div class="field">
+                  <label for="management-pickup-return">Pickup / return</label>
+                  <select id="management-pickup-return" name="pickupReturnAllowed">${renderBooleanOptions(profile.pickupReturnAllowed)}</select>
+                </div>
+                <div class="field field-wide">
+                  <label for="management-instructions">Technician instructions</label>
+                  <textarea id="management-instructions" name="operatingInstructions">${escapeHtml(profile.operatingInstructions || "")}</textarea>
+                </div>
+                <div class="field field-wide">
+                  <label for="management-safety">Safety requirements</label>
+                  <textarea id="management-safety" name="safetyRequirements">${escapeHtml(profile.safetyRequirements || "")}</textarea>
+                </div>
+                <div class="dialog-actions field-wide">
+                  <button class="action primary" type="submit">Save profile</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="card availability-card">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Scheduled operations</p>
+                  <h2>Prima Wash Days</h2>
+                  <p class="section-description">Upcoming approved service windows at your property.</p>
+                </div>
+              </div>
+              <div class="cluster">
+                ${
+                  data.upcomingPrimaWashDays.length === 0
+                    ? `<div class="empty">No upcoming Prima Wash Days have been scheduled yet.</div>`
+                    : data.upcomingPrimaWashDays
+                        .map(
+                          (day) => `
+                            <article class="wash-day-row">
+                              <div>
+                                <strong>${formatDayHeading(day.startsAt)}</strong>
+                                <p class="muted">${formatTime(day.startsAt)}-${formatTime(day.endsAt)} - ${escapeHtml(day.approvedServiceArea)}</p>
+                                <div class="wash-day-queue-note">${day.bookedCount}/${day.capacity} booked - ${day.confirmedCount} confirmed${day.paymentBlockedCount ? " - " + day.paymentBlockedCount + " payment blocked" : ""}</div>
+                              </div>
+                              <span class="lead-chip">${day.openCount} open</span>
+                              <span class="lead-chip ${day.status === "planned" ? "is-warning" : ""}">${formatStatus(day.status)}</span>
+                            </article>
+                          `,
+                        )
+                        .join("")
+                }
+              </div>
+            </section>
+
+            <div class="toast" id="management-toast" role="status" aria-live="polite"></div>
+          </main>
+        `;
+
+        document.querySelector("#management-profile-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const button = event.submitter;
+          button.disabled = true;
+
+          try {
+            await managementRequestJson(`/v1/management/properties/${encodeURIComponent(data.property.id)}/operational-profile`, {
+              method: "PATCH",
+              body: JSON.stringify(readManagementProfileInput(event.currentTarget)),
+            });
+            showManagementToast("Profile saved.");
+            await loadManagementPortal();
+          } catch (error) {
+            showManagementToast(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      }
+
+      function readManagementProfileInput(formElement) {
+        const form = new FormData(formElement);
+        return {
+          approvedServiceAreas: String(form.get("approvedServiceAreas") || "")
+            .split(/\r?\n/)
+            .map((area) => area.trim())
+            .filter(Boolean),
+          waterPolicy: String(form.get("waterPolicy")),
+          vehicleMovementPolicy: String(form.get("vehicleMovementPolicy")),
+          simultaneousVehicleCapacity: Number(form.get("simultaneousVehicleCapacity")),
+          availableServiceCodes: String(form.get("availableServiceCodes") || "")
+            .split(",")
+            .map((service) => service.trim())
+            .filter(Boolean),
+          onsiteServiceAllowed: String(form.get("onsiteServiceAllowed")) === "true",
+          pickupReturnAllowed: String(form.get("pickupReturnAllowed")) === "true",
+          operatingInstructions: String(form.get("operatingInstructions") || "").trim(),
+          safetyRequirements: String(form.get("safetyRequirements") || "").trim(),
+        };
+      }
+
+      function renderOptions(options, selected) {
+        return options.map((option) => `<option value="${option}" ${option === selected ? "selected" : ""}>${formatStatus(option)}</option>`).join("");
+      }
+
+      function renderBooleanOptions(selected) {
+        return `
+          <option value="true" ${selected ? "selected" : ""}>Allowed</option>
+          <option value="false" ${!selected ? "selected" : ""}>Not allowed</option>
+        `;
+      }
+
+      function renderServiceMixOptions(selectedServices) {
+        const selected = selectedServices.join(",");
+        const mixes = [
+          ["wash_basic,wash_premium", "Basic + premium wash"],
+          ["wash_basic", "Basic wash"],
+          ["wash_premium", "Premium wash"],
+          ["detail_interior", "Interior detail"],
+          ["wash_basic,wash_premium,detail_interior", "All services"],
+        ];
+        return mixes.map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+      }
+
+      function showManagementToast(message, tone = "success") {
+        const managementToast = document.querySelector("#management-toast");
+        managementToast.textContent = `${tone === "error" ? "Could not update: " : ""}${message}`;
+        managementToast.style.borderColor = tone === "error" ? "rgba(255, 153, 153, 0.5)" : "rgba(102, 245, 160, 0.4)";
+        managementToast.classList.add("is-visible");
+        window.clearTimeout(showManagementToast.timeoutId);
+        showManagementToast.timeoutId = window.setTimeout(() => managementToast.classList.remove("is-visible"), 3600);
       }
 
       function renderCondoLeads(leads) {
@@ -3280,14 +3518,26 @@
         }
       });
 
-      loadDashboard().catch((error) => {
-        metricsEl.innerHTML = `
-          <div class="error">
-            ${error.message}. Confirm the API is running at ${apiBase}, then refresh. If this is a local browser
-            CORS issue, restart the API after pulling the latest code.
-          </div>
-        `;
-      });
+      if (portalMode === "management") {
+        loadManagementPortal().catch((error) => {
+          document.body.innerHTML = `
+            <main style="margin: 0 auto; padding: 28px 0 48px;">
+              <div class="error">
+                ${escapeHtml(error.message)}. Confirm the API is running at ${apiBase}, then refresh.
+              </div>
+            </main>
+          `;
+        });
+      } else {
+        loadDashboard().catch((error) => {
+          metricsEl.innerHTML = `
+            <div class="error">
+              ${error.message}. Confirm the API is running at ${apiBase}, then refresh. If this is a local browser
+              CORS issue, restart the API after pulling the latest code.
+            </div>
+          `;
+        });
+      }
     </script>
   </body>
 </html>
