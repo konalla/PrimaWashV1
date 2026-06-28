@@ -699,6 +699,44 @@ describe("Prima Wash API", () => {
     assert.equal(item?.actionHint, "Payment authorized; ready to confirm");
   });
 
+  it("lets partner actors update onsite execution details for a booking", async () => {
+    const vehicle = await createVehicle("EXEC123");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
+      method: "PATCH",
+      headers: {
+        ...partnerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        onsiteServiceMode: "pickup_return",
+        valetRequested: true,
+        executionNotes: "Owner approved handover at lobby concierge.",
+        technicianCheckedIn: true,
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<Booking>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.onsiteServiceMode, "pickup_return");
+    assert.equal(payload.data.valetRequested, true);
+    assert.equal(payload.data.executionNotes, "Owner approved handover at lobby concierge.");
+    assert.ok(payload.data.technicianCheckedInAt);
+
+    const checkoutResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
+      method: "PATCH",
+      headers: {
+        ...partnerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ technicianCheckedOut: true }),
+    });
+    const checkoutPayload = (await checkoutResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(checkoutResponse.status, 200);
+    assert.ok(checkoutPayload.data.technicianCheckedOutAt);
+  });
+
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {
     const session = await createCustomerSession("garage@example.com");
     const headers = {

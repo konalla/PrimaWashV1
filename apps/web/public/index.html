@@ -2760,6 +2760,49 @@
               <div class="detail-item"><span>Amount</span><strong>${item.paymentAmount ? formatMoney(item.paymentAmount) : "No payment intent"}</strong></div>
               <div class="detail-item"><span>Appointment</span><strong>${formatRelativeDay(item.scheduledStartAt)}, ${formatTime(item.scheduledStartAt)}</strong></div>
               <div class="detail-item"><span>Owner</span><strong>${item.ownerId}</strong></div>
+              <div class="detail-item"><span>Service mode</span><strong>${formatStatus(item.onsiteServiceMode || "onsite")}</strong></div>
+              <div class="detail-item"><span>Valet</span><strong>${item.valetRequested ? "Requested" : "Not requested"}</strong></div>
+              <div class="detail-item"><span>Technician</span><strong>${formatTechnicianState(item)}</strong></div>
+            </section>
+
+            ${renderSiteInstructions(item)}
+
+            <section>
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Onsite execution</p>
+                  <h3>Temporary operation controls</h3>
+                  <p class="section-description">Track how this booking will be handled on the property. This does not delete or rewrite prior messages.</p>
+                </div>
+              </div>
+              <form class="cluster" id="booking-execution-form">
+                <input type="hidden" name="bookingId" value="${item.bookingId}">
+                <div class="form-grid">
+                  <label>
+                    Service mode
+                    <select name="onsiteServiceMode">
+                      <option value="onsite" ${(item.onsiteServiceMode || "onsite") === "onsite" ? "selected" : ""}>Onsite at approved area</option>
+                      <option value="pickup_return" ${item.onsiteServiceMode === "pickup_return" ? "selected" : ""}>Pickup, clean away, return</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valet mode
+                    <select name="valetRequested">
+                      <option value="false" ${!item.valetRequested ? "selected" : ""}>Not requested</option>
+                      <option value="true" ${item.valetRequested ? "selected" : ""}>Requested / permitted</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field">
+                  <label for="booking-execution-notes">Execution notes</label>
+                  <textarea id="booking-execution-notes" name="executionNotes" placeholder="Parking bay, owner access notes, temporary wash area constraints">${escapeHtml(item.executionNotes || "")}</textarea>
+                </div>
+                <div class="dialog-actions">
+                  <button class="action" type="button" data-technician-check-in="${item.bookingId}" ${item.technicianCheckedInAt ? "disabled" : ""}>Technician check-in</button>
+                  <button class="action" type="button" data-technician-check-out="${item.bookingId}" ${item.technicianCheckedOutAt ? "disabled" : ""}>Technician check-out</button>
+                  <button class="action primary" type="submit">Save execution</button>
+                </div>
+              </form>
             </section>
 
             <section>
@@ -2836,6 +2879,49 @@
             `;
           })
           .join("");
+      }
+
+      function renderSiteInstructions(item) {
+        if (!item.primaWashDayId) {
+          return `
+            <section>
+              <p class="eyebrow">Site instructions</p>
+              <div class="empty">Marketplace booking. Use partner location operating procedures.</div>
+            </section>
+          `;
+        }
+
+        const day = primaWashDaysCache.find((candidate) => candidate.id === item.primaWashDayId);
+
+        if (!day) {
+          return `
+            <section>
+              <p class="eyebrow">Site instructions</p>
+              <div class="empty">Prima Wash Day instructions unavailable. Refresh the dashboard.</div>
+            </section>
+          `;
+        }
+
+        return `
+          <section class="detail-grid">
+            <div class="detail-item"><span>Approved area</span><strong>${escapeHtml(day.approvedServiceArea)}</strong></div>
+            <div class="detail-item"><span>Operating window</span><strong>${formatTime(day.startsAt)} - ${formatTime(day.endsAt)}</strong></div>
+            <div class="detail-item"><span>Capacity</span><strong>${day.capacity} vehicles</strong></div>
+            <div class="detail-item"><span>Site notes</span><strong>${escapeHtml(day.operatingNotes || "No additional notes")}</strong></div>
+          </section>
+        `;
+      }
+
+      function formatTechnicianState(item) {
+        if (item.technicianCheckedOutAt) {
+          return `Checked out ${formatRelativeTime(item.technicianCheckedOutAt)}`;
+        }
+
+        if (item.technicianCheckedInAt) {
+          return `Checked in ${formatRelativeTime(item.technicianCheckedInAt)}`;
+        }
+
+        return "Not checked in";
       }
 
       function renderDrawerActions(item) {
@@ -3176,6 +3262,7 @@
           "booking.status_changed": "Booking status updated",
           booking_cancelled: "Booking cancelled",
           "booking.cancelled": "Booking cancelled",
+          "booking.execution_updated": "Onsite execution updated",
           payment_authorized: "Payment authorized",
           "payment.authorized": "Payment authorized",
           payment_captured: "Payment captured",
@@ -3208,6 +3295,10 @@
 
         if (event.action === "booking.cancelled") {
           return `Cancelled by ${formatStatus(String(event.metadata?.cancelledBy || "actor"))}`;
+        }
+
+        if (event.action === "booking.execution_updated") {
+          return `${formatStatus(String(event.metadata?.onsiteServiceMode || "onsite"))}, valet ${event.metadata?.valetRequested ? "requested" : "not requested"}`;
         }
 
         return `${formatStatus(event.resourceType)} ${String(event.resourceId).slice(-8).toUpperCase()}`;
@@ -3264,6 +3355,24 @@
 
         if (!response.ok) {
           throw new Error(payload.message || "Status update failed");
+        }
+
+        return payload.data;
+      }
+
+      async function updateBookingExecution(bookingId, input) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/execution`, {
+          method: "PATCH",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Execution update failed");
         }
 
         return payload.data;
@@ -3512,6 +3621,44 @@
           return;
         }
 
+        const technicianCheckInButton = event.target.closest("button[data-technician-check-in]");
+
+        if (technicianCheckInButton) {
+          technicianCheckInButton.disabled = true;
+
+          try {
+            await updateBookingExecution(technicianCheckInButton.dataset.technicianCheckIn, { technicianCheckedIn: true });
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Technician checked in.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            technicianCheckInButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const technicianCheckOutButton = event.target.closest("button[data-technician-check-out]");
+
+        if (technicianCheckOutButton) {
+          technicianCheckOutButton.disabled = true;
+
+          try {
+            await updateBookingExecution(technicianCheckOutButton.dataset.technicianCheckOut, { technicianCheckedOut: true });
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Technician checked out.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            technicianCheckOutButton.disabled = false;
+          }
+
+          return;
+        }
+
         const drawerNextButton = event.target.closest("button[data-drawer-next-status]");
 
         if (drawerNextButton) {
@@ -3667,24 +3814,49 @@
       document.addEventListener("submit", async (event) => {
         const bookingCommunicationForm = event.target.closest?.("#booking-communication-form");
 
-        if (!bookingCommunicationForm) {
+        if (bookingCommunicationForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const threadId = await sendCommunicationForm(bookingCommunicationForm, partnerHeaders());
+            bookingCommunicationForm.elements.threadId.value = threadId;
+            bookingCommunicationForm.elements.body.value = "";
+            await loadBookingCommunicationThread(bookingCommunicationForm.elements.resourceId.value);
+            showToast("Message sent.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
           return;
         }
 
-        event.preventDefault();
-        const submitButton = event.submitter;
-        submitButton.disabled = true;
+        const bookingExecutionForm = event.target.closest?.("#booking-execution-form");
 
-        try {
-          const threadId = await sendCommunicationForm(bookingCommunicationForm, partnerHeaders());
-          bookingCommunicationForm.elements.threadId.value = threadId;
-          bookingCommunicationForm.elements.body.value = "";
-          await loadBookingCommunicationThread(bookingCommunicationForm.elements.resourceId.value);
-          showToast("Message sent.");
-        } catch (error) {
-          showToast(error.message, "error");
-        } finally {
-          submitButton.disabled = false;
+        if (bookingExecutionForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(bookingExecutionForm);
+            const bookingId = String(form.get("bookingId"));
+            await updateBookingExecution(bookingId, {
+              onsiteServiceMode: String(form.get("onsiteServiceMode")),
+              valetRequested: String(form.get("valetRequested")) === "true",
+              executionNotes: String(form.get("executionNotes") || "").trim(),
+            });
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Execution details saved.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
         }
       });
 

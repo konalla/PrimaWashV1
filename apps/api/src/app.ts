@@ -40,6 +40,7 @@ import type {
   ServiceRecord,
   ServiceCapacityRule,
   UpdatePropertyActivationRequest,
+  UpdateBookingExecutionRequest,
   UpdateBookingStatusRequest,
   UpdateCondoOperationalProfileRequest,
   UpdatePrimaWashDayRequest,
@@ -68,6 +69,7 @@ import { validateSchedulingConfig } from "./modules/scheduling/repository.js";
 import {
   canTransitionBookingStatus,
   validateCreateBooking,
+  validateUpdateBookingExecution,
   validateUpdateBookingStatus,
 } from "./modules/bookings/repository.js";
 import type { Repositories } from "./modules/repositories.js";
@@ -1677,6 +1679,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     }
 
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
+    const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
     const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
     const availabilityUpdateMatch = requestUrl.pathname.match(/^\/v1\/partner\/availability\/([^/]+)$/);
 
@@ -1803,6 +1806,66 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       } catch (error) {
         if (!sendAuthError(response, error)) {
           sendError(response, 400, "invalid_request", "Booking cancellation request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "PATCH" && bookingExecutionMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingExecutionMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateBookingExecutionRequest>(request);
+        const errors = validateUpdateBookingExecution(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking execution payload is invalid", errors);
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const updatedBooking = await options.repositories.bookings.updateExecution(booking.id, {
+          ...(input.onsiteServiceMode !== undefined ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
+          ...(input.valetRequested !== undefined ? { valetRequested: input.valetRequested } : {}),
+          ...(input.executionNotes !== undefined ? { executionNotes: input.executionNotes.trim() } : {}),
+          ...(input.technicianCheckedIn ? { technicianCheckedInAt: booking.technicianCheckedInAt ?? now } : {}),
+          ...(input.technicianCheckedOut ? { technicianCheckedOutAt: booking.technicianCheckedOutAt ?? now } : {}),
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.execution_updated",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: updatedBooking.partnerLocationId,
+            onsiteServiceMode: updatedBooking.onsiteServiceMode ?? null,
+            valetRequested: updatedBooking.valetRequested,
+            technicianCheckedInAt: updatedBooking.technicianCheckedInAt ?? null,
+            technicianCheckedOutAt: updatedBooking.technicianCheckedOutAt ?? null,
+          },
+        });
+
+        sendJson(response, 200, { data: updatedBooking });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking execution request could not be processed", String(error));
         }
       }
 
@@ -2375,10 +2438,16 @@ function buildPartnerDashboard(
 
       return {
         bookingId: booking.id,
+        ...(booking.primaWashDayId ? { primaWashDayId: booking.primaWashDayId } : {}),
         vehicleId: booking.vehicleId,
         ownerId: booking.ownerId,
         serviceCode: booking.serviceCode,
         status: booking.status,
+        ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
+        valetRequested: booking.valetRequested,
+        ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
+        ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
+        ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,
@@ -2462,6 +2531,11 @@ function buildPrimaWashDayBookingItems(
         ownerId: booking.ownerId,
         serviceCode: booking.serviceCode,
         status: booking.status,
+        ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
+        valetRequested: booking.valetRequested,
+        ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
+        ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
+        ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,

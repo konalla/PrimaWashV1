@@ -1,4 +1,12 @@
-import type { Booking, BookingStatus, CreateBookingRequest, Money, ServiceCode } from "@prima-wash/contracts";
+import type {
+  Booking,
+  BookingOnsiteServiceMode,
+  BookingStatus,
+  CreateBookingRequest,
+  Money,
+  ServiceCode,
+  UpdateBookingExecutionRequest,
+} from "@prima-wash/contracts";
 import type { DatabasePool } from "../../db/pool.js";
 import { findAvailabilitySlot, findServiceOffering } from "../availability/catalog.js";
 import type { AvailabilityRepository } from "../availability/repository.js";
@@ -11,7 +19,16 @@ export interface BookingRepository {
   get(bookingId: string): Promise<Booking | undefined>;
   create(input: CreateBookingInput): Promise<Booking>;
   updateStatus(bookingId: string, status: BookingStatus): Promise<Booking>;
+  updateExecution(bookingId: string, input: NormalizedBookingExecutionUpdate): Promise<Booking>;
 }
+
+export type NormalizedBookingExecutionUpdate = Omit<
+  UpdateBookingExecutionRequest,
+  "technicianCheckedIn" | "technicianCheckedOut"
+> & {
+  readonly technicianCheckedInAt?: string | null;
+  readonly technicianCheckedOutAt?: string | null;
+};
 
 export class InMemoryBookingRepository implements BookingRepository {
   readonly #bookings = new Map<string, Booking>();
@@ -135,6 +152,18 @@ export class InMemoryBookingRepository implements BookingRepository {
     this.#bookings.set(bookingId, updatedBooking);
     return updatedBooking;
   }
+
+  async updateExecution(bookingId: string, input: NormalizedBookingExecutionUpdate): Promise<Booking> {
+    const booking = this.#bookings.get(bookingId);
+
+    if (!booking) {
+      throw new Error("booking_not_found");
+    }
+
+    const updatedBooking = mergeBookingExecution(booking, input);
+    this.#bookings.set(bookingId, updatedBooking);
+    return updatedBooking;
+  }
 }
 
 export class PostgresBookingRepository implements BookingRepository {
@@ -145,7 +174,8 @@ export class PostgresBookingRepository implements BookingRepository {
       ? await this.pool.query<BookingRow>(
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-                  accepted_price_currency, created_at
+                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  technician_checked_in_at, technician_checked_out_at, created_at
            from bookings
            where owner_id = $1
            order by created_at desc`,
@@ -154,7 +184,8 @@ export class PostgresBookingRepository implements BookingRepository {
       : await this.pool.query<BookingRow>(
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-                  accepted_price_currency, created_at
+                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  technician_checked_in_at, technician_checked_out_at, created_at
            from bookings
            order by created_at desc`,
         );
@@ -166,7 +197,8 @@ export class PostgresBookingRepository implements BookingRepository {
     const result = await this.pool.query<BookingRow>(
       `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
               scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-              accepted_price_currency, created_at
+              accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+              technician_checked_in_at, technician_checked_out_at, created_at
        from bookings
        where id = $1`,
       [bookingId],
@@ -250,7 +282,8 @@ export class PostgresBookingRepository implements BookingRepository {
           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                     scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-                    accepted_price_currency, created_at`,
+                    accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                    technician_checked_in_at, technician_checked_out_at, created_at`,
           [
             booking.id,
             booking.ownerId,
@@ -354,7 +387,8 @@ export class PostgresBookingRepository implements BookingRepository {
         values ($1, $2, $3, $4, null, $5, $6, $7, $8, $9, $10, $11)
         returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-                  accepted_price_currency, created_at`,
+                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  technician_checked_in_at, technician_checked_out_at, created_at`,
         [
           booking.id,
           booking.ownerId,
@@ -393,8 +427,41 @@ export class PostgresBookingRepository implements BookingRepository {
        where id = $1
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-                 accepted_price_currency, created_at`,
+                 accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 technician_checked_in_at, technician_checked_out_at, created_at`,
       [bookingId, status],
+    );
+
+    const row = result.rows[0];
+
+    if (!row) {
+      throw new Error("booking_not_found");
+    }
+
+    return mapBookingRow(row);
+  }
+
+  async updateExecution(bookingId: string, input: NormalizedBookingExecutionUpdate): Promise<Booking> {
+    const result = await this.pool.query<BookingRow>(
+      `update bookings
+       set onsite_service_mode = coalesce($2, onsite_service_mode),
+           valet_requested = coalesce($3, valet_requested),
+           execution_notes = coalesce($4, execution_notes),
+           technician_checked_in_at = coalesce($5, technician_checked_in_at),
+           technician_checked_out_at = coalesce($6, technician_checked_out_at)
+       where id = $1
+       returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
+                 scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                 accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 technician_checked_in_at, technician_checked_out_at, created_at`,
+      [
+        bookingId,
+        input.onsiteServiceMode ?? null,
+        input.valetRequested ?? null,
+        input.executionNotes ?? null,
+        input.technicianCheckedInAt ?? null,
+        input.technicianCheckedOutAt ?? null,
+      ],
     );
 
     const row = result.rows[0];
@@ -472,6 +539,33 @@ export function validateUpdateBookingStatus(input: { readonly status?: string })
   return errors;
 }
 
+export function validateUpdateBookingExecution(input: Partial<UpdateBookingExecutionRequest>): string[] {
+  const errors: string[] = [];
+  const validModes: readonly BookingOnsiteServiceMode[] = ["onsite", "pickup_return"];
+
+  if (input.onsiteServiceMode !== undefined && !validModes.includes(input.onsiteServiceMode)) {
+    errors.push("onsiteServiceMode must be onsite or pickup_return");
+  }
+
+  if (input.valetRequested !== undefined && typeof input.valetRequested !== "boolean") {
+    errors.push("valetRequested must be boolean");
+  }
+
+  if (input.technicianCheckedIn !== undefined && typeof input.technicianCheckedIn !== "boolean") {
+    errors.push("technicianCheckedIn must be boolean");
+  }
+
+  if (input.technicianCheckedOut !== undefined && typeof input.technicianCheckedOut !== "boolean") {
+    errors.push("technicianCheckedOut must be boolean");
+  }
+
+  if (input.executionNotes !== undefined && input.executionNotes.length > 2000) {
+    errors.push("executionNotes must be 2000 characters or fewer");
+  }
+
+  return errors;
+}
+
 interface BuildBookingInput {
   readonly ownerId: string;
   readonly vehicleId: string;
@@ -517,6 +611,11 @@ interface BookingRow {
   readonly scheduled_end_at: Date | string;
   readonly accepted_price_amount_minor: number;
   readonly accepted_price_currency: string;
+  readonly onsite_service_mode: BookingOnsiteServiceMode | null;
+  readonly valet_requested: boolean;
+  readonly execution_notes: string | null;
+  readonly technician_checked_in_at: Date | string | null;
+  readonly technician_checked_out_at: Date | string | null;
   readonly created_at: Date | string;
 }
 
@@ -533,10 +632,26 @@ function buildBooking(input: BuildBookingInput): Booking {
     ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
     serviceCode: input.serviceCode,
     status: "pending_payment",
+    valetRequested: false,
     scheduledStartAt: input.scheduledStartAt,
     scheduledEndAt,
     acceptedPrice: input.acceptedPrice,
     createdAt: new Date().toISOString(),
+  };
+}
+
+function mergeBookingExecution(booking: Booking, input: NormalizedBookingExecutionUpdate): Booking {
+  return {
+    ...booking,
+    ...(input.onsiteServiceMode !== undefined ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
+    ...(input.valetRequested !== undefined ? { valetRequested: input.valetRequested } : {}),
+    ...(input.executionNotes !== undefined ? { executionNotes: input.executionNotes } : {}),
+    ...(input.technicianCheckedInAt !== undefined && input.technicianCheckedInAt !== null
+      ? { technicianCheckedInAt: input.technicianCheckedInAt }
+      : {}),
+    ...(input.technicianCheckedOutAt !== undefined && input.technicianCheckedOutAt !== null
+      ? { technicianCheckedOutAt: input.technicianCheckedOutAt }
+      : {}),
   };
 }
 
@@ -549,6 +664,11 @@ function mapBookingRow(row: BookingRow): Booking {
     ...(row.prima_wash_day_id ? { primaWashDayId: row.prima_wash_day_id } : {}),
     serviceCode: row.service_code,
     status: row.status,
+    ...(row.onsite_service_mode ? { onsiteServiceMode: row.onsite_service_mode } : {}),
+    valetRequested: row.valet_requested,
+    ...(row.execution_notes ? { executionNotes: row.execution_notes } : {}),
+    ...(row.technician_checked_in_at ? { technicianCheckedInAt: new Date(row.technician_checked_in_at).toISOString() } : {}),
+    ...(row.technician_checked_out_at ? { technicianCheckedOutAt: new Date(row.technician_checked_out_at).toISOString() } : {}),
     scheduledStartAt: new Date(row.scheduled_start_at).toISOString(),
     scheduledEndAt: new Date(row.scheduled_end_at).toISOString(),
     acceptedPrice: {

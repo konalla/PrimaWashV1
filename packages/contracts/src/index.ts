@@ -308,10 +308,16 @@ export interface PartnerDashboardMetric {
 
 export interface PartnerQueueItem {
   readonly bookingId: string;
+  readonly primaWashDayId?: string;
   readonly vehicleId: string;
   readonly ownerId: string;
   readonly serviceCode: ServiceCode;
   readonly status: BookingStatus;
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode;
+  readonly valetRequested: boolean;
+  readonly executionNotes?: string;
+  readonly technicianCheckedInAt?: string;
+  readonly technicianCheckedOutAt?: string;
   readonly paymentStatus?: PaymentStatus;
   readonly paymentAmount?: Money;
   readonly actionHint: string;
@@ -386,6 +392,16 @@ export type BookingStatus =
   | "in_service"
   | "completed"
   | "cancelled";
+
+export type BookingOnsiteServiceMode = "onsite" | "pickup_return";
+
+export interface UpdateBookingExecutionRequest {
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode;
+  readonly valetRequested?: boolean;
+  readonly executionNotes?: string;
+  readonly technicianCheckedIn?: boolean;
+  readonly technicianCheckedOut?: boolean;
+}
 
 export interface Vehicle {
   readonly id: string;
@@ -637,6 +653,11 @@ export interface Booking {
   readonly primaWashDayId?: string;
   readonly serviceCode: ServiceCode;
   readonly status: BookingStatus;
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode;
+  readonly valetRequested: boolean;
+  readonly executionNotes?: string;
+  readonly technicianCheckedInAt?: string;
+  readonly technicianCheckedOutAt?: string;
   readonly scheduledStartAt: string;
   readonly scheduledEndAt: string;
   readonly acceptedPrice: Money;
