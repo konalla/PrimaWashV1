@@ -6,8 +6,12 @@ import type {
   AvailabilitySearchResponse,
   AuthSession,
   BookingHold,
+  CommunicationThread,
+  CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
+  CreateCommunicationMessageRequest,
+  CreateCommunicationThreadRequest,
   CreateBookingHoldRequest,
   CreateBookingHoldResponse,
   CreateBookingRequest,
@@ -127,6 +131,24 @@ export const primaApi = {
   vehicles: () => request<readonly Vehicle[]>('/v1/vehicles'),
   bookings: () => request<readonly Booking[]>('/v1/bookings'),
   booking: (bookingId: string) => request<Booking>(`/v1/bookings/${bookingId}`),
+  communicationThreads: (input: { readonly resourceType: string; readonly resourceId: string }) =>
+    request<readonly CommunicationThread[]>(
+      `/v1/communication/threads?resourceType=${encodeURIComponent(input.resourceType)}&resourceId=${encodeURIComponent(
+        input.resourceId,
+      )}`,
+    ),
+  communicationThread: (threadId: string) =>
+    request<CommunicationThreadWithMessages>(`/v1/communication/threads/${threadId}`),
+  createCommunicationThread: (input: CreateCommunicationThreadRequest) =>
+    request<CommunicationThreadWithMessages>('/v1/communication/threads', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  addCommunicationMessage: (threadId: string, input: CreateCommunicationMessageRequest) =>
+    request<CommunicationThreadWithMessages>(`/v1/communication/threads/${threadId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   paymentForBooking: (bookingId: string) =>
     request<PaymentIntent | null>(`/v1/payments?bookingId=${encodeURIComponent(bookingId)}`),
   serviceRecords: () => request<readonly ServiceRecord[]>('/v1/service-records'),

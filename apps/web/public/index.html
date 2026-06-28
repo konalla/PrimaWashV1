@@ -2761,11 +2761,43 @@
               <div class="drawer-timeline">${renderDrawerTimeline(item.status)}</div>
             </section>
 
+            <section>
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Messages</p>
+                  <h3>Owner conversation</h3>
+                  <p class="section-description">Persisted messages only. No realtime or push notifications yet.</p>
+                </div>
+              </div>
+              <form class="cluster" id="booking-communication-form">
+                <input type="hidden" name="threadId" value="">
+                <input type="hidden" name="resourceType" value="booking">
+                <input type="hidden" name="resourceId" value="${item.bookingId}">
+                <input type="hidden" name="threadType" value="partner_to_owner">
+                <input type="hidden" name="subject" value="Booking ${item.bookingId.slice(-8).toUpperCase()} coordination">
+                <div class="message-list" id="booking-communication-messages">
+                  <div class="empty">Loading messages...</div>
+                </div>
+                <div class="field">
+                  <label for="booking-message-body">New message</label>
+                  <textarea id="booking-message-body" name="body" placeholder="Write a message for the vehicle owner"></textarea>
+                </div>
+                <button class="action primary" type="submit">Send message</button>
+              </form>
+            </section>
+
             <section class="dialog-actions">
               ${renderDrawerActions(item)}
             </section>
           </div>
         `;
+
+        void loadBookingCommunicationThread(item.bookingId).catch((error) => {
+          const messagesEl = document.querySelector("#booking-communication-messages");
+          if (messagesEl) {
+            messagesEl.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          }
+        });
       }
 
       function renderDrawerTimeline(status) {
@@ -2877,6 +2909,45 @@
                   (message) => `
                     <article class="message-item">
                       <strong>${formatStatus(message.senderRole)} · ${formatRelativeTime(message.createdAt)}</strong>
+                      <p>${escapeHtml(message.body)}</p>
+                    </article>
+                  `,
+                )
+                .join("");
+      }
+
+      async function loadBookingCommunicationThread(bookingId) {
+        const messagesEl = document.querySelector("#booking-communication-messages");
+        const form = document.querySelector("#booking-communication-form");
+
+        if (!messagesEl || !form) {
+          return;
+        }
+
+        messagesEl.innerHTML = `<div class="empty">Loading messages...</div>`;
+        const threads = await communicationRequestJson(
+          `/v1/communication/threads?resourceType=booking&resourceId=${encodeURIComponent(bookingId)}`,
+          {},
+          partnerHeaders(),
+        );
+        const thread = threads.find((item) => item.type === "partner_to_owner");
+
+        if (!thread) {
+          form.elements.threadId.value = "";
+          messagesEl.innerHTML = `<div class="empty">No messages yet. Send the first note to the owner.</div>`;
+          return;
+        }
+
+        form.elements.threadId.value = thread.id;
+        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, partnerHeaders());
+        messagesEl.innerHTML =
+          payload.messages.length === 0
+            ? `<div class="empty">No messages yet.</div>`
+            : payload.messages
+                .map(
+                  (message) => `
+                    <article class="message-item">
+                      <strong>${formatStatus(message.senderRole)} Â· ${formatRelativeTime(message.createdAt)}</strong>
                       <p>${escapeHtml(message.body)}</p>
                     </article>
                   `,
@@ -3435,6 +3506,30 @@
         }
         updatePlannerPreview();
         availabilityDialog.showModal();
+      });
+
+      document.addEventListener("submit", async (event) => {
+        const bookingCommunicationForm = event.target.closest?.("#booking-communication-form");
+
+        if (!bookingCommunicationForm) {
+          return;
+        }
+
+        event.preventDefault();
+        const submitButton = event.submitter;
+        submitButton.disabled = true;
+
+        try {
+          const threadId = await sendCommunicationForm(bookingCommunicationForm, partnerHeaders());
+          bookingCommunicationForm.elements.threadId.value = threadId;
+          bookingCommunicationForm.elements.body.value = "";
+          await loadBookingCommunicationThread(bookingCommunicationForm.elements.resourceId.value);
+          showToast("Message sent.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
       });
 
       document.addEventListener("keydown", (event) => {

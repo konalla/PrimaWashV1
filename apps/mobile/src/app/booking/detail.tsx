@@ -1,7 +1,7 @@
-import type { Booking, PartnerLocation, PaymentIntent, Vehicle } from '@prima-wash/contracts';
+import type { Booking, CommunicationMessage, CommunicationThread, PartnerLocation, PaymentIntent, Vehicle } from '@prima-wash/contracts';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
@@ -57,9 +57,28 @@ export default function BookingDetailScreen() {
   const [payment, setPayment] = useState<PaymentIntent | null>();
   const [partner, setPartner] = useState<PartnerLocation>();
   const [vehicle, setVehicle] = useState<Vehicle>();
+  const [communicationThread, setCommunicationThread] = useState<CommunicationThread>();
+  const [messages, setMessages] = useState<readonly CommunicationMessage[]>([]);
+  const [messageBody, setMessageBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [messageLoading, setMessageLoading] = useState(false);
   const [error, setError] = useState<string>();
+
+  const loadMessages = useCallback(async (targetBookingId: string) => {
+    const threads = await primaApi.communicationThreads({ resourceType: 'booking', resourceId: targetBookingId });
+    const thread = threads.find((item) => item.type === 'partner_to_owner');
+
+    if (!thread) {
+      setCommunicationThread(undefined);
+      setMessages([]);
+      return;
+    }
+
+    const payload = await primaApi.communicationThread(thread.id);
+    setCommunicationThread(payload.thread);
+    setMessages(payload.messages);
+  }, []);
 
   const load = useCallback(async () => {
     if (!bookingId) {
@@ -83,12 +102,13 @@ export default function BookingDetailScreen() {
       setPayment(nextPayment);
       setPartner(nextPartner);
       setVehicle(vehicles.find((item) => item.id === nextBooking.vehicleId));
+      await loadMessages(nextBooking.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Booking could not be loaded.');
     } finally {
       setLoading(false);
     }
-  }, [bookingId]);
+  }, [bookingId, loadMessages]);
 
   useFocusEffect(
     useCallback(() => {
@@ -135,6 +155,43 @@ export default function BookingDetailScreen() {
       setError(caught instanceof Error ? caught.message : 'Booking could not be cancelled.');
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function sendBookingMessage() {
+    if (!booking) {
+      return;
+    }
+
+    const body = messageBody.trim();
+
+    if (!body) {
+      setError('Message cannot be blank.');
+      return;
+    }
+
+    setMessageLoading(true);
+    setError(undefined);
+
+    try {
+      if (communicationThread) {
+        await primaApi.addCommunicationMessage(communicationThread.id, { body });
+      } else {
+        await primaApi.createCommunicationThread({
+          type: 'partner_to_owner',
+          resourceType: 'booking',
+          resourceId: booking.id,
+          subject: `Booking ${booking.id.slice(-8).toUpperCase()} coordination`,
+          initialMessage: body,
+        });
+      }
+
+      setMessageBody('');
+      await loadMessages(booking.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Message could not be sent.');
+    } finally {
+      setMessageLoading(false);
     }
   }
 
@@ -216,6 +273,35 @@ export default function BookingDetailScreen() {
           </Surface>
 
           <Surface>
+            <SectionHeading eyebrow="Messages" title="Partner conversation" />
+            <Text style={styles.body}>Persisted messages only. No realtime or push notifications yet.</Text>
+            {messages.length === 0 ? (
+              <Text style={styles.emptyMessage}>No messages yet. Send the first note about this appointment.</Text>
+            ) : (
+              messages.map((message) => (
+                <View key={message.id} style={styles.messageItem}>
+                  <Text style={styles.messageMeta}>{formatSenderRole(message.senderRole)} - {formatMessageTime(message.createdAt)}</Text>
+                  <Text style={styles.messageText}>{message.body}</Text>
+                </View>
+              ))
+            )}
+            <TextInput
+              multiline
+              onChangeText={setMessageBody}
+              placeholder="Write a message"
+              placeholderTextColor={colors.subtle}
+              style={styles.messageInput}
+              value={messageBody}
+            />
+            <PrimaryButton
+              disabled={messageLoading || !messageBody.trim()}
+              label="Send message"
+              loading={messageLoading}
+              onPress={() => void sendBookingMessage()}
+            />
+          </Surface>
+
+          <Surface>
             <SectionHeading eyebrow="Actions" title="Manage this booking" />
             {partner ? (
               <Pressable onPress={() => void openDirections(partner, partner.name)}>
@@ -273,6 +359,27 @@ function customerStatusLabel(booking: Booking, payment?: PaymentIntent | null) {
   return booking.status.replaceAll('_', ' ');
 }
 
+function formatSenderRole(role: CommunicationMessage['senderRole']) {
+  const labels: Record<CommunicationMessage['senderRole'], string> = {
+    customer: 'You',
+    partner: 'Partner',
+    fleet: 'Fleet',
+    internal: 'Prima Wash',
+    property_manager: 'Management office',
+  };
+
+  return labels[role];
+}
+
+function formatMessageTime(value: string) {
+  return new Date(value).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function TimelineRow({
   label,
   body,
@@ -323,6 +430,25 @@ const styles = StyleSheet.create({
   timelineTitle: { color: colors.subtle, fontSize: 13, fontWeight: '800' },
   timelineTitleComplete: { color: colors.text },
   timelineBody: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  emptyMessage: { color: colors.subtle, fontSize: 13, lineHeight: 19 },
+  messageItem: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    gap: spacing.xs,
+  },
+  messageMeta: { color: colors.accent, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  messageText: { color: colors.text, fontSize: 14, lineHeight: 21 },
+  messageInput: {
+    minHeight: 96,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    color: colors.text,
+    backgroundColor: colors.canvasRaised,
+    padding: spacing.md,
+    textAlignVertical: 'top',
+  },
   link: { color: colors.accent, fontSize: 13, fontWeight: '900', paddingVertical: spacing.sm },
   danger: { color: colors.danger, fontSize: 13, fontWeight: '900', paddingVertical: spacing.sm },
 });
