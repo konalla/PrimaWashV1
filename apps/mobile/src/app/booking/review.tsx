@@ -18,10 +18,12 @@ export default function ReviewScreen() {
   const [pendingBooking, setPendingBooking] = useState<Booking>();
   const [pendingPayment, setPendingPayment] = useState<PaymentIntent>();
   const [error, setError] = useState<string>();
+  const locationName = draft.primaWashDay?.propertyName ?? draft.partner?.name;
+  const canSubmit = Boolean(draft.service && draft.slot && draft.vehicle && (draft.partner || draft.primaWashDay));
 
   async function confirmBooking() {
-    if (!draft.partner || !draft.service || !draft.slot || !draft.vehicle) {
-      setError('Choose a partner, vehicle, service, and appointment time first.');
+    if (!draft.service || !draft.slot || !draft.vehicle || (!draft.partner && !draft.primaWashDay)) {
+      setError('Choose a location, vehicle, service, and appointment time first.');
       return;
     }
 
@@ -35,11 +37,13 @@ export default function ReviewScreen() {
     try {
       const booking = pendingBooking ?? await primaApi.createBooking({
         vehicleId: draft.vehicle.id,
-        ...(draft.hold
-          ? { holdId: draft.hold.id }
-          : isLegacyAvailabilitySlot(draft.slot)
-            ? { availabilitySlotId: draft.slot.id }
-            : {}),
+        ...(draft.primaWashDay
+          ? { primaWashDayId: draft.primaWashDay.id }
+          : draft.hold
+            ? { holdId: draft.hold.id }
+            : isLegacyAvailabilitySlot(draft.slot)
+              ? { availabilitySlotId: draft.slot.id }
+              : {}),
         serviceCode: draft.service.code,
       });
       setPendingBooking(booking);
@@ -50,7 +54,7 @@ export default function ReviewScreen() {
         payment.status === 'authorized' ? payment : await primaApi.authorizePayment(payment.id);
       await scheduleForBooking({
         booking,
-        partnerName: draft.partner.name,
+        partnerName: locationName ?? 'Prima Wash',
         serviceName: draft.service.name,
       });
       complete(booking, authorizedPayment);
@@ -65,19 +69,22 @@ export default function ReviewScreen() {
   return (
     <AppScreen eyebrow="Step 3 of 3" title="Review and pay">
       <Surface accent>
-        <SectionHeading eyebrow="Verified partner" title={draft.partner?.name ?? 'Choose a partner'} />
+        <SectionHeading eyebrow={draft.primaWashDay ? 'Condo service day' : 'Verified partner'} title={locationName ?? 'Choose a location'} />
         <Text style={styles.rating}>
-          ★ {draft.partner?.rating.toFixed(1) ?? '—'} · Quality checked · {draft.partner?.distanceKm.toFixed(1) ?? '—'} km away
+          {draft.primaWashDay
+            ? `${draft.primaWashDay.approvedServiceArea} - management-approved operating window`
+            : `${draft.partner?.rating.toFixed(1) ?? '-'} stars - Quality checked - ${draft.partner?.distanceKm.toFixed(1) ?? '-'} km away`}
         </Text>
       </Surface>
       <Surface>
         <SummaryRow
           label="Vehicle"
-          value={`${draft.vehicle ? `${draft.vehicle.make ?? ''} ${draft.vehicle.model ?? ''}`.trim() : 'Vehicle'} · ${draft.vehicle?.plateNumber ?? ''}`}
+          value={`${draft.vehicle ? `${draft.vehicle.make ?? ''} ${draft.vehicle.model ?? ''}`.trim() : 'Vehicle'} - ${draft.vehicle?.plateNumber ?? ''}`}
         />
         <SummaryRow label="Service" value={draft.service?.name ?? 'Choose a service'} />
         <SummaryRow label="Appointment" value={draft.slot ? formatAppointment(draft.slot.startsAt) : 'Choose a time'} />
         {draft.hold ? <SummaryRow label="Reserved until" value={formatHoldExpiry(draft.hold.expiresAt)} /> : null}
+        {draft.primaWashDay ? <SummaryRow label="Service area" value={draft.primaWashDay.approvedServiceArea} /> : null}
         <View style={styles.divider} />
         <SummaryRow label="Service total" value={draft.service ? formatMoney(draft.service.price) : '$0.00'} strong />
       </Surface>
@@ -89,9 +96,17 @@ export default function ReviewScreen() {
           </Text>
         </Surface>
       ) : null}
+      {draft.primaWashDay ? (
+        <Surface>
+          <SectionHeading eyebrow="Condo operations" title="Temporary on-site service" />
+          <Text style={styles.payment}>
+            Prima Wash will coordinate this booking inside the approved condo operating window and service area.
+          </Text>
+        </Surface>
+      ) : null}
       <Surface>
         <SectionHeading eyebrow="Payment" title="Protected checkout" />
-        <Text style={styles.payment}>•••• 4242 · Payment is authorized now and captured when care is completed.</Text>
+        <Text style={styles.payment}>Card ending 4242. Payment is authorized now and captured when care is completed.</Text>
       </Surface>
       <Surface>
         <SectionHeading eyebrow="Reminders" title={preferences.appointmentReminders ? 'Reminder enabled' : 'Reminder off'} />
@@ -115,7 +130,7 @@ export default function ReviewScreen() {
       ) : null}
       <Text style={styles.policy}>Free cancellation before vehicle check-in. By confirming, you agree to the booking and cancellation terms.</Text>
       <PrimaryButton
-        disabled={!draft.partner || !draft.service || !draft.slot || !draft.vehicle}
+        disabled={!canSubmit}
         label={pendingBooking ? 'Resume secure payment' : 'Confirm and authorize payment'}
         loading={submitting}
         onPress={confirmBooking}

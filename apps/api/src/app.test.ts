@@ -401,6 +401,61 @@ describe("Prima Wash API", () => {
     assert.ok(payload.data.every((day) => ["planned", "approved", "active"].includes(day.status)));
   });
 
+  it("creates a booking against a Prima Wash Day and enforces day capacity", async () => {
+    const startsAt = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    const endsAt = new Date(startsAt.getTime() + 4 * 60 * 60 * 1000);
+    const dayResponse = await fetch(`${baseUrl}/v1/internal/prima-wash-days`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        propertyId: "prop_sg_marina_one",
+        partnerLocationId: "loc_demo_001",
+        approvedServiceArea: "Basement visitor lots B1",
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        capacity: 1,
+        serviceCodes: ["wash_basic"],
+        status: "approved",
+      }),
+    });
+    const dayPayload = (await dayResponse.json()) as ApiResponse<PrimaWashDay>;
+    const firstVehicle = await createVehicle("CONDO1");
+    const bookingResponse = await fetch(`${baseUrl}/v1/bookings`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({
+        vehicleId: firstVehicle.id,
+        primaWashDayId: dayPayload.data.id,
+        serviceCode: "wash_basic",
+      }),
+    });
+    const bookingPayload = (await bookingResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(dayResponse.status, 201);
+    assert.equal(bookingResponse.status, 201);
+    assert.equal(bookingPayload.data.primaWashDayId, dayPayload.data.id);
+    assert.equal(bookingPayload.data.partnerLocationId, "loc_demo_001");
+    assert.equal(bookingPayload.data.scheduledStartAt, dayPayload.data.startsAt);
+
+    const secondVehicle = await createVehicle("CONDO2");
+    const fullResponse = await fetch(`${baseUrl}/v1/bookings`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({
+        vehicleId: secondVehicle.id,
+        primaWashDayId: dayPayload.data.id,
+        serviceCode: "wash_basic",
+      }),
+    });
+    const fullPayload = (await fullResponse.json()) as ApiErrorResponse;
+
+    assert.equal(fullResponse.status, 409);
+    assert.equal(fullPayload.code, "prima_wash_day_full");
+  });
+
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {
     const session = await createCustomerSession("garage@example.com");
     const headers = {

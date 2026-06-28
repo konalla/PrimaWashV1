@@ -558,6 +558,7 @@ export interface Booking {
   readonly ownerId: string;
   readonly vehicleId: string;
   readonly partnerLocationId: string;
+  readonly primaWashDayId?: string;
   readonly serviceCode: ServiceCode;
   readonly status: BookingStatus;
   readonly scheduledStartAt: string;
@@ -613,6 +614,7 @@ export interface CreateBookingRequest {
   readonly ownerId?: string;
   readonly vehicleId: string;
   readonly availabilitySlotId?: string;
+  readonly primaWashDayId?: string;
   readonly holdId?: string;
   readonly serviceCode: ServiceCode;
 }

@@ -87,11 +87,12 @@ export interface Repositories {
 export function createRepositories(databaseUrl?: string): Repositories {
   if (!databaseUrl) {
     const availability = new InMemoryAvailabilityRepository();
+    const condoOperations = new InMemoryCondoOperationsRepository();
 
     return {
       availability,
       vehicles: new InMemoryVehicleRepository(),
-      bookings: new InMemoryBookingRepository(availability),
+      bookings: new InMemoryBookingRepository(availability, condoOperations),
       bookingHolds: new InMemoryBookingHoldRepository(),
       serviceRecords: new InMemoryServiceRecordRepository(),
       productEvents: new InMemoryProductEventRepository(),
@@ -100,7 +101,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       profiles: new InMemoryProfileRepository(),
       partners: new InMemoryPartnerRepository(),
       properties: new InMemoryPropertyRepository(),
-      condoOperations: new InMemoryCondoOperationsRepository(),
+      condoOperations,
       capacityTemplates: new InMemoryCapacityTemplateRepository(),
       scheduling: new InMemorySchedulingConfigRepository(),
     };

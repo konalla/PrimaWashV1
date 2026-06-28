@@ -5,12 +5,24 @@ import type {
   BookingHold,
   PartnerLocation,
   PaymentIntent,
+  PrimaWashDay,
   ServiceOffering,
   Vehicle,
 } from '@prima-wash/contracts';
 import { createContext, type PropsWithChildren, useCallback, useContext, useMemo, useState } from 'react';
 
-export type BookingDraftSlot = AvailabilitySlot | AvailabilitySearchSlot;
+export interface PrimaWashDayDraftSlot {
+  readonly primaWashDayId: string;
+  readonly partnerLocationId?: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly capacity: number;
+  readonly availableCount: number;
+  readonly serviceCodes: PrimaWashDay['serviceCodes'];
+  readonly source: 'prima_wash_day';
+}
+
+export type BookingDraftSlot = AvailabilitySlot | AvailabilitySearchSlot | PrimaWashDayDraftSlot;
 
 interface BookingDraft {
   readonly service?: ServiceOffering;
@@ -18,6 +30,7 @@ interface BookingDraft {
   readonly hold?: BookingHold;
   readonly vehicle?: Vehicle;
   readonly partner?: PartnerLocation;
+  readonly primaWashDay?: PrimaWashDay;
 }
 
 interface BookingContextValue {
@@ -27,6 +40,7 @@ interface BookingContextValue {
   setService(service: ServiceOffering): void;
   setSlot(slot: AvailabilitySlot): void;
   setHeldSlot(slot: AvailabilitySearchSlot, hold: BookingHold): void;
+  setPrimaWashDay(day: PrimaWashDay): void;
   setVehicle(vehicle: Vehicle): void;
   setPartner(partner: PartnerLocation): void;
   complete(booking: Booking, payment: PaymentIntent): void;
@@ -52,17 +66,37 @@ export function BookingProvider({ children }: PropsWithChildren) {
   const setHeldSlot = useCallback((slot: AvailabilitySearchSlot, hold: BookingHold) => {
     setDraft((current) => ({ ...current, slot, hold }));
   }, []);
+  const setPrimaWashDay = useCallback((day: PrimaWashDay) => {
+    setDraft((current) => ({
+      ...current,
+      partner: undefined,
+      primaWashDay: day,
+      hold: undefined,
+      slot: {
+        primaWashDayId: day.id,
+        partnerLocationId: day.partnerLocationId,
+        startsAt: day.startsAt,
+        endsAt: day.endsAt,
+        capacity: day.capacity,
+        availableCount: day.capacity,
+        serviceCodes: day.serviceCodes,
+        source: 'prima_wash_day',
+      },
+      ...(current.service && day.serviceCodes.includes(current.service.code) ? {} : { service: undefined }),
+    }));
+  }, []);
   const setVehicle = useCallback((vehicle: Vehicle) => {
     setDraft((current) => ({
       ...current,
       vehicle,
-      ...(current.hold?.vehicleId === vehicle.id ? {} : { hold: undefined, slot: undefined }),
+      ...(current.hold && current.hold.vehicleId !== vehicle.id ? { hold: undefined, slot: undefined } : {}),
     }));
   }, []);
   const setPartner = useCallback((partner: PartnerLocation) => {
     setDraft((current) => ({
       ...current,
       partner,
+      primaWashDay: undefined,
       ...(current.slot?.partnerLocationId === partner.id ? {} : { slot: undefined, hold: undefined }),
       ...(current.service && partner.serviceCodes.includes(current.service.code) ? {} : { service: undefined }),
     }));
@@ -81,12 +115,13 @@ export function BookingProvider({ children }: PropsWithChildren) {
       setService,
       setSlot,
       setHeldSlot,
+      setPrimaWashDay,
       setVehicle,
       setPartner,
       complete,
       reset,
     }),
-    [complete, draft, latestBooking, latestPayment, reset, setHeldSlot, setPartner, setService, setSlot, setVehicle],
+    [complete, draft, latestBooking, latestPayment, reset, setHeldSlot, setPartner, setPrimaWashDay, setService, setSlot, setVehicle],
   );
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;

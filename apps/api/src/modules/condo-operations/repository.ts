@@ -16,6 +16,7 @@ export interface CondoOperationsRepository {
   getOperationalProfile(propertyId: string): Promise<CondoOperationalProfile | undefined>;
   upsertOperationalProfile(propertyId: string, input: UpdateCondoOperationalProfileRequest): Promise<CondoOperationalProfile>;
   listPrimaWashDays(input?: { readonly propertyId?: string }): Promise<readonly PrimaWashDay[]>;
+  getPrimaWashDay(dayId: string): Promise<PrimaWashDay | undefined>;
   createPrimaWashDay(input: CreatePrimaWashDayRequest): Promise<PrimaWashDay>;
   updatePrimaWashDay(dayId: string, input: UpdatePrimaWashDayRequest): Promise<PrimaWashDay>;
 }
@@ -97,6 +98,10 @@ export class InMemoryCondoOperationsRepository implements CondoOperationsReposit
     return [...this.#days.values()]
       .filter((day) => !input.propertyId || day.propertyId === input.propertyId)
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  }
+
+  async getPrimaWashDay(dayId: string): Promise<PrimaWashDay | undefined> {
+    return this.#days.get(dayId);
   }
 
   async createPrimaWashDay(input: CreatePrimaWashDayRequest): Promise<PrimaWashDay> {
@@ -227,6 +232,11 @@ export class PostgresCondoOperationsRepository implements CondoOperationsReposit
       params,
     );
     return result.rows.map(mapPrimaWashDayRow);
+  }
+
+  async getPrimaWashDay(dayId: string): Promise<PrimaWashDay | undefined> {
+    const result = await this.pool.query<PrimaWashDayRow>(`${primaWashDaySelect} where d.id = $1`, [dayId]);
+    return result.rows[0] ? mapPrimaWashDayRow(result.rows[0]) : undefined;
   }
 
   async createPrimaWashDay(input: CreatePrimaWashDayRequest): Promise<PrimaWashDay> {

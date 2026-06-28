@@ -2,6 +2,7 @@ import type { Booking, BookingStatus, CreateBookingRequest, Money, ServiceCode }
 import type { DatabasePool } from "../../db/pool.js";
 import { findAvailabilitySlot, findServiceOffering } from "../availability/catalog.js";
 import type { AvailabilityRepository } from "../availability/repository.js";
+import type { CondoOperationsRepository } from "../condo-operations/repository.js";
 
 type CreateBookingInput = CreateBookingRequest & { readonly ownerId: string };
 
@@ -15,7 +16,10 @@ export interface BookingRepository {
 export class InMemoryBookingRepository implements BookingRepository {
   readonly #bookings = new Map<string, Booking>();
 
-  constructor(private readonly availability?: AvailabilityRepository) {}
+  constructor(
+    private readonly availability?: AvailabilityRepository,
+    private readonly condoOperations?: CondoOperationsRepository,
+  ) {}
 
   async list(ownerId?: string): Promise<readonly Booking[]> {
     const allBookings = Array.from(this.#bookings.values());
@@ -27,6 +31,53 @@ export class InMemoryBookingRepository implements BookingRepository {
   }
 
   async create(input: CreateBookingInput): Promise<Booking> {
+    if (input.primaWashDayId) {
+      if (!this.condoOperations) {
+        throw new Error("prima_wash_day_not_found");
+      }
+
+      const day = await this.condoOperations.getPrimaWashDay(input.primaWashDayId);
+      const service = findServiceOffering(input.serviceCode);
+
+      if (!day) {
+        throw new Error("prima_wash_day_not_found");
+      }
+
+      if (!["planned", "approved", "active"].includes(day.status) || new Date(day.endsAt).getTime() <= Date.now()) {
+        throw new Error("prima_wash_day_unavailable");
+      }
+
+      if (!day.partnerLocationId) {
+        throw new Error("prima_wash_day_partner_required");
+      }
+
+      if (!service || !day.serviceCodes.includes(input.serviceCode)) {
+        throw new Error("service_not_available_for_prima_wash_day");
+      }
+
+      const bookedCount = Array.from(this.#bookings.values()).filter(
+        (booking) => booking.primaWashDayId === day.id && booking.status !== "cancelled",
+      ).length;
+
+      if (bookedCount >= day.capacity) {
+        throw new Error("prima_wash_day_full");
+      }
+
+      const booking = buildBooking({
+        ownerId: input.ownerId,
+        vehicleId: input.vehicleId,
+        partnerLocationId: day.partnerLocationId,
+        primaWashDayId: day.id,
+        serviceCode: input.serviceCode,
+        scheduledStartAt: day.startsAt,
+        durationMinutes: service.durationMinutes,
+        acceptedPrice: service.price,
+      });
+
+      this.#bookings.set(booking.id, booking);
+      return booking;
+    }
+
     if (!input.availabilitySlotId) {
       throw new Error("availability_slot_required");
     }
@@ -92,7 +143,7 @@ export class PostgresBookingRepository implements BookingRepository {
   async list(ownerId?: string): Promise<readonly Booking[]> {
     const result = ownerId
       ? await this.pool.query<BookingRow>(
-          `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+          `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, created_at
            from bookings
@@ -101,7 +152,7 @@ export class PostgresBookingRepository implements BookingRepository {
           [ownerId],
         )
       : await this.pool.query<BookingRow>(
-          `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+          `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, created_at
            from bookings
@@ -113,7 +164,7 @@ export class PostgresBookingRepository implements BookingRepository {
 
   async get(bookingId: string): Promise<Booking | undefined> {
     const result = await this.pool.query<BookingRow>(
-      `select id, owner_id, vehicle_id, partner_location_id, service_code, status,
+      `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
               scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
               accepted_price_currency, created_at
        from bookings
@@ -125,6 +176,113 @@ export class PostgresBookingRepository implements BookingRepository {
   }
 
   async create(input: CreateBookingInput): Promise<Booking> {
+    if (input.primaWashDayId) {
+      const client = await this.pool.connect();
+
+      try {
+        await client.query("begin");
+
+        const dayResult = await client.query<PrimaWashDayServiceRow>(
+          `select d.id,
+                  d.partner_location_id,
+                  d.starts_at,
+                  d.ends_at,
+                  d.capacity,
+                  d.status,
+                  so.duration_minutes,
+                  so.price_amount_minor,
+                  so.price_currency
+           from prima_wash_days d
+           inner join service_offerings so on so.code = $2
+           where d.id = $1
+             and so.active = true
+             and $2 = any(d.service_codes)
+           for update`,
+          [input.primaWashDayId, input.serviceCode],
+        );
+        const day = dayResult.rows[0];
+
+        if (!day) {
+          throw new Error("prima_wash_day_not_found");
+        }
+
+        if (!["planned", "approved", "active"].includes(day.status) || new Date(day.ends_at).getTime() <= Date.now()) {
+          throw new Error("prima_wash_day_unavailable");
+        }
+
+        if (!day.partner_location_id) {
+          throw new Error("prima_wash_day_partner_required");
+        }
+
+        const capacityResult = await client.query<{ booked_count: string }>(
+          `select count(*) as booked_count
+           from bookings
+           where prima_wash_day_id = $1
+             and status <> 'cancelled'`,
+          [day.id],
+        );
+        const bookedCount = Number(capacityResult.rows[0]?.booked_count ?? 0);
+
+        if (bookedCount >= day.capacity) {
+          throw new Error("prima_wash_day_full");
+        }
+
+        const booking = buildBooking({
+          ownerId: input.ownerId,
+          vehicleId: input.vehicleId,
+          partnerLocationId: day.partner_location_id,
+          primaWashDayId: day.id,
+          serviceCode: input.serviceCode,
+          scheduledStartAt: new Date(day.starts_at).toISOString(),
+          durationMinutes: day.duration_minutes,
+          acceptedPrice: {
+            amountMinor: day.price_amount_minor,
+            currency: day.price_currency,
+          },
+        });
+
+        const result = await client.query<BookingRow>(
+          `insert into bookings (
+            id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
+            scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+            accepted_price_currency, created_at
+          )
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
+                    scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                    accepted_price_currency, created_at`,
+          [
+            booking.id,
+            booking.ownerId,
+            booking.vehicleId,
+            booking.partnerLocationId,
+            booking.primaWashDayId,
+            booking.serviceCode,
+            booking.status,
+            booking.scheduledStartAt,
+            booking.scheduledEndAt,
+            booking.acceptedPrice.amountMinor,
+            booking.acceptedPrice.currency,
+            booking.createdAt,
+          ],
+        );
+
+        const row = result.rows[0];
+
+        if (!row) {
+          throw new Error("booking_create_failed");
+        }
+
+        await client.query("commit");
+        return mapBookingRow(row);
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     if (!input.availabilitySlotId) {
       throw new Error("availability_slot_required");
     }
@@ -189,12 +347,12 @@ export class PostgresBookingRepository implements BookingRepository {
 
       const result = await client.query<BookingRow>(
         `insert into bookings (
-          id, owner_id, vehicle_id, partner_location_id, service_code, status,
+          id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
           scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
           accepted_price_currency, created_at
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        returning id, owner_id, vehicle_id, partner_location_id, service_code, status,
+        values ($1, $2, $3, $4, null, $5, $6, $7, $8, $9, $10, $11)
+        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, created_at`,
         [
@@ -233,7 +391,7 @@ export class PostgresBookingRepository implements BookingRepository {
       `update bookings
        set status = $2
        where id = $1
-       returning id, owner_id, vehicle_id, partner_location_id, service_code, status,
+       returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, created_at`,
       [bookingId, status],
@@ -256,8 +414,8 @@ export function validateCreateBooking(input: Partial<CreateBookingRequest>): str
     errors.push("vehicleId is required");
   }
 
-  if (!input.availabilitySlotId && !input.holdId) {
-    errors.push("availabilitySlotId or holdId is required");
+  if (!input.availabilitySlotId && !input.holdId && !input.primaWashDayId) {
+    errors.push("availabilitySlotId, holdId, or primaWashDayId is required");
   }
 
   if (input.availabilitySlotId !== undefined && input.availabilitySlotId.trim().length < 3) {
@@ -266,6 +424,10 @@ export function validateCreateBooking(input: Partial<CreateBookingRequest>): str
 
   if (input.holdId !== undefined && input.holdId.trim().length < 3) {
     errors.push("holdId must be valid");
+  }
+
+  if (input.primaWashDayId !== undefined && input.primaWashDayId.trim().length < 3) {
+    errors.push("primaWashDayId must be valid");
   }
 
   if (!input.serviceCode) {
@@ -314,6 +476,7 @@ interface BuildBookingInput {
   readonly ownerId: string;
   readonly vehicleId: string;
   readonly partnerLocationId: string;
+  readonly primaWashDayId?: string;
   readonly serviceCode: ServiceCode;
   readonly scheduledStartAt: string;
   readonly durationMinutes: number;
@@ -330,11 +493,24 @@ interface SlotServiceRow {
   readonly price_currency: string;
 }
 
+interface PrimaWashDayServiceRow {
+  readonly id: string;
+  readonly partner_location_id: string | null;
+  readonly starts_at: Date | string;
+  readonly ends_at: Date | string;
+  readonly capacity: number;
+  readonly status: string;
+  readonly duration_minutes: number;
+  readonly price_amount_minor: number;
+  readonly price_currency: string;
+}
+
 interface BookingRow {
   readonly id: string;
   readonly owner_id: string;
   readonly vehicle_id: string;
   readonly partner_location_id: string;
+  readonly prima_wash_day_id: string | null;
   readonly service_code: ServiceCode;
   readonly status: Booking["status"];
   readonly scheduled_start_at: Date | string;
@@ -354,6 +530,7 @@ function buildBooking(input: BuildBookingInput): Booking {
     ownerId: input.ownerId,
     vehicleId: input.vehicleId,
     partnerLocationId: input.partnerLocationId,
+    ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
     serviceCode: input.serviceCode,
     status: "pending_payment",
     scheduledStartAt: input.scheduledStartAt,
@@ -369,6 +546,7 @@ function mapBookingRow(row: BookingRow): Booking {
     ownerId: row.owner_id,
     vehicleId: row.vehicle_id,
     partnerLocationId: row.partner_location_id,
+    ...(row.prima_wash_day_id ? { primaWashDayId: row.prima_wash_day_id } : {}),
     serviceCode: row.service_code,
     status: row.status,
     scheduledStartAt: new Date(row.scheduled_start_at).toISOString(),

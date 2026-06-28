@@ -6,10 +6,12 @@ import type { CustomerProfile, PrimaWashDay } from '@prima-wash/contracts';
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
 import { colors, radius, spacing } from '@/constants/design';
+import { useBooking } from '@/context/booking-context';
 import { formatAppointment, formatService } from '@/lib/format';
 import { primaApi } from '@/lib/api';
 
 export default function PrimaWashDaysScreen() {
+  const { setPrimaWashDay } = useBooking();
   const [profile, setProfile] = useState<CustomerProfile>();
   const [days, setDays] = useState<readonly PrimaWashDay[]>([]);
   const propertyName = profile?.residentialProfile?.propertyName ?? 'Your condo';
@@ -84,6 +86,13 @@ export default function PrimaWashDaysScreen() {
               </View>
             </View>
             {day.operatingNotes ? <Text style={styles.body}>{day.operatingNotes}</Text> : null}
+            <PrimaryButton
+              label="Choose this service day"
+              onPress={() => {
+                setPrimaWashDay(day);
+                router.push('/booking/service' as never);
+              }}
+            />
           </Surface>
         ))
       ) : (

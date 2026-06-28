@@ -23,6 +23,7 @@ export default function ServiceScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const hasSelectedVehicle = Boolean(draft.vehicle);
+  const isPrimaWashDayBooking = Boolean(draft.primaWashDay);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,18 +48,22 @@ export default function ServiceScreen() {
     return () => clearTimeout(timeoutId);
   }, [load]);
 
-  const partnerServices = draft.partner
-    ? services.filter((service) => draft.partner?.serviceCodes.includes(service.code))
-    : [];
+  const availableServices = draft.primaWashDay
+    ? services.filter((service) => draft.primaWashDay?.serviceCodes.includes(service.code))
+    : draft.partner
+      ? services.filter((service) => draft.partner?.serviceCodes.includes(service.code))
+      : [];
 
   return (
     <AppScreen eyebrow="Step 1 of 3" title="Choose your care">
       <Text style={styles.intro}>
-        {draft.partner
-          ? `${draft.partner.name} · ${draft.partner.rating.toFixed(1)} stars · ${draft.partner.distanceKm.toFixed(1)} km`
-          : 'Choose a verified partner before selecting your care.'}
+        {draft.primaWashDay
+          ? `${draft.primaWashDay.propertyName} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
+          : draft.partner
+            ? `${draft.partner.name} - ${draft.partner.rating.toFixed(1)} stars - ${draft.partner.distanceKm.toFixed(1)} km`
+            : 'Choose a verified partner before selecting your care.'}
       </Text>
-      {!draft.partner ? (
+      {!draft.partner && !draft.primaWashDay ? (
         <Pressable onPress={() => router.replace('/partners')} style={styles.addVehicle}>
           <Text style={styles.name}>Choose a partner</Text>
           <Text style={styles.description}>Compare ratings, distance, services, and live availability.</Text>
@@ -77,7 +82,7 @@ export default function ServiceScreen() {
             return (
               <Pressable key={vehicle.id} onPress={() => setVehicle(vehicle)} style={[styles.vehicleChoice, selected && styles.vehicleChoiceSelected]}>
                 <Text style={styles.vehicleName}>{`${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || 'Vehicle'}</Text>
-                <Text style={styles.duration}>{vehicle.plateNumber}{vehicle.isPrimary ? ' · Primary' : ''}</Text>
+                <Text style={styles.duration}>{vehicle.plateNumber}{vehicle.isPrimary ? ' - Primary' : ''}</Text>
               </Pressable>
             );
           })}
@@ -92,15 +97,19 @@ export default function ServiceScreen() {
           <Pressable onPress={() => void load()}><Text style={styles.retry}>Try again</Text></Pressable>
         </View>
       ) : null}
-      {!loading && !error && draft.partner && partnerServices.length === 0 ? (
+      {!loading && !error && (draft.partner || draft.primaWashDay) && availableServices.length === 0 ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorTitle}>No services are available here</Text>
-          <Text style={styles.description}>Choose another verified partner to continue.</Text>
-          <Pressable onPress={() => router.replace('/partners')}><Text style={styles.retry}>Browse partners</Text></Pressable>
+          <Text style={styles.description}>
+            {draft.primaWashDay ? 'This Prima Wash Day needs service options before it can be booked.' : 'Choose another verified partner to continue.'}
+          </Text>
+          <Pressable onPress={() => router.replace(draft.primaWashDay ? '/condo/prima-wash-days' as never : '/partners')}>
+            <Text style={styles.retry}>{draft.primaWashDay ? 'View service days' : 'Browse partners'}</Text>
+          </Pressable>
         </View>
       ) : null}
       <View style={styles.list}>
-        {partnerServices.map((service, index) => {
+        {availableServices.map((service, index) => {
           const selected = draft.service?.code === service.code;
           return (
             <Pressable
@@ -116,15 +125,15 @@ export default function ServiceScreen() {
                 <Text style={styles.duration}>{service.durationMinutes} min</Text>
                 <Text style={styles.price}>{formatMoney(service.price)}</Text>
               </View>
-              {selected ? <Text style={styles.selected}>✓ Selected</Text> : null}
+              {selected ? <Text style={styles.selected}>Selected</Text> : null}
             </Pressable>
           );
         })}
       </View>
       <PrimaryButton
-        disabled={!draft.partner || !draft.service || !draft.vehicle || loading || Boolean(error)}
-        label={loading ? 'Loading services…' : 'Choose appointment time'}
-        onPress={() => router.push('/booking/time')}
+        disabled={(!draft.partner && !draft.primaWashDay) || !draft.service || !draft.vehicle || loading || Boolean(error)}
+        label={loading ? 'Loading services...' : isPrimaWashDayBooking ? 'Review condo booking' : 'Choose appointment time'}
+        onPress={() => router.push(isPrimaWashDayBooking ? '/booking/review' : '/booking/time')}
       />
     </AppScreen>
   );

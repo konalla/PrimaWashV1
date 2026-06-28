@@ -1779,12 +1779,19 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           consumedHold = hold;
         }
 
-        if (!availabilitySlotId) {
-          sendError(response, 400, "validation_failed", "availabilitySlotId or holdId is required");
+        if (!availabilitySlotId && !input.primaWashDayId) {
+          sendError(response, 400, "validation_failed", "availabilitySlotId, holdId, or primaWashDayId is required");
           return;
         }
 
-        const booking = await options.repositories.bookings.create({ ...input, availabilitySlotId, ownerId });
+        const booking = await options.repositories.bookings.create({
+          ownerId,
+          vehicleId: input.vehicleId,
+          serviceCode: input.serviceCode,
+          ...(availabilitySlotId ? { availabilitySlotId } : {}),
+          ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
+          ...(input.holdId ? { holdId: input.holdId } : {}),
+        });
 
         if (consumedHold) {
           await options.repositories.bookingHolds.updateStatus(consumedHold.id, "consumed");
@@ -1800,6 +1807,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             ownerId: booking.ownerId,
             vehicleId: booking.vehicleId,
             partnerLocationId: booking.partnerLocationId,
+            primaWashDayId: booking.primaWashDayId,
             serviceCode: booking.serviceCode,
             acceptedPrice: booking.acceptedPrice,
           },
@@ -1812,6 +1820,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           resourceId: booking.id,
           metadata: {
             vehicleId: booking.vehicleId,
+            primaWashDayId: booking.primaWashDayId,
             serviceCode: booking.serviceCode,
             acceptedPrice: booking.acceptedPrice,
           },
@@ -1842,6 +1851,31 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         if (message === "availability_slot_full") {
           sendError(response, 409, message, "Selected availability slot is at capacity");
+          return;
+        }
+
+        if (message === "prima_wash_day_not_found") {
+          sendError(response, 404, message, "Prima Wash Day does not exist");
+          return;
+        }
+
+        if (message === "service_not_available_for_prima_wash_day") {
+          sendError(response, 409, message, "Requested service is not available for the selected Prima Wash Day");
+          return;
+        }
+
+        if (message === "prima_wash_day_unavailable") {
+          sendError(response, 409, message, "Selected Prima Wash Day is no longer available");
+          return;
+        }
+
+        if (message === "prima_wash_day_partner_required") {
+          sendError(response, 409, message, "Selected Prima Wash Day needs an assigned partner before booking");
+          return;
+        }
+
+        if (message === "prima_wash_day_full") {
+          sendError(response, 409, message, "Selected Prima Wash Day is at capacity");
           return;
         }
 
