@@ -457,6 +457,73 @@ describe("Prima Wash API", () => {
     assert.equal(readPayload.code, "communication_thread_forbidden");
   });
 
+  it("persists Prima Wash owner support threads with customer replies", async () => {
+    const createResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "prima_to_owner",
+        resourceType: "owner",
+        resourceId: "usr_demo_001",
+        subject: "Payment support",
+        initialMessage: "We can help with the payment authorization before your appointment.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const replyResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}/messages`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({ body: "Thanks, I will retry authorization now." }),
+    });
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}`, {
+      headers: customerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(replyResponse.status, 201);
+    assert.equal(readResponse.status, 200);
+    assert.deepEqual(readPayload.data.messages.map((message) => message.senderRole), ["internal", "customer"]);
+  });
+
+  it("persists Prima Wash partner operation threads with partner replies", async () => {
+    const createResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "prima_to_partner",
+        resourceType: "partner_location",
+        resourceId: "loc_demo_001",
+        subject: "Weekend capacity plan",
+        initialMessage: "Please confirm technician coverage for the weekend slots.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const replyResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}/messages`, {
+      method: "POST",
+      headers: {
+        ...partnerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "Coverage confirmed for all published slots." }),
+    });
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}`, {
+      headers: partnerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(replyResponse.status, 201);
+    assert.equal(readResponse.status, 200);
+    assert.deepEqual(readPayload.data.messages.map((message) => message.senderRole), ["internal", "partner"]);
+  });
+
   it("allows multiple Prima Wash Days for the same condo without a weekly or monthly cap", async () => {
     const created: PrimaWashDay[] = [];
 

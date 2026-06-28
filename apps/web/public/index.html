@@ -1479,6 +1479,10 @@
             <div class="confidence-item"><span class="muted">Connection</span><strong id="source">Live</strong></div>
             <div class="confidence-item"><span class="muted">Last synced</span><strong id="generated-at">Loading</strong></div>
           </div>
+          <div class="dialog-actions">
+            <button class="action" type="button" data-partner-thread>Message partner</button>
+            <button class="action" type="button" data-partner-inbox>Partner inbox</button>
+          </div>
         </aside>
       </section>
 
@@ -1822,6 +1826,7 @@
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "attention";
       let selectedBookingId = null;
+      let communicationDialogHeaders = null;
       let capacityTemplates = [];
       let selectedPartnerLocationId =
         urlParams.get("partnerLocationId") || partnerLocationSelect.value;
@@ -2754,6 +2759,7 @@
               <div class="detail-item"><span>Payment</span><strong>${formatPaymentStatus(item.paymentStatus)}</strong></div>
               <div class="detail-item"><span>Amount</span><strong>${item.paymentAmount ? formatMoney(item.paymentAmount) : "No payment intent"}</strong></div>
               <div class="detail-item"><span>Appointment</span><strong>${formatRelativeDay(item.scheduledStartAt)}, ${formatTime(item.scheduledStartAt)}</strong></div>
+              <div class="detail-item"><span>Owner</span><strong>${item.ownerId}</strong></div>
             </section>
 
             <section>
@@ -2787,6 +2793,7 @@
             </section>
 
             <section class="dialog-actions">
+              <button class="action" type="button" data-owner-thread="${item.ownerId}" data-owner-booking="${item.bookingId}">Message owner</button>
               ${renderDrawerActions(item)}
             </section>
           </div>
@@ -2876,27 +2883,87 @@
       async function openPropertyCommunicationDialog(propertyId) {
         const lead = condoLeadsCache.find((item) => item.id === propertyId);
         const subject = `${lead?.name || "Condo"} operations`;
+        await openCommunicationDialog({
+          resourceType: "property",
+          resourceId: propertyId,
+          threadType: "prima_to_property",
+          subject,
+          title: lead ? `${lead.name} thread` : "Property thread",
+          emptyText: "No messages yet. Send the first note to office management.",
+          placeholder: "Write a message for condo office management",
+        });
+      }
+
+      async function openOwnerCommunicationDialog(ownerId, bookingId) {
+        await openCommunicationDialog({
+          resourceType: "owner",
+          resourceId: ownerId,
+          threadType: "prima_to_owner",
+          subject: `Owner support ${bookingId.slice(-8).toUpperCase()}`,
+          title: `Owner ${ownerId} thread`,
+          emptyText: "No messages yet. Send the first note to this owner.",
+          placeholder: "Write a message for the vehicle owner",
+        });
+      }
+
+      async function openPartnerCommunicationDialog() {
+        const partner = partnerLocations[selectedPartnerLocationId];
+        await openCommunicationDialog({
+          resourceType: "partner_location",
+          resourceId: selectedPartnerLocationId,
+          threadType: "prima_to_partner",
+          subject: `${partner.name} operations`,
+          title: `${partner.name} thread`,
+          emptyText: "No messages yet. Send the first note to this partner.",
+          placeholder: "Write a message for the partner team",
+        });
+      }
+
+      async function openPartnerInboxDialog() {
+        const partner = partnerLocations[selectedPartnerLocationId];
+        await openCommunicationDialog({
+          resourceType: "partner_location",
+          resourceId: selectedPartnerLocationId,
+          threadType: "prima_to_partner",
+          subject: `${partner.name} operations`,
+          title: `${partner.name} inbox`,
+          emptyText: "No messages from Prima Wash yet.",
+          placeholder: "Write a reply to Prima Wash",
+          headers: partnerHeaders(),
+        });
+      }
+
+      async function openCommunicationDialog(input) {
+        communicationDialogHeaders = input.headers || {
+          "x-prima-user-id": "usr_internal_dashboard",
+          "x-prima-role": "internal",
+        };
         communicationForm.reset();
-        communicationForm.elements.resourceId.value = propertyId;
-        communicationForm.elements.subject.value = subject;
-        communicationTitleEl.textContent = lead ? `${lead.name} thread` : "Property thread";
-        communicationSubtitleEl.textContent = "Persisted messages only. No realtime or push notifications yet.";
+        communicationForm.elements.resourceType.value = input.resourceType;
+        communicationForm.elements.resourceId.value = input.resourceId;
+        communicationForm.elements.threadType.value = input.threadType;
+        communicationForm.elements.subject.value = input.subject;
+        communicationTitleEl.textContent = input.title;
+        communicationSubtitleEl.textContent = "Persisted append-only messages. No realtime or push notifications yet.";
+        communicationForm.elements.body.placeholder = input.placeholder;
         communicationMessagesEl.innerHTML = `<div class="empty">Loading messages...</div>`;
         communicationDialog.showModal();
 
         const threads = await communicationRequestJson(
-          `/v1/communication/threads?resourceType=property&resourceId=${encodeURIComponent(propertyId)}`,
+          `/v1/communication/threads?resourceType=${encodeURIComponent(input.resourceType)}&resourceId=${encodeURIComponent(input.resourceId)}`,
+          {},
+          communicationDialogHeaders,
         );
-        const thread = threads.find((item) => item.type === "prima_to_property");
+        const thread = threads.find((item) => item.type === input.threadType);
 
         if (!thread) {
           communicationForm.elements.threadId.value = "";
-          communicationMessagesEl.innerHTML = `<div class="empty">No messages yet. Send the first note to office management.</div>`;
+          communicationMessagesEl.innerHTML = `<div class="empty">${escapeHtml(input.emptyText)}</div>`;
           return;
         }
 
         communicationForm.elements.threadId.value = thread.id;
-        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`);
+        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, communicationDialogHeaders);
         renderCommunicationMessages(payload.messages);
       }
 
@@ -3364,6 +3431,54 @@
             showToast(error.message, "error");
           } finally {
             propertyThreadButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const ownerThreadButton = event.target.closest("button[data-owner-thread]");
+
+        if (ownerThreadButton) {
+          ownerThreadButton.disabled = true;
+
+          try {
+            await openOwnerCommunicationDialog(ownerThreadButton.dataset.ownerThread, ownerThreadButton.dataset.ownerBooking);
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            ownerThreadButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const partnerThreadButton = event.target.closest("button[data-partner-thread]");
+
+        if (partnerThreadButton) {
+          partnerThreadButton.disabled = true;
+
+          try {
+            await openPartnerCommunicationDialog();
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            partnerThreadButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const partnerInboxButton = event.target.closest("button[data-partner-inbox]");
+
+        if (partnerInboxButton) {
+          partnerInboxButton.disabled = true;
+
+          try {
+            await openPartnerInboxDialog();
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            partnerInboxButton.disabled = false;
           }
 
           return;
@@ -3896,13 +4011,14 @@
         submitButton.disabled = true;
 
         try {
-          const threadId = await sendCommunicationForm(communicationForm, {
+          const headers = communicationDialogHeaders || {
             "x-prima-user-id": "usr_internal_dashboard",
             "x-prima-role": "internal",
-          });
+          };
+          const threadId = await sendCommunicationForm(communicationForm, headers);
           communicationForm.elements.threadId.value = threadId;
           communicationForm.elements.body.value = "";
-          const payload = await communicationRequestJson(`/v1/communication/threads/${threadId}`);
+          const payload = await communicationRequestJson(`/v1/communication/threads/${threadId}`, {}, headers);
           renderCommunicationMessages(payload.messages);
           showToast("Message sent.");
         } catch (error) {

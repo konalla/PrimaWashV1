@@ -60,9 +60,13 @@ export default function BookingDetailScreen() {
   const [communicationThread, setCommunicationThread] = useState<CommunicationThread>();
   const [messages, setMessages] = useState<readonly CommunicationMessage[]>([]);
   const [messageBody, setMessageBody] = useState('');
+  const [supportThread, setSupportThread] = useState<CommunicationThread>();
+  const [supportMessages, setSupportMessages] = useState<readonly CommunicationMessage[]>([]);
+  const [supportMessageBody, setSupportMessageBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
+  const [supportMessageLoading, setSupportMessageLoading] = useState(false);
   const [error, setError] = useState<string>();
 
   const loadMessages = useCallback(async (targetBookingId: string) => {
@@ -78,6 +82,21 @@ export default function BookingDetailScreen() {
     const payload = await primaApi.communicationThread(thread.id);
     setCommunicationThread(payload.thread);
     setMessages(payload.messages);
+  }, []);
+
+  const loadSupportMessages = useCallback(async (ownerId: string) => {
+    const threads = await primaApi.communicationThreads({ resourceType: 'owner', resourceId: ownerId });
+    const thread = threads.find((item) => item.type === 'prima_to_owner');
+
+    if (!thread) {
+      setSupportThread(undefined);
+      setSupportMessages([]);
+      return;
+    }
+
+    const payload = await primaApi.communicationThread(thread.id);
+    setSupportThread(payload.thread);
+    setSupportMessages(payload.messages);
   }, []);
 
   const load = useCallback(async () => {
@@ -102,13 +121,13 @@ export default function BookingDetailScreen() {
       setPayment(nextPayment);
       setPartner(nextPartner);
       setVehicle(vehicles.find((item) => item.id === nextBooking.vehicleId));
-      await loadMessages(nextBooking.id);
+      await Promise.all([loadMessages(nextBooking.id), loadSupportMessages(nextBooking.ownerId)]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Booking could not be loaded.');
     } finally {
       setLoading(false);
     }
-  }, [bookingId, loadMessages]);
+  }, [bookingId, loadMessages, loadSupportMessages]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,6 +211,43 @@ export default function BookingDetailScreen() {
       setError(caught instanceof Error ? caught.message : 'Message could not be sent.');
     } finally {
       setMessageLoading(false);
+    }
+  }
+
+  async function sendSupportMessage() {
+    if (!booking) {
+      return;
+    }
+
+    const body = supportMessageBody.trim();
+
+    if (!body) {
+      setError('Message cannot be blank.');
+      return;
+    }
+
+    setSupportMessageLoading(true);
+    setError(undefined);
+
+    try {
+      if (supportThread) {
+        await primaApi.addCommunicationMessage(supportThread.id, { body });
+      } else {
+        await primaApi.createCommunicationThread({
+          type: 'prima_to_owner',
+          resourceType: 'owner',
+          resourceId: booking.ownerId,
+          subject: `Owner support ${booking.id.slice(-8).toUpperCase()}`,
+          initialMessage: body,
+        });
+      }
+
+      setSupportMessageBody('');
+      await loadSupportMessages(booking.ownerId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Support message could not be sent.');
+    } finally {
+      setSupportMessageLoading(false);
     }
   }
 
@@ -298,6 +354,35 @@ export default function BookingDetailScreen() {
               label="Send message"
               loading={messageLoading}
               onPress={() => void sendBookingMessage()}
+            />
+          </Surface>
+
+          <Surface>
+            <SectionHeading eyebrow="Support" title="Prima Wash conversation" />
+            <Text style={styles.body}>Use this for payment, access, service, or support questions. Messages cannot be deleted.</Text>
+            {supportMessages.length === 0 ? (
+              <Text style={styles.emptyMessage}>No support messages yet. Prima Wash notes will appear here.</Text>
+            ) : (
+              supportMessages.map((message) => (
+                <View key={message.id} style={styles.messageItem}>
+                  <Text style={styles.messageMeta}>{formatSenderRole(message.senderRole)} - {formatMessageTime(message.createdAt)}</Text>
+                  <Text style={styles.messageText}>{message.body}</Text>
+                </View>
+              ))
+            )}
+            <TextInput
+              multiline
+              onChangeText={setSupportMessageBody}
+              placeholder="Write to Prima Wash"
+              placeholderTextColor={colors.subtle}
+              style={styles.messageInput}
+              value={supportMessageBody}
+            />
+            <PrimaryButton
+              disabled={supportMessageLoading || !supportMessageBody.trim()}
+              label="Send to Prima Wash"
+              loading={supportMessageLoading}
+              onPress={() => void sendSupportMessage()}
             />
           </Surface>
 
