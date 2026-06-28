@@ -30,6 +30,7 @@ import type {
   SchedulingConfig,
   ServiceRecord,
   ServiceCapacityRule,
+  UpdatePropertyActivationRequest,
   UpdateBookingStatusRequest,
   UpdateAvailabilitySlotRequest,
   UpdateCapacityTemplateRequest,
@@ -63,7 +64,7 @@ import { validateCreatePaymentIntent } from "./modules/payments/repository.js";
 import { validateCreateVehicle } from "./modules/vehicles/repository.js";
 import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
 import { validateProfileUpdate } from "./modules/profiles/repository.js";
-import { validateCreatePropertyInterest } from "./modules/properties/repository.js";
+import { validateCreatePropertyInterest, validateUpdatePropertyActivation } from "./modules/properties/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -259,6 +260,69 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
 
           sendError(response, 400, "invalid_request", "Property interest request could not be processed", message);
+        }
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/property-leads") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const marketId = requestUrl.searchParams.get("marketId") ?? "sg";
+        sendJson(response, 200, { data: await options.repositories.properties.listLeads({ marketId }) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    const propertyActivationMatch = requestUrl.pathname.match(/^\/v1\/internal\/properties\/([^/]+)\/activation$/);
+
+    if (request.method === "PATCH" && propertyActivationMatch) {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const propertyId = propertyActivationMatch[1];
+
+        if (!propertyId) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdatePropertyActivationRequest>(request);
+        const errors = validateUpdatePropertyActivation(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Property activation payload is invalid", errors);
+          return;
+        }
+
+        const property = await options.repositories.properties.updateActivation(propertyId, input);
+        await options.repositories.audit.record({
+          actor,
+          action: "property.activation_updated",
+          resourceType: "property",
+          resourceId: property.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            activationStatus: property.activationStatus,
+            nextFollowUpAt: property.nextFollowUpAt,
+            internalOwner: property.internalOwner,
+          },
+        });
+
+        sendJson(response, 200, { data: property });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "property_not_found") {
+            sendError(response, 404, message, "Property does not exist");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Property activation request could not be processed", message);
         }
       }
       return;

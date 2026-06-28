@@ -4,8 +4,10 @@ import type {
   Property,
   PropertyActivationStatus,
   PropertyInterest,
+  PropertyLead,
   ResidenceType,
   ServiceCode,
+  UpdatePropertyActivationRequest,
 } from "@prima-wash/contracts";
 import type { DatabasePool } from "../../db/pool.js";
 
@@ -21,8 +23,10 @@ interface PropertyInterestInput {
 
 export interface PropertyRepository {
   list(input?: { readonly marketId?: string; readonly query?: string; readonly residenceType?: ResidenceType }): Promise<readonly Property[]>;
+  listLeads(input?: { readonly marketId?: string }): Promise<readonly PropertyLead[]>;
   get(propertyId: string): Promise<Property | undefined>;
   registerInterest(input: PropertyInterestInput): Promise<{ readonly property: Property; readonly interest: PropertyInterest }>;
+  updateActivation(propertyId: string, input: UpdatePropertyActivationRequest): Promise<PropertyLead>;
 }
 
 const demoProperties: readonly Property[] = [
@@ -46,6 +50,13 @@ export class InMemoryPropertyRepository implements PropertyRepository {
 
   async get(propertyId: string): Promise<Property | undefined> {
     return this.#properties.get(propertyId);
+  }
+
+  async listLeads(input: { readonly marketId?: string } = {}): Promise<readonly PropertyLead[]> {
+    return [...this.#properties.values()]
+      .filter((property) => !input.marketId || property.marketId === input.marketId)
+      .map((property) => this.buildLead(property))
+      .sort((a, b) => b.interestCount - a.interestCount || a.name.localeCompare(b.name));
   }
 
   async registerInterest(input: PropertyInterestInput): Promise<{ readonly property: Property; readonly interest: PropertyInterest }> {
@@ -79,6 +90,30 @@ export class InMemoryPropertyRepository implements PropertyRepository {
     return { property: updatedProperty, interest };
   }
 
+  async updateActivation(propertyId: string, input: UpdatePropertyActivationRequest): Promise<PropertyLead> {
+    const existing = this.#properties.get(propertyId);
+
+    if (!existing) {
+      throw new Error("property_not_found");
+    }
+
+    const updated: Property = {
+      ...existing,
+      ...(input.activationStatus ? { activationStatus: input.activationStatus } : {}),
+      ...(input.managementContactName !== undefined ? { managementContactName: input.managementContactName.trim() } : {}),
+      ...(input.managementContactEmail !== undefined ? { managementContactEmail: input.managementContactEmail.trim().toLowerCase() } : {}),
+      ...(input.managementContactPhone !== undefined ? { managementContactPhone: input.managementContactPhone.trim() } : {}),
+      ...(input.outreachNotes !== undefined ? { outreachNotes: input.outreachNotes.trim() } : {}),
+      ...(input.nextFollowUpAt !== undefined ? { nextFollowUpAt: input.nextFollowUpAt } : {}),
+      ...(input.lastContactedAt !== undefined ? { lastContactedAt: input.lastContactedAt } : {}),
+      ...(input.internalOwner !== undefined ? { internalOwner: input.internalOwner.trim() } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    this.#properties.set(propertyId, updated);
+
+    return this.buildLead(updated);
+  }
+
   private findOrCreateSuggestedProperty(name: string | undefined, address: string | undefined, now: string): Property {
     const trimmedName = name?.trim();
 
@@ -110,6 +145,20 @@ export class InMemoryPropertyRepository implements PropertyRepository {
     };
     this.#properties.set(property.id, property);
     return property;
+  }
+
+  private latestInterestAt(propertyId: string): string | undefined {
+    return [...this.#interests.values()]
+      .filter((interest) => interest.propertyId === propertyId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.updatedAt;
+  }
+
+  private buildLead(property: Property): PropertyLead {
+    const latestInterestAt = this.latestInterestAt(property.id);
+    return {
+      ...property,
+      ...(latestInterestAt ? { latestInterestAt } : {}),
+    };
   }
 }
 
@@ -148,6 +197,25 @@ export class PostgresPropertyRepository implements PropertyRepository {
   async get(propertyId: string): Promise<Property | undefined> {
     const result = await this.pool.query<PropertyRow>(`${propertySelect} where p.id = $1 group by p.id`, [propertyId]);
     return result.rows[0] ? mapPropertyRow(result.rows[0]) : undefined;
+  }
+
+  async listLeads(input: { readonly marketId?: string } = {}): Promise<readonly PropertyLead[]> {
+    const params: unknown[] = [];
+    const where: string[] = [];
+
+    if (input.marketId) {
+      params.push(input.marketId);
+      where.push(`p.market_id = $${params.length}`);
+    }
+
+    const result = await this.pool.query<PropertyLeadRow>(
+      `${propertyLeadSelect}
+       ${where.length > 0 ? `where ${where.join(" and ")}` : ""}
+       group by p.id
+       order by count(pi.id) desc, max(pi.updated_at) desc nulls last, p.name asc`,
+      params,
+    );
+    return result.rows.map(mapPropertyLeadRow);
   }
 
   async registerInterest(input: PropertyInterestInput): Promise<{ readonly property: Property; readonly interest: PropertyInterest }> {
@@ -222,6 +290,42 @@ export class PostgresPropertyRepository implements PropertyRepository {
       client.release();
     }
   }
+
+  async updateActivation(propertyId: string, input: UpdatePropertyActivationRequest): Promise<PropertyLead> {
+    const result = await this.pool.query<PropertyLeadRow>(
+      `update properties
+       set activation_status = coalesce($2, activation_status),
+           management_contact_name = coalesce($3, management_contact_name),
+           management_contact_email = coalesce($4, management_contact_email),
+           management_contact_phone = coalesce($5, management_contact_phone),
+           outreach_notes = coalesce($6, outreach_notes),
+           next_follow_up_at = coalesce($7, next_follow_up_at),
+           last_contacted_at = coalesce($8, last_contacted_at),
+           internal_owner = coalesce($9, internal_owner),
+           updated_at = $10
+       where id = $1
+       returning id`,
+      [
+        propertyId,
+        input.activationStatus ?? null,
+        input.managementContactName?.trim() ?? null,
+        input.managementContactEmail?.trim().toLowerCase() ?? null,
+        input.managementContactPhone?.trim() ?? null,
+        input.outreachNotes?.trim() ?? null,
+        input.nextFollowUpAt ?? null,
+        input.lastContactedAt ?? null,
+        input.internalOwner?.trim() ?? null,
+        new Date().toISOString(),
+      ],
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("property_not_found");
+    }
+
+    const refreshed = await this.pool.query<PropertyLeadRow>(`${propertyLeadSelect} where p.id = $1 group by p.id`, [propertyId]);
+    return mapRequiredPropertyLeadRow(refreshed.rows[0]);
+  }
 }
 
 export function validateCreatePropertyInterest(input: CreatePropertyInterestRequest): string[] {
@@ -242,9 +346,57 @@ export function validateCreatePropertyInterest(input: CreatePropertyInterestRequ
   return errors;
 }
 
+export function validateUpdatePropertyActivation(input: UpdatePropertyActivationRequest): string[] {
+  const errors: string[] = [];
+  const statuses: readonly PropertyActivationStatus[] = [
+    "suggested",
+    "interest_gathering",
+    "contacted",
+    "approved",
+    "active",
+    "paused",
+    "rejected",
+  ];
+
+  if (input.activationStatus !== undefined && !statuses.includes(input.activationStatus)) {
+    errors.push("activationStatus is not supported");
+  }
+
+  if (input.managementContactEmail !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.managementContactEmail.trim())) {
+    errors.push("managementContactEmail must be valid");
+  }
+
+  for (const [fieldName, value] of [
+    ["managementContactName", input.managementContactName],
+    ["managementContactPhone", input.managementContactPhone],
+    ["outreachNotes", input.outreachNotes],
+    ["nextFollowUpAt", input.nextFollowUpAt],
+    ["lastContactedAt", input.lastContactedAt],
+    ["internalOwner", input.internalOwner],
+  ] as const) {
+    if (value !== undefined && value.trim().length === 0) {
+      errors.push(`${fieldName} cannot be blank`);
+    }
+  }
+
+  return errors;
+}
+
 const propertySelect = `
   select p.id, p.market_id, p.residence_type, p.name, p.address_line_1, p.city, p.region,
          p.country_code, p.activation_status, count(pi.id)::integer as interest_count,
+         p.management_contact_name, p.management_contact_email, p.management_contact_phone,
+         p.outreach_notes, p.next_follow_up_at, p.last_contacted_at, p.internal_owner,
+         p.created_at, p.updated_at
+  from properties p
+  left join property_interests pi on pi.property_id = p.id`;
+
+const propertyLeadSelect = `
+  select p.id, p.market_id, p.residence_type, p.name, p.address_line_1, p.city, p.region,
+         p.country_code, p.activation_status, count(pi.id)::integer as interest_count,
+         max(pi.updated_at) as latest_interest_at,
+         p.management_contact_name, p.management_contact_email, p.management_contact_phone,
+         p.outreach_notes, p.next_follow_up_at, p.last_contacted_at, p.internal_owner,
          p.created_at, p.updated_at
   from properties p
   left join property_interests pi on pi.property_id = p.id`;
@@ -260,8 +412,19 @@ interface PropertyRow {
   readonly country_code: string;
   readonly activation_status: PropertyActivationStatus;
   readonly interest_count: number;
+  readonly management_contact_name: string | null;
+  readonly management_contact_email: string | null;
+  readonly management_contact_phone: string | null;
+  readonly outreach_notes: string | null;
+  readonly next_follow_up_at: Date | string | null;
+  readonly last_contacted_at: Date | string | null;
+  readonly internal_owner: string | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
+}
+
+interface PropertyLeadRow extends PropertyRow {
+  readonly latest_interest_at: Date | string | null;
 }
 
 interface PropertyInterestRow {
@@ -311,9 +474,31 @@ function mapPropertyRow(row: PropertyRow): Property {
     countryCode: row.country_code,
     activationStatus: row.activation_status,
     interestCount: row.interest_count,
+    ...(row.management_contact_name ? { managementContactName: row.management_contact_name } : {}),
+    ...(row.management_contact_email ? { managementContactEmail: row.management_contact_email } : {}),
+    ...(row.management_contact_phone ? { managementContactPhone: row.management_contact_phone } : {}),
+    ...(row.outreach_notes ? { outreachNotes: row.outreach_notes } : {}),
+    ...(row.next_follow_up_at ? { nextFollowUpAt: new Date(row.next_follow_up_at).toISOString() } : {}),
+    ...(row.last_contacted_at ? { lastContactedAt: new Date(row.last_contacted_at).toISOString() } : {}),
+    ...(row.internal_owner ? { internalOwner: row.internal_owner } : {}),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
+}
+
+function mapPropertyLeadRow(row: PropertyLeadRow): PropertyLead {
+  return {
+    ...mapPropertyRow(row),
+    ...(row.latest_interest_at ? { latestInterestAt: new Date(row.latest_interest_at).toISOString() } : {}),
+  };
+}
+
+function mapRequiredPropertyLeadRow(row: PropertyLeadRow | undefined): PropertyLead {
+  if (!row) {
+    throw new Error("property_not_found");
+  }
+
+  return mapPropertyLeadRow(row);
 }
 
 function mapRequiredInterestRow(row: PropertyInterestRow | undefined): PropertyInterest {

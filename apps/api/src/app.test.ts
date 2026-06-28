@@ -20,6 +20,7 @@ import type {
   MavoResponse,
   PaymentIntent,
   Property,
+  PropertyLead,
   ServiceRecord,
   Vehicle,
 } from "@prima-wash/contracts";
@@ -251,6 +252,52 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.property.activationStatus, "suggested");
     assert.equal(payload.data.profile.residentialProfile?.propertyName, "Caspian Heights");
     assert.equal(payload.data.profile.residentialProfile?.propertyActivationStatus, "suggested");
+  });
+
+  it("exposes an internal condo activation lead dashboard", async () => {
+    const leadResponse = await fetch(`${baseUrl}/v1/internal/property-leads`, {
+      headers: internalHeaders,
+    });
+    const leadPayload = (await leadResponse.json()) as ApiResponse<PropertyLead[]>;
+
+    assert.equal(leadResponse.status, 200);
+    assert.ok(leadPayload.data.some((property) => property.id === "prop_sg_marina_one"));
+    assert.ok(leadPayload.data.every((property) => property.residenceType === "multi_unit_private"));
+  });
+
+  it("lets internal operators update condo activation status and outreach details", async () => {
+    const response = await fetch(`${baseUrl}/v1/internal/properties/prop_sg_reflections/activation`, {
+      method: "PATCH",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        activationStatus: "contacted",
+        managementContactName: "Ms Tan",
+        managementContactEmail: "management@example.sg",
+        outreachNotes: "Residents asked for Saturday morning Prima Wash Days.",
+        nextFollowUpAt: "2026-07-03T02:00:00.000Z",
+        internalOwner: "Amadou",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<PropertyLead>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.activationStatus, "contacted");
+    assert.equal(payload.data.managementContactName, "Ms Tan");
+    assert.equal(payload.data.managementContactEmail, "management@example.sg");
+    assert.equal(payload.data.internalOwner, "Amadou");
+  });
+
+  it("blocks non-internal actors from condo activation leads", async () => {
+    const response = await fetch(`${baseUrl}/v1/internal/property-leads`, {
+      headers: customerHeaders,
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "internal_role_required");
   });
 
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {

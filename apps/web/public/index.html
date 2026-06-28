@@ -750,6 +750,97 @@
         gap: 12px;
       }
 
+      .lead-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .lead-summary {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .lead-summary span {
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .lead-summary strong {
+        display: block;
+        margin-top: 7px;
+        font-size: 24px;
+        letter-spacing: -0.04em;
+      }
+
+      .lead-row {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr auto;
+        gap: 14px;
+        align-items: start;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        background: var(--panel-2);
+      }
+
+      .lead-copy,
+      .lead-controls {
+        display: grid;
+        gap: 8px;
+      }
+
+      .lead-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .lead-chip {
+        display: inline-flex;
+        width: fit-content;
+        border: 1px solid rgba(102, 245, 160, 0.24);
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: rgba(102, 245, 160, 0.08);
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .lead-chip.is-warning {
+        border-color: rgba(255, 217, 139, 0.28);
+        background: rgba(255, 217, 139, 0.08);
+        color: var(--amber);
+      }
+
+      .lead-form {
+        display: grid;
+        grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1fr);
+        gap: 8px;
+      }
+
+      .lead-form input,
+      .lead-form select {
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--ink);
+      }
+
+      .lead-form input[name="outreachNotes"] {
+        grid-column: 1 / -1;
+      }
+
       .confidence-item {
         display: flex;
         justify-content: space-between;
@@ -1263,6 +1354,7 @@
           <a class="nav-item" href="#queue-section"><span class="nav-icon">▣</span>Bookings</a>
           <a class="nav-item" href="#availability-section"><span class="nav-icon">◫</span>Availability</a>
           <a class="nav-item" href="#activity-section"><span class="nav-icon">↻</span>Activity</a>
+          <a class="nav-item" href="#condo-leads-section"><span class="nav-icon">CL</span>Condo leads</a>
         </nav>
         <div class="sidebar-footer">
           <div class="business-avatar">PW</div>
@@ -1310,6 +1402,19 @@
 
       <section class="metric-grid" id="metrics"></section>
       <div class="secondary-metrics" id="secondary-metrics" aria-label="Secondary business metrics"></div>
+
+      <section class="card availability-card" id="condo-leads-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Condo activation</p>
+            <h2>Resident demand pipeline</h2>
+            <p class="section-description">Track condo demand, management outreach, and activation status.</p>
+          </div>
+          <span class="pill"><span class="dot"></span> Singapore GTM</span>
+        </div>
+        <div class="lead-grid" id="condo-lead-metrics"></div>
+        <div class="cluster" id="condo-leads"></div>
+      </section>
 
       <section class="split" id="queue-section">
         <div class="card" id="activity-section">
@@ -1473,6 +1578,8 @@
       const queueEl = document.querySelector("#queue");
       const auditEl = document.querySelector("#audit");
       const availabilityEl = document.querySelector("#availability");
+      const condoLeadMetricsEl = document.querySelector("#condo-lead-metrics");
+      const condoLeadsEl = document.querySelector("#condo-leads");
       const generatedAtEl = document.querySelector("#generated-at");
       const locationIdEl = document.querySelector("#location-id");
       const partnerLocationSelect = document.querySelector("#partner-location-select");
@@ -1514,6 +1621,15 @@
         wash_premium: 60,
         detail_interior: 90,
       };
+      const propertyStatuses = [
+        "suggested",
+        "interest_gathering",
+        "contacted",
+        "approved",
+        "active",
+        "paused",
+        "rejected",
+      ];
 
       mobileMenuButton.addEventListener("click", () => {
         sidebarEl.classList.toggle("is-open");
@@ -1547,7 +1663,7 @@
       }
 
       async function loadDashboard() {
-        const [dashboard, availability, templates, mavo] = await Promise.all([
+        const [dashboard, availability, templates, mavo, condoLeads] = await Promise.all([
           requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
           requestJson(`/v1/partner/availability?${partnerQuery()}`),
           requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`),
@@ -1555,11 +1671,70 @@
             "x-prima-user-id": "usr_internal_dashboard",
             "x-prima-role": "internal",
           }),
+          requestJson(`/v1/internal/property-leads`, {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          }),
         ]);
 
         renderDashboard(dashboard, mavo);
+        renderCondoLeads(condoLeads);
         renderAvailability(availability);
         renderCapacityTemplates(templates);
+      }
+
+      function renderCondoLeads(leads) {
+        const totalInterest = leads.reduce((sum, lead) => sum + (lead.interestCount || 0), 0);
+        const activeCount = leads.filter((lead) => lead.activationStatus === "active").length;
+        const contactedCount = leads.filter((lead) => ["contacted", "approved", "active"].includes(lead.activationStatus)).length;
+
+        condoLeadMetricsEl.innerHTML = [
+          ["Resident signals", totalInterest],
+          ["Condos tracked", leads.length],
+          ["Contacted / active", `${contactedCount}/${activeCount}`],
+        ]
+          .map(([label, value]) => `<article class="lead-summary"><span>${label}</span><strong>${value}</strong></article>`)
+          .join("");
+
+        condoLeadsEl.innerHTML =
+          leads.length === 0
+            ? `<div class="empty">No condo demand yet. Resident interest will appear here.</div>`
+            : leads
+                .map(
+                  (lead) => `
+                    <article class="lead-row">
+                      <div class="lead-copy">
+                        <div>
+                          <h3>${escapeHtml(lead.name)}</h3>
+                          <p class="muted">${escapeHtml(lead.addressLine1 || lead.region)} · ${lead.interestCount} resident ${lead.interestCount === 1 ? "signal" : "signals"}</p>
+                        </div>
+                        <div class="lead-meta">
+                          <span class="lead-chip ${["suggested", "interest_gathering"].includes(lead.activationStatus) ? "is-warning" : ""}">${formatStatus(lead.activationStatus)}</span>
+                          <span class="lead-chip">${lead.latestInterestAt ? `Latest ${formatRelativeTime(lead.latestInterestAt)}` : "Seed lead"}</span>
+                          <span class="lead-chip">${escapeHtml(lead.internalOwner || "Unassigned")}</span>
+                        </div>
+                        <p class="muted">${escapeHtml(lead.outreachNotes || "No outreach notes yet.")}</p>
+                      </div>
+                      <form class="lead-controls" data-property-lead-form="${lead.id}">
+                        <div class="lead-form">
+                          <select name="activationStatus" aria-label="Activation status">
+                            ${propertyStatuses
+                              .map((status) => `<option value="${status}" ${status === lead.activationStatus ? "selected" : ""}>${formatStatus(status)}</option>`)
+                              .join("")}
+                          </select>
+                          <input name="internalOwner" type="text" value="${escapeAttribute(lead.internalOwner || "")}" placeholder="Internal owner" />
+                          <input name="managementContactName" type="text" value="${escapeAttribute(lead.managementContactName || "")}" placeholder="Management contact" />
+                          <input name="nextFollowUpAt" type="date" value="${lead.nextFollowUpAt ? lead.nextFollowUpAt.slice(0, 10) : ""}" />
+                          <input name="outreachNotes" type="text" value="${escapeAttribute(lead.outreachNotes || "")}" placeholder="Outreach notes" />
+                        </div>
+                      </form>
+                      <div class="queue-actions">
+                        <button class="action primary-command" type="button" data-save-property-lead="${lead.id}">Save lead</button>
+                      </div>
+                    </article>
+                  `,
+                )
+                .join("");
       }
 
       function renderDashboard(data, mavo) {
@@ -1803,6 +1978,19 @@
         toastEl.classList.add("is-visible");
         window.clearTimeout(showToast.timeoutId);
         showToast.timeoutId = window.setTimeout(() => toastEl.classList.remove("is-visible"), 3600);
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
       }
 
       function renderActionButton(item) {
@@ -2066,6 +2254,25 @@
         return payload.data;
       }
 
+      async function updatePropertyLead(propertyId, input) {
+        const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/activation`, {
+          method: "PATCH",
+          headers: {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Condo lead update failed");
+        }
+
+        return payload.data;
+      }
+
       async function cancelBooking(bookingId) {
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/cancel`, {
           method: "POST",
@@ -2085,6 +2292,47 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const savePropertyLeadButton = event.target.closest("button[data-save-property-lead]");
+
+        if (savePropertyLeadButton) {
+          const propertyId = savePropertyLeadButton.dataset.savePropertyLead;
+          const form = document.querySelector(`[data-property-lead-form="${propertyId}"]`);
+
+          if (!form) {
+            return;
+          }
+
+          const formData = new FormData(form);
+          const nextFollowUpDate = String(formData.get("nextFollowUpAt") || "");
+          const input = {
+            activationStatus: String(formData.get("activationStatus") || "suggested"),
+            ...(String(formData.get("internalOwner") || "").trim()
+              ? { internalOwner: String(formData.get("internalOwner")).trim() }
+              : {}),
+            ...(String(formData.get("managementContactName") || "").trim()
+              ? { managementContactName: String(formData.get("managementContactName")).trim() }
+              : {}),
+            ...(String(formData.get("outreachNotes") || "").trim()
+              ? { outreachNotes: String(formData.get("outreachNotes")).trim() }
+              : {}),
+            ...(nextFollowUpDate ? { nextFollowUpAt: new Date(`${nextFollowUpDate}T09:00:00+08:00`).toISOString() } : {}),
+          };
+
+          savePropertyLeadButton.disabled = true;
+
+          try {
+            await updatePropertyLead(propertyId, input);
+            await loadDashboard();
+            showToast("Condo lead updated.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            savePropertyLeadButton.disabled = false;
+          }
+
+          return;
+        }
+
         const explicitOpenButton = event.target.closest("button[data-open-booking-button]");
 
         if (explicitOpenButton) {

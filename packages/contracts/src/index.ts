@@ -113,8 +113,19 @@ export interface Property {
   readonly countryCode: string;
   readonly activationStatus: PropertyActivationStatus;
   readonly interestCount: number;
+  readonly managementContactName?: string;
+  readonly managementContactEmail?: string;
+  readonly managementContactPhone?: string;
+  readonly outreachNotes?: string;
+  readonly nextFollowUpAt?: string;
+  readonly lastContactedAt?: string;
+  readonly internalOwner?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface PropertyLead extends Property {
+  readonly latestInterestAt?: string;
 }
 
 export interface PropertyInterest {
@@ -141,6 +152,17 @@ export interface CreatePropertyInterestResponse {
   readonly property: Property;
   readonly interest: PropertyInterest;
   readonly profile: CustomerProfile;
+}
+
+export interface UpdatePropertyActivationRequest {
+  readonly activationStatus?: PropertyActivationStatus;
+  readonly managementContactName?: string;
+  readonly managementContactEmail?: string;
+  readonly managementContactPhone?: string;
+  readonly outreachNotes?: string;
+  readonly nextFollowUpAt?: string;
+  readonly lastContactedAt?: string;
+  readonly internalOwner?: string;
 }
 
 export interface UpdateCustomerProfileRequest {
