@@ -51,6 +51,11 @@ import {
   type PropertyRepository,
 } from "./properties/repository.js";
 import {
+  InMemoryCondoOperationsRepository,
+  PostgresCondoOperationsRepository,
+  type CondoOperationsRepository,
+} from "./condo-operations/repository.js";
+import {
   InMemoryCapacityTemplateRepository,
   PostgresCapacityTemplateRepository,
   type CapacityTemplateRepository,
@@ -73,6 +78,7 @@ export interface Repositories {
   readonly profiles: ProfileRepository;
   readonly partners: PartnerRepository;
   readonly properties: PropertyRepository;
+  readonly condoOperations: CondoOperationsRepository;
   readonly capacityTemplates: CapacityTemplateRepository;
   readonly scheduling: SchedulingConfigRepository;
   readonly databasePool?: DatabasePool;
@@ -94,6 +100,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       profiles: new InMemoryProfileRepository(),
       partners: new InMemoryPartnerRepository(),
       properties: new InMemoryPropertyRepository(),
+      condoOperations: new InMemoryCondoOperationsRepository(),
       capacityTemplates: new InMemoryCapacityTemplateRepository(),
       scheduling: new InMemorySchedulingConfigRepository(),
     };
@@ -114,6 +121,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     profiles: new PostgresProfileRepository(databasePool),
     partners: new PostgresPartnerRepository(databasePool),
     properties: new PostgresPropertyRepository(databasePool),
+    condoOperations: new PostgresCondoOperationsRepository(databasePool),
     capacityTemplates: new PostgresCapacityTemplateRepository(databasePool),
     scheduling: new PostgresSchedulingConfigRepository(databasePool),
     databasePool,

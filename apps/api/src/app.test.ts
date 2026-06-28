@@ -21,6 +21,8 @@ import type {
   PaymentIntent,
   Property,
   PropertyLead,
+  CondoOperationalProfile,
+  PrimaWashDay,
   ServiceRecord,
   Vehicle,
 } from "@prima-wash/contracts";
@@ -298,6 +300,72 @@ describe("Prima Wash API", () => {
 
     assert.equal(response.status, 403);
     assert.equal(payload.code, "internal_role_required");
+  });
+
+  it("lets internal operators configure a condo operational profile", async () => {
+    const response = await fetch(`${baseUrl}/v1/internal/properties/prop_sg_marina_one/operational-profile`, {
+      method: "PATCH",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        approvedServiceAreas: ["Basement visitor lots B1", "Loading bay overflow"],
+        operatingInstructions: "Check in with security before setup.",
+        waterPolicy: "rinseless_required",
+        vehicleMovementPolicy: "pickup_return_allowed",
+        onsiteServiceAllowed: true,
+        pickupReturnAllowed: true,
+        simultaneousVehicleCapacity: 4,
+        availableServiceCodes: ["wash_basic", "wash_premium", "detail_interior"],
+        safetyRequirements: "Keep walkways clear.",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<CondoOperationalProfile>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.propertyId, "prop_sg_marina_one");
+    assert.equal(payload.data.approvedServiceAreas.length, 2);
+    assert.equal(payload.data.simultaneousVehicleCapacity, 4);
+    assert.equal(payload.data.pickupReturnAllowed, true);
+  });
+
+  it("allows multiple Prima Wash Days for the same condo without a weekly or monthly cap", async () => {
+    const created: PrimaWashDay[] = [];
+
+    for (const date of ["2026-07-05", "2026-07-06", "2026-07-07"]) {
+      const response = await fetch(`${baseUrl}/v1/internal/prima-wash-days`, {
+        method: "POST",
+        headers: {
+          ...internalHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          propertyId: "prop_sg_marina_one",
+          partnerLocationId: "loc_demo_001",
+          approvedServiceArea: "Basement visitor lots B1",
+          startsAt: `${date}T01:00:00.000Z`,
+          endsAt: `${date}T05:00:00.000Z`,
+          capacity: 12,
+          serviceCodes: ["wash_basic", "wash_premium"],
+          status: "planned",
+          operatingNotes: "Extra resident-demand day.",
+        }),
+      });
+      const payload = (await response.json()) as ApiResponse<PrimaWashDay>;
+
+      assert.equal(response.status, 201);
+      created.push(payload.data);
+    }
+
+    const listResponse = await fetch(`${baseUrl}/v1/internal/prima-wash-days?propertyId=prop_sg_marina_one`, {
+      headers: internalHeaders,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<PrimaWashDay[]>;
+    const createdIds = new Set(created.map((day) => day.id));
+
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.data.filter((day) => createdIds.has(day.id)).length, 3);
   });
 
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {

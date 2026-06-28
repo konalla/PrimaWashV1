@@ -165,6 +165,76 @@ export interface UpdatePropertyActivationRequest {
   readonly internalOwner?: string;
 }
 
+export type WaterPolicy = "standard" | "rinseless_required" | "water_access_available" | "no_water_access";
+export type VehicleMovementPolicy = "not_allowed" | "within_property_allowed" | "pickup_return_allowed";
+export type PrimaWashDayStatus = "planned" | "approved" | "active" | "completed" | "cancelled";
+
+export interface CondoOperationalProfile {
+  readonly propertyId: string;
+  readonly approvedServiceAreas: readonly string[];
+  readonly operatingInstructions?: string;
+  readonly waterPolicy: WaterPolicy;
+  readonly vehicleMovementPolicy: VehicleMovementPolicy;
+  readonly onsiteServiceAllowed: boolean;
+  readonly pickupReturnAllowed: boolean;
+  readonly simultaneousVehicleCapacity: number;
+  readonly availableServiceCodes: readonly ServiceCode[];
+  readonly safetyRequirements?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface UpdateCondoOperationalProfileRequest {
+  readonly approvedServiceAreas?: readonly string[];
+  readonly operatingInstructions?: string;
+  readonly waterPolicy?: WaterPolicy;
+  readonly vehicleMovementPolicy?: VehicleMovementPolicy;
+  readonly onsiteServiceAllowed?: boolean;
+  readonly pickupReturnAllowed?: boolean;
+  readonly simultaneousVehicleCapacity?: number;
+  readonly availableServiceCodes?: readonly ServiceCode[];
+  readonly safetyRequirements?: string;
+}
+
+export interface PrimaWashDay {
+  readonly id: string;
+  readonly propertyId: string;
+  readonly propertyName: string;
+  readonly partnerLocationId?: string;
+  readonly approvedServiceArea: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly capacity: number;
+  readonly serviceCodes: readonly ServiceCode[];
+  readonly status: PrimaWashDayStatus;
+  readonly operatingNotes?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CreatePrimaWashDayRequest {
+  readonly propertyId: string;
+  readonly partnerLocationId?: string;
+  readonly approvedServiceArea: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly capacity: number;
+  readonly serviceCodes: readonly ServiceCode[];
+  readonly status?: PrimaWashDayStatus;
+  readonly operatingNotes?: string;
+}
+
+export interface UpdatePrimaWashDayRequest {
+  readonly partnerLocationId?: string;
+  readonly approvedServiceArea?: string;
+  readonly startsAt?: string;
+  readonly endsAt?: string;
+  readonly capacity?: number;
+  readonly serviceCodes?: readonly ServiceCode[];
+  readonly status?: PrimaWashDayStatus;
+  readonly operatingNotes?: string;
+}
+
 export interface UpdateCustomerProfileRequest {
   readonly displayName?: string;
   readonly phoneNumber?: string;

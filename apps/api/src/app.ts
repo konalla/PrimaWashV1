@@ -16,6 +16,7 @@ import type {
   CreateBookingRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
+  CreatePrimaWashDayRequest,
   CreateVehicleRequest,
   GenerateCapacityTemplateSlotsRequest,
   UpdateVehicleRequest,
@@ -32,6 +33,8 @@ import type {
   ServiceCapacityRule,
   UpdatePropertyActivationRequest,
   UpdateBookingStatusRequest,
+  UpdateCondoOperationalProfileRequest,
+  UpdatePrimaWashDayRequest,
   UpdateAvailabilitySlotRequest,
   UpdateCapacityTemplateRequest,
   UpdateSchedulingConfigRequest,
@@ -65,6 +68,11 @@ import { validateCreateVehicle } from "./modules/vehicles/repository.js";
 import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
 import { validateProfileUpdate } from "./modules/profiles/repository.js";
 import { validateCreatePropertyInterest, validateUpdatePropertyActivation } from "./modules/properties/repository.js";
+import {
+  validateCreatePrimaWashDay,
+  validateOperationalProfile,
+  validateUpdatePrimaWashDay,
+} from "./modules/condo-operations/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -273,6 +281,177 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         sendJson(response, 200, { data: await options.repositories.properties.listLeads({ marketId }) });
       } catch (error) {
         sendAuthError(response, error);
+      }
+      return;
+    }
+
+    const operationalProfileMatch = requestUrl.pathname.match(/^\/v1\/internal\/properties\/([^/]+)\/operational-profile$/);
+
+    if (request.method === "GET" && operationalProfileMatch) {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const propertyId = operationalProfileMatch[1];
+
+        if (!propertyId) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        const profile = await options.repositories.condoOperations.getOperationalProfile(propertyId);
+
+        if (!profile) {
+          sendError(response, 404, "operational_profile_not_found", "Condo operational profile does not exist");
+          return;
+        }
+
+        sendJson(response, 200, { data: profile });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "PATCH" && operationalProfileMatch) {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const propertyId = operationalProfileMatch[1];
+
+        if (!propertyId) {
+          sendError(response, 404, "property_not_found", "Property does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateCondoOperationalProfileRequest>(request);
+        const errors = validateOperationalProfile(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Operational profile payload is invalid", errors);
+          return;
+        }
+
+        const profile = await options.repositories.condoOperations.upsertOperationalProfile(propertyId, input);
+        await options.repositories.audit.record({
+          actor,
+          action: "property.operational_profile_updated",
+          resourceType: "property",
+          resourceId: propertyId,
+          requestId: requestContext.requestId,
+          metadata: {
+            approvedServiceAreaCount: profile.approvedServiceAreas.length,
+            simultaneousVehicleCapacity: profile.simultaneousVehicleCapacity,
+            onsiteServiceAllowed: profile.onsiteServiceAllowed,
+            pickupReturnAllowed: profile.pickupReturnAllowed,
+          },
+        });
+        sendJson(response, 200, { data: profile });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Operational profile request could not be processed", String(error));
+        }
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const propertyId = requestUrl.searchParams.get("propertyId") ?? undefined;
+        sendJson(response, 200, {
+          data: await options.repositories.condoOperations.listPrimaWashDays(propertyId ? { propertyId } : {}),
+        });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const input = await readJsonBody<CreatePrimaWashDayRequest>(request);
+        const errors = validateCreatePrimaWashDay(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Prima Wash Day payload is invalid", errors);
+          return;
+        }
+
+        const day = await options.repositories.condoOperations.createPrimaWashDay(input);
+        await options.repositories.audit.record({
+          actor,
+          action: "prima_wash_day.created",
+          resourceType: "prima_wash_day",
+          resourceId: day.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            propertyId: day.propertyId,
+            startsAt: day.startsAt,
+            endsAt: day.endsAt,
+            capacity: day.capacity,
+            status: day.status,
+          },
+        });
+        sendJson(response, 201, { data: day });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Prima Wash Day request could not be processed", String(error));
+        }
+      }
+      return;
+    }
+
+    const primaWashDayMatch = requestUrl.pathname.match(/^\/v1\/internal\/prima-wash-days\/([^/]+)$/);
+
+    if (request.method === "PATCH" && primaWashDayMatch) {
+      try {
+        const actor = requireActor(request);
+        assertInternal(actor);
+        const dayId = primaWashDayMatch[1];
+
+        if (!dayId) {
+          sendError(response, 404, "prima_wash_day_not_found", "Prima Wash Day does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdatePrimaWashDayRequest>(request);
+        const errors = validateUpdatePrimaWashDay(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Prima Wash Day payload is invalid", errors);
+          return;
+        }
+
+        const day = await options.repositories.condoOperations.updatePrimaWashDay(dayId, input);
+        await options.repositories.audit.record({
+          actor,
+          action: "prima_wash_day.updated",
+          resourceType: "prima_wash_day",
+          resourceId: day.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            propertyId: day.propertyId,
+            startsAt: day.startsAt,
+            endsAt: day.endsAt,
+            capacity: day.capacity,
+            status: day.status,
+          },
+        });
+        sendJson(response, 200, { data: day });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "prima_wash_day_not_found") {
+            sendError(response, 404, message, "Prima Wash Day does not exist");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Prima Wash Day request could not be processed", message);
+        }
       }
       return;
     }

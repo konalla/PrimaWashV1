@@ -841,6 +841,42 @@
         grid-column: 1 / -1;
       }
 
+      .wash-day-planner {
+        display: grid;
+        grid-template-columns: 1.2fr repeat(4, minmax(110px, 0.6fr));
+        gap: 10px;
+        margin: 18px 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .wash-day-planner input,
+      .wash-day-planner select {
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--ink);
+      }
+
+      .wash-day-planner .wide {
+        grid-column: span 2;
+      }
+
+      .wash-day-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 12px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 14px;
+        background: var(--panel-2);
+      }
+
       .confidence-item {
         display: flex;
         justify-content: space-between;
@@ -1414,6 +1450,23 @@
         </div>
         <div class="lead-grid" id="condo-lead-metrics"></div>
         <div class="cluster" id="condo-leads"></div>
+        <form class="wash-day-planner" id="wash-day-form">
+          <select id="wash-day-property" name="propertyId" aria-label="Condo" required></select>
+          <input id="wash-day-date" name="date" type="date" required />
+          <input name="startTime" type="time" value="09:00" required />
+          <input name="endTime" type="time" value="13:00" required />
+          <input name="capacity" type="number" min="1" value="12" required />
+          <input class="wide" name="approvedServiceArea" type="text" placeholder="Approved service area" required />
+          <select class="wide" name="serviceCodes">
+            <option value="wash_basic,wash_premium">Basic + premium wash</option>
+            <option value="wash_basic">Basic wash</option>
+            <option value="wash_premium">Premium wash</option>
+            <option value="detail_interior">Interior detail</option>
+            <option value="wash_basic,wash_premium,detail_interior">All services</option>
+          </select>
+          <button class="action primary-command" type="submit">Create Prima Wash Day</button>
+        </form>
+        <div class="cluster" id="prima-wash-days"></div>
       </section>
 
       <section class="split" id="queue-section">
@@ -1580,6 +1633,9 @@
       const availabilityEl = document.querySelector("#availability");
       const condoLeadMetricsEl = document.querySelector("#condo-lead-metrics");
       const condoLeadsEl = document.querySelector("#condo-leads");
+      const primaWashDaysEl = document.querySelector("#prima-wash-days");
+      const washDayForm = document.querySelector("#wash-day-form");
+      const washDayPropertySelect = document.querySelector("#wash-day-property");
       const generatedAtEl = document.querySelector("#generated-at");
       const locationIdEl = document.querySelector("#location-id");
       const partnerLocationSelect = document.querySelector("#partner-location-select");
@@ -1663,7 +1719,7 @@
       }
 
       async function loadDashboard() {
-        const [dashboard, availability, templates, mavo, condoLeads] = await Promise.all([
+        const [dashboard, availability, templates, mavo, condoLeads, primaWashDays] = await Promise.all([
           requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
           requestJson(`/v1/partner/availability?${partnerQuery()}`),
           requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`),
@@ -1675,10 +1731,15 @@
             "x-prima-user-id": "usr_internal_dashboard",
             "x-prima-role": "internal",
           }),
+          requestJson(`/v1/internal/prima-wash-days`, {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          }),
         ]);
 
         renderDashboard(dashboard, mavo);
         renderCondoLeads(condoLeads);
+        renderPrimaWashDays(primaWashDays, condoLeads);
         renderAvailability(availability);
         renderCapacityTemplates(templates);
       }
@@ -1731,6 +1792,39 @@
                       <div class="queue-actions">
                         <button class="action primary-command" type="button" data-save-property-lead="${lead.id}">Save lead</button>
                       </div>
+                    </article>
+                  `,
+                )
+                .join("");
+      }
+
+      function renderPrimaWashDays(days, leads) {
+        washDayPropertySelect.innerHTML = leads
+          .map((lead) => `<option value="${lead.id}">${escapeHtml(lead.name)}</option>`)
+          .join("");
+
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        if (!document.querySelector("#wash-day-date").value) {
+          document.querySelector("#wash-day-date").value = tomorrow.toISOString().slice(0, 10);
+        }
+
+        const upcomingDays = days
+          .filter((day) => new Date(day.endsAt).getTime() > Date.now())
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+
+        primaWashDaysEl.innerHTML =
+          upcomingDays.length === 0
+            ? `<div class="empty">No upcoming Prima Wash Days yet. Create as many property service days as the condo needs.</div>`
+            : upcomingDays
+                .map(
+                  (day) => `
+                    <article class="wash-day-row">
+                      <div>
+                        <strong>${escapeHtml(day.propertyName)}</strong>
+                        <p class="muted">${formatDayHeading(day.startsAt)} · ${formatTime(day.startsAt)}-${formatTime(day.endsAt)} · ${escapeHtml(day.approvedServiceArea)}</p>
+                      </div>
+                      <span class="lead-chip">${day.capacity} vehicles</span>
+                      <span class="lead-chip ${day.status === "planned" ? "is-warning" : ""}">${formatStatus(day.status)}</span>
                     </article>
                   `,
                 )
@@ -2273,6 +2367,25 @@
         return payload.data;
       }
 
+      async function createPrimaWashDay(input) {
+        const response = await fetch(`${apiBase}/v1/internal/prima-wash-days`, {
+          method: "POST",
+          headers: {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Prima Wash Day create failed");
+        }
+
+        return payload.data;
+      }
+
       async function cancelBooking(bookingId) {
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/cancel`, {
           method: "POST",
@@ -2759,6 +2872,38 @@
           availabilityDialog.close();
           await loadDashboard();
           showToast(`Saved template and generated ${generated.slots.length} availability slots.`);
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      washDayForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = event.submitter;
+        const form = new FormData(washDayForm);
+        const date = String(form.get("date"));
+        const startTime = String(form.get("startTime"));
+        const endTime = String(form.get("endTime"));
+        submitButton.disabled = true;
+
+        try {
+          await createPrimaWashDay({
+            propertyId: String(form.get("propertyId")),
+            partnerLocationId: selectedPartnerLocationId,
+            approvedServiceArea: String(form.get("approvedServiceArea")),
+            startsAt: new Date(`${date}T${startTime}:00+08:00`).toISOString(),
+            endsAt: new Date(`${date}T${endTime}:00+08:00`).toISOString(),
+            capacity: Number(form.get("capacity")),
+            serviceCodes: String(form.get("serviceCodes"))
+              .split(",")
+              .map((service) => service.trim())
+              .filter(Boolean),
+            status: "planned",
+          });
+          await loadDashboard();
+          showToast("Prima Wash Day created.");
         } catch (error) {
           showToast(error.message, "error");
         } finally {
