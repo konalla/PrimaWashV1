@@ -799,11 +799,21 @@ describe("Prima Wash API", () => {
       headers: customerHeaders,
     });
     const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const auditResponse = await fetch(`${baseUrl}/v1/audit-events?limit=3`, {
+      headers: internalHeaders,
+    });
+    const auditPayload = (await auditResponse.json()) as ApiResponse<Array<{ action: string; metadata: Record<string, unknown> }>>;
 
     assert.equal(createResponse.status, 201);
     assert.equal(replyResponse.status, 201);
     assert.equal(readResponse.status, 200);
     assert.deepEqual(readPayload.data.messages.map((message) => message.senderRole), ["customer", "partner"]);
+    assert.equal(auditResponse.status, 200);
+    assert.equal(auditPayload.data[0]?.action, "communication.message_created");
+    assert.equal(auditPayload.data[0]?.metadata.type, "partner_to_owner");
+    assert.equal(auditPayload.data[0]?.metadata.subject, "Arrival note");
+    assert.equal(auditPayload.data[0]?.metadata.senderRole, "partner");
+    assert.equal(typeof auditPayload.data[0]?.metadata.messageId, "string");
   });
 
   it("exposes partner dashboard metrics for partner actors", async () => {

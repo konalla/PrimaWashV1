@@ -2448,7 +2448,7 @@
                       <div class="badge">✓</div>
                       <div>
                         <strong>${formatActivity(event)}</strong><br />
-                        <span class="muted">${formatRelativeTime(event.createdAt)}</span>
+                        <span class="muted">${formatActivityDetail(event)} - ${formatRelativeTime(event.createdAt)}</span>
                       </div>
                     </div>
                   `,
@@ -3104,16 +3104,57 @@
       function formatActivity(event) {
         const actionNames = {
           booking_created: "New booking received",
+          "booking.created": "New booking received",
           booking_status_updated: "Booking status updated",
+          "booking.status_changed": "Booking status updated",
           booking_cancelled: "Booking cancelled",
+          "booking.cancelled": "Booking cancelled",
           payment_authorized: "Payment authorized",
+          "payment.authorized": "Payment authorized",
           payment_captured: "Payment captured",
+          "payment.captured": "Payment captured",
           availability_created: "Availability added",
+          "availability.created": "Availability added",
           availability_updated: "Availability updated",
+          "availability.updated": "Availability updated",
           service_record_created: "Service completed",
+          "service_record.created": "Service completed",
+          "communication.thread_created": "Conversation opened",
+          "communication.message_created": "Message sent",
         };
 
-        return actionNames[event.action] || event.action.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+        return actionNames[event.action] || event.action.replaceAll(".", " ").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      }
+
+      function formatActivityDetail(event) {
+        if (event.action === "communication.thread_created" || event.action === "communication.message_created") {
+          const role = event.metadata?.senderRole || event.metadata?.createdByRole || "actor";
+          const subject = event.metadata?.subject || event.resourceId;
+          return `${formatCommunicationType(event.metadata?.type)} by ${formatStatus(String(role))} - ${subject}`;
+        }
+
+        if (event.action === "booking.status_changed") {
+          const from = event.metadata?.fromStatus ? formatStatus(String(event.metadata.fromStatus)) : "previous";
+          const to = event.metadata?.toStatus ? formatStatus(String(event.metadata.toStatus)) : "next";
+          return `${from} to ${to}`;
+        }
+
+        if (event.action === "booking.cancelled") {
+          return `Cancelled by ${formatStatus(String(event.metadata?.cancelledBy || "actor"))}`;
+        }
+
+        return `${formatStatus(event.resourceType)} ${String(event.resourceId).slice(-8).toUpperCase()}`;
+      }
+
+      function formatCommunicationType(type) {
+        const labels = {
+          prima_to_property: "Prima Wash and office management",
+          prima_to_owner: "Prima Wash and owner",
+          prima_to_partner: "Prima Wash and partner",
+          partner_to_owner: "Partner and owner",
+        };
+
+        return labels[type] || "Conversation";
       }
 
       function paymentTone(status) {

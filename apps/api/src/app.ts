@@ -1221,7 +1221,12 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           resourceType: input.resourceType,
           resourceId: input.resourceId,
           requestId: requestContext.requestId,
-          metadata: { threadId: thread.id, type: thread.type },
+          metadata: {
+            threadId: thread.id,
+            type: thread.type,
+            subject: thread.subject,
+            createdByRole: actor.role,
+          },
         });
 
         sendJson(response, 201, { data: { thread, messages } });
@@ -1302,7 +1307,13 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           resourceType: thread.resourceType,
           resourceId: thread.resourceId,
           requestId: requestContext.requestId,
-          metadata: { threadId: thread.id, messageId: message.id },
+          metadata: {
+            threadId: thread.id,
+            messageId: message.id,
+            type: thread.type,
+            subject: thread.subject,
+            senderRole: actor.role,
+          },
         });
 
         sendJson(response, 201, { data: message });
