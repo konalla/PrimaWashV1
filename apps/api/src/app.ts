@@ -15,6 +15,7 @@ import type {
   CreateCapacityTemplateRequest,
   CreateBookingRequest,
   CreatePaymentIntentRequest,
+  CreatePropertyInterestRequest,
   CreateVehicleRequest,
   GenerateCapacityTemplateSlotsRequest,
   UpdateVehicleRequest,
@@ -25,6 +26,7 @@ import type {
   PartnerAvailabilitySlot,
   PaymentIntent,
   PaymentStatus,
+  ResidenceType,
   SchedulingConfig,
   ServiceRecord,
   ServiceCapacityRule,
@@ -61,6 +63,7 @@ import { validateCreatePaymentIntent } from "./modules/payments/repository.js";
 import { validateCreateVehicle } from "./modules/vehicles/repository.js";
 import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
 import { validateProfileUpdate } from "./modules/profiles/repository.js";
+import { validateCreatePropertyInterest } from "./modules/properties/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -172,6 +175,90 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       } catch (error) {
         if (!sendAuthError(response, error)) {
           sendError(response, 404, "profile_not_found", "Customer profile does not exist");
+        }
+      }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/properties") {
+      const marketId = requestUrl.searchParams.get("marketId") ?? "sg";
+      const query = requestUrl.searchParams.get("query") ?? undefined;
+      const residenceType = normalizeResidenceType(requestUrl.searchParams.get("residenceType"));
+      const listInput: Parameters<typeof options.repositories.properties.list>[0] = {
+        marketId,
+        residenceType,
+        ...(query ? { query } : {}),
+      };
+      sendJson(response, 200, {
+        data: await options.repositories.properties.list(listInput),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/property-interests") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreatePropertyInterestRequest>(request);
+        const errors = validateCreatePropertyInterest(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Property interest payload is invalid", errors);
+          return;
+        }
+
+        const propertyInterestInput = {
+          ownerId: actor.userId,
+          ...(input.propertyId ? { propertyId: input.propertyId } : {}),
+          ...(input.propertyName ? { propertyName: input.propertyName } : {}),
+          ...(input.propertyAddress ? { propertyAddress: input.propertyAddress } : {}),
+          ...(input.requestedServiceCodes ? { requestedServiceCodes: input.requestedServiceCodes } : {}),
+          ...(input.preferredTimeWindows ? { preferredTimeWindows: input.preferredTimeWindows } : {}),
+          ...(input.parkingNotes ? { parkingNotes: input.parkingNotes } : {}),
+        };
+        const { property, interest } = await options.repositories.properties.registerInterest(propertyInterestInput);
+        const residentialProfile = {
+          residenceType: property.residenceType,
+          localResidenceLabel: "Condominium",
+          propertyId: property.id,
+          propertyName: property.name,
+          propertyActivationStatus: property.activationStatus,
+          propertyInterestCount: property.interestCount,
+          ...(property.addressLine1 ? { propertyAddress: property.addressLine1 } : {}),
+          ...(interest.parkingNotes ? { parkingNotes: interest.parkingNotes } : {}),
+        };
+        const profile = await options.repositories.profiles.update(actor.userId, {
+          residentialProfile,
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "property_interest.registered",
+          resourceType: "property",
+          resourceId: property.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            propertyName: property.name,
+            activationStatus: property.activationStatus,
+            interestCount: property.interestCount,
+          },
+        });
+
+        sendJson(response, 201, { data: { property, interest, profile } });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "profile_not_found") {
+            sendError(response, 404, message, "Customer profile does not exist");
+            return;
+          }
+
+          if (message === "property_not_found") {
+            sendError(response, 404, message, "Property does not exist");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Property interest request could not be processed", message);
         }
       }
       return;
@@ -1524,6 +1611,20 @@ function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown
   }
 
   return false;
+}
+
+function normalizeResidenceType(value: string | null): ResidenceType {
+  if (
+    value === "multi_unit_private" ||
+    value === "public_housing" ||
+    value === "landed" ||
+    value === "commercial" ||
+    value === "other"
+  ) {
+    return value;
+  }
+
+  return "multi_unit_private";
 }
 
 function sendAuthVerificationError(response: Parameters<typeof sendError>[0], error: unknown): void {

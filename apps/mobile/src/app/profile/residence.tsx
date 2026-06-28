@@ -1,4 +1,4 @@
-import type { ResidenceType, UpdateCustomerResidentialProfileRequest } from '@prima-wash/contracts';
+import type { Property, ResidenceType, UpdateCustomerResidentialProfileRequest } from '@prima-wash/contracts';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -40,6 +40,9 @@ export default function ResidenceScreen() {
   const [selectedType, setSelectedType] = useState<ResidenceType>('multi_unit_private');
   const [propertyName, setPropertyName] = useState('');
   const [propertyAddress, setPropertyAddress] = useState('');
+  const [selectedProperty, setSelectedProperty] = useState<Property>();
+  const [properties, setProperties] = useState<readonly Property[]>([]);
+  const [loadingProperties, setLoadingProperties] = useState(false);
   const [serviceAreaLabel, setServiceAreaLabel] = useState('');
   const [parkingNotes, setParkingNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -61,6 +64,40 @@ export default function ResidenceScreen() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (selectedType !== 'multi_unit_private') {
+      setProperties([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingProperties(true);
+
+    const timeoutId = setTimeout(() => {
+      primaApi.properties({ query: propertyName.trim(), residenceType: 'multi_unit_private' })
+        .then((nextProperties) => {
+          if (!cancelled) {
+            setProperties(nextProperties);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setProperties([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLoadingProperties(false);
+          }
+        });
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [propertyName, selectedType]);
 
   const selectedOption = useMemo(
     () => residenceOptions.find((option) => option.residenceType === selectedType) ?? residenceOptions[0],
@@ -91,7 +128,17 @@ export default function ResidenceScreen() {
             }),
       };
 
-      await primaApi.updateProfile({ residentialProfile });
+      if (isCondo) {
+        await primaApi.createPropertyInterest({
+          ...(selectedProperty ? { propertyId: selectedProperty.id } : { propertyName: propertyName.trim() }),
+          propertyAddress: propertyAddress.trim() || undefined,
+          requestedServiceCodes: ['wash_basic', 'wash_premium', 'detail_interior'],
+          preferredTimeWindows: [],
+          parkingNotes: parkingNotes.trim() || undefined,
+        });
+      } else {
+        await primaApi.updateProfile({ residentialProfile });
+      }
       router.replace('/(tabs)/home');
     } catch (error) {
       Alert.alert('Residence could not be saved', error instanceof Error ? error.message : 'Please try again.');
@@ -131,6 +178,40 @@ export default function ResidenceScreen() {
         {isCondo ? (
           <>
             <Field label="Condo name" value={propertyName} onChangeText={setPropertyName} placeholder="Example Residences" />
+            <View style={styles.suggestions}>
+              <View style={styles.suggestionsHeader}>
+                <Text style={styles.suggestionsTitle}>{loadingProperties ? 'Searching condos...' : 'Known condos'}</Text>
+                {selectedProperty ? <StatusChip tone="neutral">Selected</StatusChip> : null}
+              </View>
+              {properties.slice(0, 4).map((property) => {
+                const selected = selectedProperty?.id === property.id;
+
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={property.id}
+                    onPress={() => {
+                      setSelectedProperty(property);
+                      setPropertyName(property.name);
+                      setPropertyAddress(property.addressLine1 ?? '');
+                    }}
+                    style={({ pressed }) => [styles.propertyRow, selected && styles.propertyRowSelected, pressed && styles.pressed]}>
+                    <View style={styles.propertyCopy}>
+                      <Text style={styles.propertyName}>{property.name}</Text>
+                      <Text style={styles.propertyMeta}>
+                        {property.addressLine1 ?? property.region} · {property.interestCount} interested
+                      </Text>
+                    </View>
+                    <StatusChip tone={property.activationStatus === 'active' ? 'success' : 'warning'}>
+                      {property.activationStatus.replaceAll('_', ' ')}
+                    </StatusChip>
+                  </Pressable>
+                );
+              })}
+              {!loadingProperties && properties.length === 0 ? (
+                <Text style={styles.emptySuggestion}>No match yet. Add your condo and we will track resident demand.</Text>
+              ) : null}
+            </View>
             <Field label="Condo address" value={propertyAddress} onChangeText={setPropertyAddress} placeholder="Street address" />
             <Field
               label="Parking or access notes"
@@ -188,6 +269,25 @@ const styles = StyleSheet.create({
   optionLabel: { color: colors.accent, fontSize: 11, fontWeight: '900', letterSpacing: 1.1, textTransform: 'uppercase' },
   optionTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
   optionBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  suggestions: { gap: spacing.sm },
+  suggestionsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  suggestionsTitle: { color: colors.muted, fontSize: 12, fontWeight: '800' },
+  propertyRow: {
+    minHeight: 70,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.canvasRaised,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  propertyRowSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceStrong },
+  propertyCopy: { flex: 1 },
+  propertyName: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  propertyMeta: { color: colors.subtle, fontSize: 11, marginTop: 4 },
+  emptySuggestion: { color: colors.subtle, fontSize: 12, lineHeight: 18 },
   pressed: { opacity: 0.82 },
   field: { gap: spacing.sm },
   fieldLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },

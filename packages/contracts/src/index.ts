@@ -76,9 +76,11 @@ export interface CustomerResidentialProfile {
   readonly marketMode: MarketMode;
   readonly residenceType: ResidenceType;
   readonly localResidenceLabel: string;
+  readonly propertyId?: string;
   readonly propertyName?: string;
   readonly propertyAddress?: string;
   readonly propertyActivationStatus?: PropertyActivationStatus;
+  readonly propertyInterestCount?: number;
   readonly serviceAreaLabel?: string;
   readonly parkingNotes?: string;
   readonly accessNotes?: string;
@@ -90,12 +92,55 @@ export interface UpdateCustomerResidentialProfileRequest {
   readonly marketMode?: MarketMode;
   readonly residenceType: ResidenceType;
   readonly localResidenceLabel?: string;
+  readonly propertyId?: string;
   readonly propertyName?: string;
   readonly propertyAddress?: string;
   readonly propertyActivationStatus?: PropertyActivationStatus;
+  readonly propertyInterestCount?: number;
   readonly serviceAreaLabel?: string;
   readonly parkingNotes?: string;
   readonly accessNotes?: string;
+}
+
+export interface Property {
+  readonly id: string;
+  readonly marketId: string;
+  readonly residenceType: ResidenceType;
+  readonly name: string;
+  readonly addressLine1?: string;
+  readonly city: string;
+  readonly region: string;
+  readonly countryCode: string;
+  readonly activationStatus: PropertyActivationStatus;
+  readonly interestCount: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PropertyInterest {
+  readonly id: string;
+  readonly propertyId: string;
+  readonly ownerId: string;
+  readonly requestedServiceCodes: readonly ServiceCode[];
+  readonly preferredTimeWindows: readonly string[];
+  readonly parkingNotes?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CreatePropertyInterestRequest {
+  readonly propertyId?: string;
+  readonly propertyName?: string;
+  readonly propertyAddress?: string;
+  readonly requestedServiceCodes?: readonly ServiceCode[];
+  readonly preferredTimeWindows?: readonly string[];
+  readonly parkingNotes?: string;
+}
+
+export interface CreatePropertyInterestResponse {
+  readonly property: Property;
+  readonly interest: PropertyInterest;
+  readonly profile: CustomerProfile;
 }
 
 export interface UpdateCustomerProfileRequest {

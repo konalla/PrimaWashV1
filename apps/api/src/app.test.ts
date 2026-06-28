@@ -11,6 +11,7 @@ import type {
   CapacityTemplate,
   GenerateCapacityTemplateSlotsResponse,
   AvailabilitySearchResponse,
+  CreatePropertyInterestResponse,
   CreateBookingHoldResponse,
   SchedulingConfig,
   PartnerDashboardResponse,
@@ -18,6 +19,7 @@ import type {
   PartnerAvailabilitySlot,
   MavoResponse,
   PaymentIntent,
+  Property,
   ServiceRecord,
   Vehicle,
 } from "@prima-wash/contracts";
@@ -192,6 +194,63 @@ describe("Prima Wash API", () => {
 
     assert.equal(readResponse.status, 200);
     assert.equal(readPayload.data.residentialProfile?.propertyName, "The Seafront Residences");
+  });
+
+  it("lists condos and registers interest for an existing condo", async () => {
+    const session = await createCustomerSession("condo-interest@example.com");
+    const headers = {
+      authorization: `Bearer ${session.accessToken}`,
+      "content-type": "application/json",
+    };
+    const listResponse = await fetch(`${baseUrl}/v1/properties?query=Marina&residenceType=multi_unit_private`, {
+      headers,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<Property[]>;
+    const marinaOne = listPayload.data.find((property) => property.id === "prop_sg_marina_one");
+
+    assert.equal(listResponse.status, 200);
+    assert.ok(marinaOne);
+
+    const interestResponse = await fetch(`${baseUrl}/v1/property-interests`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        propertyId: marinaOne.id,
+        requestedServiceCodes: ["wash_basic", "detail_interior"],
+        preferredTimeWindows: ["Saturday morning"],
+        parkingNotes: "Tower 1 visitor lots",
+      }),
+    });
+    const interestPayload = (await interestResponse.json()) as ApiResponse<CreatePropertyInterestResponse>;
+
+    assert.equal(interestResponse.status, 201);
+    assert.equal(interestPayload.data.property.name, "Marina One Residences");
+    assert.equal(interestPayload.data.interest.ownerId, session.user.id);
+    assert.equal(interestPayload.data.profile.residentialProfile?.propertyId, "prop_sg_marina_one");
+    assert.equal(interestPayload.data.profile.residentialProfile?.propertyInterestCount, interestPayload.data.property.interestCount);
+  });
+
+  it("creates a suggested condo when the resident adds a missing condo", async () => {
+    const session = await createCustomerSession("new-condo@example.com");
+    const response = await fetch(`${baseUrl}/v1/property-interests`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        propertyName: "Caspian Heights",
+        propertyAddress: "8 Example Avenue",
+        parkingNotes: "Management usually allows visitor lots on weekdays",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<CreatePropertyInterestResponse>;
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.property.name, "Caspian Heights");
+    assert.equal(payload.data.property.activationStatus, "suggested");
+    assert.equal(payload.data.profile.residentialProfile?.propertyName, "Caspian Heights");
+    assert.equal(payload.data.profile.residentialProfile?.propertyActivationStatus, "suggested");
   });
 
   it("manages authenticated garage vehicles without duplicate booking vehicles", async () => {

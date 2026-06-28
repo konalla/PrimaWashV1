@@ -242,6 +242,7 @@ function buildResidentialProfile(
     marketMode,
     residenceType,
     localResidenceLabel,
+    ...(input.propertyId !== undefined ? { propertyId: input.propertyId.trim() } : existing?.propertyId ? { propertyId: existing.propertyId } : {}),
     ...(input.propertyName !== undefined ? { propertyName: input.propertyName.trim() } : existing?.propertyName ? { propertyName: existing.propertyName } : {}),
     ...(input.propertyAddress !== undefined ? { propertyAddress: input.propertyAddress.trim() } : existing?.propertyAddress ? { propertyAddress: existing.propertyAddress } : {}),
     ...(input.propertyActivationStatus !== undefined
@@ -251,6 +252,11 @@ function buildResidentialProfile(
         : residenceType === "multi_unit_private"
           ? { propertyActivationStatus: "suggested" }
           : {}),
+    ...(input.propertyInterestCount !== undefined
+      ? { propertyInterestCount: input.propertyInterestCount }
+      : existing?.propertyInterestCount !== undefined
+        ? { propertyInterestCount: existing.propertyInterestCount }
+        : {}),
     ...(input.serviceAreaLabel !== undefined ? { serviceAreaLabel: input.serviceAreaLabel.trim() } : existing?.serviceAreaLabel ? { serviceAreaLabel: existing.serviceAreaLabel } : {}),
     ...(input.parkingNotes !== undefined ? { parkingNotes: input.parkingNotes.trim() } : existing?.parkingNotes ? { parkingNotes: existing.parkingNotes } : {}),
     ...(input.accessNotes !== undefined ? { accessNotes: input.accessNotes.trim() } : existing?.accessNotes ? { accessNotes: existing.accessNotes } : {}),

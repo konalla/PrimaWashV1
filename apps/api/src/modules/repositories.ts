@@ -46,6 +46,11 @@ import {
   type PartnerRepository,
 } from "./partners/repository.js";
 import {
+  InMemoryPropertyRepository,
+  PostgresPropertyRepository,
+  type PropertyRepository,
+} from "./properties/repository.js";
+import {
   InMemoryCapacityTemplateRepository,
   PostgresCapacityTemplateRepository,
   type CapacityTemplateRepository,
@@ -67,6 +72,7 @@ export interface Repositories {
   readonly audit: AuditRepository;
   readonly profiles: ProfileRepository;
   readonly partners: PartnerRepository;
+  readonly properties: PropertyRepository;
   readonly capacityTemplates: CapacityTemplateRepository;
   readonly scheduling: SchedulingConfigRepository;
   readonly databasePool?: DatabasePool;
@@ -87,6 +93,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       audit: new InMemoryAuditRepository(),
       profiles: new InMemoryProfileRepository(),
       partners: new InMemoryPartnerRepository(),
+      properties: new InMemoryPropertyRepository(),
       capacityTemplates: new InMemoryCapacityTemplateRepository(),
       scheduling: new InMemorySchedulingConfigRepository(),
     };
@@ -106,6 +113,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     audit: new PostgresAuditRepository(databasePool),
     profiles: new PostgresProfileRepository(databasePool),
     partners: new PostgresPartnerRepository(databasePool),
+    properties: new PostgresPropertyRepository(databasePool),
     capacityTemplates: new PostgresCapacityTemplateRepository(databasePool),
     scheduling: new PostgresSchedulingConfigRepository(databasePool),
     databasePool,

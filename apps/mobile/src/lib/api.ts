@@ -12,9 +12,12 @@ import type {
   CreateBookingHoldResponse,
   CreateBookingRequest,
   CreatePaymentIntentRequest,
+  CreatePropertyInterestRequest,
+  CreatePropertyInterestResponse,
   CreateVehicleRequest,
   PaymentIntent,
   PartnerLocation,
+  Property,
   ServiceOffering,
   ServiceRecord,
   Vehicle,
@@ -89,6 +92,22 @@ export const primaApi = {
   profile: () => request<CustomerProfile>('/v1/profile'),
   updateProfile: (input: UpdateCustomerProfileRequest) =>
     request<CustomerProfile>('/v1/profile', { method: 'PATCH', body: JSON.stringify(input) }),
+  properties: (input?: { readonly query?: string; readonly residenceType?: string }) => {
+    const params = new URLSearchParams();
+
+    if (input?.query) {
+      params.set('query', input.query);
+    }
+
+    if (input?.residenceType) {
+      params.set('residenceType', input.residenceType);
+    }
+
+    const query = params.toString();
+    return request<readonly Property[]>(`/v1/properties${query ? `?${query}` : ''}`);
+  },
+  createPropertyInterest: (input: CreatePropertyInterestRequest) =>
+    request<CreatePropertyInterestResponse>('/v1/property-interests', { method: 'POST', body: JSON.stringify(input) }),
   services: () => request<readonly ServiceOffering[]>('/v1/services'),
   partners: (serviceCode?: string) =>
     request<readonly PartnerLocation[]>(`/v1/partners${serviceCode ? `?serviceCode=${encodeURIComponent(serviceCode)}` : ''}`),

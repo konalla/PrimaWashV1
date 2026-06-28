@@ -63,7 +63,7 @@ export default function HomeScreen() {
             {profile.residentialProfile.residenceType === 'multi_unit_private'
               ? profile.residentialProfile.propertyActivationStatus === 'active'
                 ? 'Book approved Prima Wash Days at your condo.'
-                : 'Your condo interest is saved. You can still find trusted care nearby.'
+                : `Your condo interest is saved${profile.residentialProfile.propertyInterestCount ? ` with ${profile.residentialProfile.propertyInterestCount} resident signals` : ''}. You can still find trusted care nearby.`
               : 'Use the marketplace flow to compare verified partners and appointment times.'}
           </Text>
         </Surface>
