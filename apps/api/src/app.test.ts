@@ -5,6 +5,8 @@ import type { AddressInfo } from "node:net";
 import type {
   ApiErrorResponse,
   AuthSession,
+  CommunicationMessage,
+  CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
   BookingStatus,
@@ -391,6 +393,70 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.vehicleMovementPolicy, "within_property_allowed");
   });
 
+  it("persists property communication threads between Prima Wash and office management", async () => {
+    const createResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "prima_to_property",
+        resourceType: "property",
+        resourceId: "prop_sg_marina_one",
+        subject: "July operating rules",
+        initialMessage: "Please confirm visitor-lot access for the next Prima Wash Day.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const replyResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}/messages`, {
+      method: "POST",
+      headers: {
+        ...propertyManagerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "Approved for B1 visitor lots. Security has been briefed." }),
+    });
+    const replyPayload = (await replyResponse.json()) as ApiResponse<CommunicationMessage>;
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}`, {
+      headers: propertyManagerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(createPayload.data.messages.length, 1);
+    assert.equal(replyResponse.status, 201);
+    assert.equal(replyPayload.data.senderRole, "property_manager");
+    assert.equal(readResponse.status, 200);
+    assert.equal(readPayload.data.messages.length, 2);
+  });
+
+  it("blocks property managers from another condo communication thread", async () => {
+    const createResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        type: "prima_to_property",
+        resourceType: "property",
+        resourceId: "prop_sg_reflections",
+        subject: "Reflections access",
+        initialMessage: "Confirm loading bay access.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}`, {
+      headers: propertyManagerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiErrorResponse;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(readResponse.status, 403);
+    assert.equal(readPayload.code, "communication_thread_forbidden");
+  });
+
   it("allows multiple Prima Wash Days for the same condo without a weekly or monthly cap", async () => {
     const created: PrimaWashDay[] = [];
 
@@ -704,6 +770,40 @@ describe("Prima Wash API", () => {
       payload.data.slice(0, 2).map((event) => event.action),
       ["booking.created", "vehicle.created"],
     );
+  });
+
+  it("persists booking communication threads between partners and vehicle owners", async () => {
+    const vehicle = await createVehicle("CHAT123");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const createResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({
+        type: "partner_to_owner",
+        resourceType: "booking",
+        resourceId: booking.id,
+        subject: "Arrival note",
+        initialMessage: "I will arrive 10 minutes early.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+    const replyResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}/messages`, {
+      method: "POST",
+      headers: {
+        ...partnerHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "Noted. Please park near the visitor entrance." }),
+    });
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${createPayload.data.thread.id}`, {
+      headers: customerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(replyResponse.status, 201);
+    assert.equal(readResponse.status, 200);
+    assert.deepEqual(readPayload.data.messages.map((message) => message.senderRole), ["customer", "partner"]);
   });
 
   it("exposes partner dashboard metrics for partner actors", async () => {

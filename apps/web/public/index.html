@@ -889,6 +889,40 @@
         font-size: 12px;
       }
 
+      .message-list {
+        display: grid;
+        gap: 10px;
+        max-height: 280px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      .message-item {
+        display: grid;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 10px;
+      }
+
+      .message-item:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .message-item strong {
+        color: var(--ink);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .message-item p {
+        margin: 0;
+        color: var(--muted);
+      }
+
       .confidence-item {
         display: flex;
         justify-content: space-between;
@@ -1692,6 +1726,33 @@
       </form>
     </dialog>
 
+    <dialog id="communication-dialog" aria-labelledby="communication-dialog-title">
+      <form class="dialog-body" id="communication-form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Communications</p>
+            <h2 id="communication-dialog-title">Property thread</h2>
+            <p class="section-description" id="communication-subtitle">Persisted messages only. No realtime or push notifications yet.</p>
+          </div>
+          <button class="action" type="button" data-close-communication-dialog>Close</button>
+        </div>
+        <input type="hidden" name="threadId" />
+        <input type="hidden" name="resourceType" value="property" />
+        <input type="hidden" name="resourceId" />
+        <input type="hidden" name="threadType" value="prima_to_property" />
+        <input type="hidden" name="subject" />
+        <div class="message-list" id="communication-messages"></div>
+        <div class="field field-wide">
+          <label for="communication-body">New message</label>
+          <textarea id="communication-body" name="body" placeholder="Write a message for condo office management"></textarea>
+        </div>
+        <div class="dialog-actions">
+          <button class="action" type="button" data-close-communication-dialog>Cancel</button>
+          <button class="action primary" type="submit">Send message</button>
+        </div>
+      </form>
+    </dialog>
+
     <script>
       const urlParams = new URLSearchParams(location.search);
       const apiBase = urlParams.get("api") || "http://127.0.0.1:3001";
@@ -1742,6 +1803,11 @@
       const opsProfileDialog = document.querySelector("#ops-profile-dialog");
       const opsProfileForm = document.querySelector("#ops-profile-form");
       const opsProfilePropertyNameEl = document.querySelector("#ops-profile-property-name");
+      const communicationDialog = document.querySelector("#communication-dialog");
+      const communicationForm = document.querySelector("#communication-form");
+      const communicationMessagesEl = document.querySelector("#communication-messages");
+      const communicationTitleEl = document.querySelector("#communication-dialog-title");
+      const communicationSubtitleEl = document.querySelector("#communication-subtitle");
       const plannerPreviewEl = document.querySelector("#planner-preview");
       const plannerSlotCountEl = document.querySelector("#planner-slot-count");
       const plannerVehicleCountEl = document.querySelector("#planner-vehicle-count");
@@ -1843,6 +1909,27 @@
         return payload.data;
       }
 
+      async function communicationRequestJson(path, init = {}, headers = {
+        "x-prima-user-id": "usr_internal_dashboard",
+        "x-prima-role": "internal",
+      }) {
+        const response = await fetch(`${apiBase}${path}`, {
+          ...init,
+          headers: {
+            ...headers,
+            ...(init.body ? { "content-type": "application/json" } : {}),
+            ...(init.headers || {}),
+          },
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Communication request failed");
+        }
+
+        return payload.data;
+      }
+
       async function loadDashboard() {
         const [dashboard, availability, templates, mavo, condoLeads, primaWashDays, primaWashDayBookings] = await Promise.all([
           requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
@@ -1926,6 +2013,31 @@
                   <div class="confidence-item"><span class="muted">Last synced</span><strong>${new Date(data.generatedAt).toLocaleTimeString()}</strong></div>
                 </div>
               </aside>
+            </section>
+
+            <section class="card availability-card">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Messages</p>
+                  <h2>Prima Wash thread</h2>
+                  <p class="section-description">Persisted messages only. No realtime or push notifications yet.</p>
+                </div>
+              </div>
+              <form class="cluster" id="management-communication-form">
+                <input type="hidden" name="threadId" />
+                <input type="hidden" name="resourceType" value="property" />
+                <input type="hidden" name="resourceId" value="${escapeAttribute(data.property.id)}" />
+                <input type="hidden" name="threadType" value="prima_to_property" />
+                <input type="hidden" name="subject" value="${escapeAttribute(data.property.name)} operations" />
+                <div class="message-list" id="management-communication-messages"></div>
+                <div class="field field-wide">
+                  <label for="management-message-body">New message</label>
+                  <textarea id="management-message-body" name="body" placeholder="Write a note for Prima Wash"></textarea>
+                </div>
+                <div class="dialog-actions">
+                  <button class="action primary" type="submit">Send message</button>
+                </div>
+              </form>
             </section>
 
             <section class="card availability-card">
@@ -2033,6 +2145,26 @@
             button.disabled = false;
           }
         });
+
+        void loadManagementCommunicationThread(data.property.id);
+
+        document.querySelector("#management-communication-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const button = event.submitter;
+          button.disabled = true;
+
+          try {
+            const threadId = await sendCommunicationForm(event.currentTarget, managementHeaders());
+            event.currentTarget.elements.threadId.value = threadId;
+            event.currentTarget.elements.body.value = "";
+            await loadManagementCommunicationThread(data.property.id);
+            showManagementToast("Message sent.");
+          } catch (error) {
+            showManagementToast(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
       }
 
       function readManagementProfileInput(formElement) {
@@ -2054,6 +2186,45 @@
           operatingInstructions: String(form.get("operatingInstructions") || "").trim(),
           safetyRequirements: String(form.get("safetyRequirements") || "").trim(),
         };
+      }
+
+      async function loadManagementCommunicationThread(propertyId) {
+        const messagesEl = document.querySelector("#management-communication-messages");
+        const form = document.querySelector("#management-communication-form");
+
+        if (!messagesEl || !form) {
+          return;
+        }
+
+        messagesEl.innerHTML = `<div class="empty">Loading messages...</div>`;
+        const threads = await communicationRequestJson(
+          `/v1/communication/threads?resourceType=property&resourceId=${encodeURIComponent(propertyId)}`,
+          {},
+          managementHeaders(),
+        );
+        const thread = threads.find((item) => item.type === "prima_to_property");
+
+        if (!thread) {
+          form.elements.threadId.value = "";
+          messagesEl.innerHTML = `<div class="empty">No messages yet. Send the first note to Prima Wash.</div>`;
+          return;
+        }
+
+        form.elements.threadId.value = thread.id;
+        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, managementHeaders());
+        messagesEl.innerHTML =
+          payload.messages.length === 0
+            ? `<div class="empty">No messages yet.</div>`
+            : payload.messages
+                .map(
+                  (message) => `
+                    <article class="message-item">
+                      <strong>${formatStatus(message.senderRole)} · ${formatRelativeTime(message.createdAt)}</strong>
+                      <p>${escapeHtml(message.body)}</p>
+                    </article>
+                  `,
+                )
+                .join("");
       }
 
       function renderOptions(options, selected) {
@@ -2135,6 +2306,7 @@
                       </form>
                       <div class="queue-actions">
                         <button class="action" type="button" data-configure-ops-profile="${lead.id}">Configure ops</button>
+                        <button class="action" type="button" data-property-thread="${lead.id}">Message office</button>
                         <button class="action primary-command" type="button" data-save-property-lead="${lead.id}">Save lead</button>
                       </div>
                     </article>
@@ -2669,6 +2841,84 @@
         }
       }
 
+      async function openPropertyCommunicationDialog(propertyId) {
+        const lead = condoLeadsCache.find((item) => item.id === propertyId);
+        const subject = `${lead?.name || "Condo"} operations`;
+        communicationForm.reset();
+        communicationForm.elements.resourceId.value = propertyId;
+        communicationForm.elements.subject.value = subject;
+        communicationTitleEl.textContent = lead ? `${lead.name} thread` : "Property thread";
+        communicationSubtitleEl.textContent = "Persisted messages only. No realtime or push notifications yet.";
+        communicationMessagesEl.innerHTML = `<div class="empty">Loading messages...</div>`;
+        communicationDialog.showModal();
+
+        const threads = await communicationRequestJson(
+          `/v1/communication/threads?resourceType=property&resourceId=${encodeURIComponent(propertyId)}`,
+        );
+        const thread = threads.find((item) => item.type === "prima_to_property");
+
+        if (!thread) {
+          communicationForm.elements.threadId.value = "";
+          communicationMessagesEl.innerHTML = `<div class="empty">No messages yet. Send the first note to office management.</div>`;
+          return;
+        }
+
+        communicationForm.elements.threadId.value = thread.id;
+        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`);
+        renderCommunicationMessages(payload.messages);
+      }
+
+      function renderCommunicationMessages(messages) {
+        communicationMessagesEl.innerHTML =
+          messages.length === 0
+            ? `<div class="empty">No messages yet.</div>`
+            : messages
+                .map(
+                  (message) => `
+                    <article class="message-item">
+                      <strong>${formatStatus(message.senderRole)} · ${formatRelativeTime(message.createdAt)}</strong>
+                      <p>${escapeHtml(message.body)}</p>
+                    </article>
+                  `,
+                )
+                .join("");
+      }
+
+      async function sendCommunicationForm(formElement, headers) {
+        const form = new FormData(formElement);
+        const threadId = String(form.get("threadId") || "");
+        const body = String(form.get("body") || "").trim();
+
+        if (!body) {
+          throw new Error("Message cannot be blank");
+        }
+
+        if (threadId) {
+          await communicationRequestJson(
+            `/v1/communication/threads/${threadId}/messages`,
+            { method: "POST", body: JSON.stringify({ body }) },
+            headers,
+          );
+          return threadId;
+        }
+
+        const payload = await communicationRequestJson(
+          `/v1/communication/threads`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              type: String(form.get("threadType")),
+              resourceType: String(form.get("resourceType")),
+              resourceId: String(form.get("resourceId")),
+              subject: String(form.get("subject")),
+              initialMessage: body,
+            }),
+          },
+          headers,
+        );
+        return payload.thread.id;
+      }
+
       function populateOperationalProfileForm(profile) {
         const defaults = {
           approvedServiceAreas: [],
@@ -2986,6 +3236,22 @@
             await openOperationalProfileDialog(configureOpsButton.dataset.configureOpsProfile);
           } finally {
             configureOpsButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const propertyThreadButton = event.target.closest("button[data-property-thread]");
+
+        if (propertyThreadButton) {
+          propertyThreadButton.disabled = true;
+
+          try {
+            await openPropertyCommunicationDialog(propertyThreadButton.dataset.propertyThread);
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            propertyThreadButton.disabled = false;
           }
 
           return;
@@ -3381,6 +3647,10 @@
         button.addEventListener("click", () => opsProfileDialog.close());
       });
 
+      document.querySelectorAll("[data-close-communication-dialog]").forEach((button) => {
+        button.addEventListener("click", () => communicationDialog.close());
+      });
+
       availabilityForm.addEventListener("input", updatePlannerPreview);
 
       capacityTemplateSelect.addEventListener("change", () => {
@@ -3477,6 +3747,28 @@
           await saveOperationalProfile(propertyId, readOperationalProfileInput());
           opsProfileDialog.close();
           showToast("Operational profile saved.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      communicationForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitButton = event.submitter;
+        submitButton.disabled = true;
+
+        try {
+          const threadId = await sendCommunicationForm(communicationForm, {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          });
+          communicationForm.elements.threadId.value = threadId;
+          communicationForm.elements.body.value = "";
+          const payload = await communicationRequestJson(`/v1/communication/threads/${threadId}`);
+          renderCommunicationMessages(payload.messages);
+          showToast("Message sent.");
         } catch (error) {
           showToast(error.message, "error");
         } finally {

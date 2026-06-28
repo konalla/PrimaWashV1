@@ -65,6 +65,11 @@ import {
   PostgresSchedulingConfigRepository,
   type SchedulingConfigRepository,
 } from "./scheduling/repository.js";
+import {
+  InMemoryCommunicationRepository,
+  PostgresCommunicationRepository,
+  type CommunicationRepository,
+} from "./communications/repository.js";
 
 export interface Repositories {
   readonly availability: AvailabilityRepository;
@@ -81,6 +86,7 @@ export interface Repositories {
   readonly condoOperations: CondoOperationsRepository;
   readonly capacityTemplates: CapacityTemplateRepository;
   readonly scheduling: SchedulingConfigRepository;
+  readonly communications: CommunicationRepository;
   readonly databasePool?: DatabasePool;
 }
 
@@ -104,6 +110,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       condoOperations,
       capacityTemplates: new InMemoryCapacityTemplateRepository(),
       scheduling: new InMemorySchedulingConfigRepository(),
+      communications: new InMemoryCommunicationRepository(),
     };
   }
 
@@ -125,6 +132,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     condoOperations: new PostgresCondoOperationsRepository(databasePool),
     capacityTemplates: new PostgresCapacityTemplateRepository(databasePool),
     scheduling: new PostgresSchedulingConfigRepository(databasePool),
+    communications: new PostgresCommunicationRepository(databasePool),
     databasePool,
   };
 }

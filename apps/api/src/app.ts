@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   AvailabilitySearchResponse,
   AvailabilitySearchSlot,
+  Actor,
   Booking,
   BookingHold,
   RequestAuthCodeRequest,
@@ -13,6 +14,11 @@ import type {
   CreateAvailabilitySlotRequest,
   CreateBookingHoldRequest,
   CreateCapacityTemplateRequest,
+  CreateCommunicationMessageRequest,
+  CreateCommunicationThreadRequest,
+  CommunicationResourceType,
+  CommunicationThread,
+  CommunicationThreadType,
   CreateBookingRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
@@ -75,6 +81,10 @@ import {
   validateOperationalProfile,
   validateUpdatePrimaWashDay,
 } from "./modules/condo-operations/repository.js";
+import {
+  validateCreateCommunicationMessage,
+  validateCreateCommunicationThread,
+} from "./modules/communications/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -1160,6 +1170,150 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/v1/communication/threads") {
+      try {
+        const actor = requireActor(request);
+        const resourceType = normalizeCommunicationResourceType(requestUrl.searchParams.get("resourceType"));
+        const resourceId = requestUrl.searchParams.get("resourceId") ?? undefined;
+
+        if (resourceType && resourceId) {
+          await assertCommunicationResourceAccess(options.repositories, actor, resourceType, resourceId);
+        }
+
+        const threads = await options.repositories.communications.list({
+          ...(resourceType ? { resourceType } : {}),
+          ...(resourceId ? { resourceId } : {}),
+        });
+        const visibleThreads = [];
+
+        for (const thread of threads) {
+          if (await canAccessCommunicationThread(options.repositories, actor, thread)) {
+            visibleThreads.push(thread);
+          }
+        }
+
+        sendJson(response, 200, { data: visibleThreads });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/communication/threads") {
+      try {
+        const actor = requireActor(request);
+        const input = await readJsonBody<CreateCommunicationThreadRequest>(request);
+        const errors = validateCreateCommunicationThread({ ...input, actor });
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Communication thread payload is invalid", errors);
+          return;
+        }
+
+        await assertCommunicationResourceAccess(options.repositories, actor, input.resourceType, input.resourceId);
+        assertCommunicationTypeAccess(actor, input.type);
+        const thread = await options.repositories.communications.create({ ...input, actor });
+        const messages = await options.repositories.communications.getMessages(thread.id);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "communication.thread_created",
+          resourceType: input.resourceType,
+          resourceId: input.resourceId,
+          requestId: requestContext.requestId,
+          metadata: { threadId: thread.id, type: thread.type },
+        });
+
+        sendJson(response, 201, { data: { thread, messages } });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Communication thread request could not be processed", String(error));
+        }
+      }
+      return;
+    }
+
+    const communicationThreadMatch = requestUrl.pathname.match(/^\/v1\/communication\/threads\/([^/]+)$/);
+    const communicationMessagesMatch = requestUrl.pathname.match(/^\/v1\/communication\/threads\/([^/]+)\/messages$/);
+
+    if (request.method === "GET" && communicationThreadMatch) {
+      try {
+        const actor = requireActor(request);
+        const threadId = communicationThreadMatch[1];
+
+        if (!threadId) {
+          sendError(response, 404, "communication_thread_not_found", "Communication thread does not exist");
+          return;
+        }
+
+        const thread = await options.repositories.communications.get(threadId);
+
+        if (!thread) {
+          sendError(response, 404, "communication_thread_not_found", "Communication thread does not exist");
+          return;
+        }
+
+        if (!(await canAccessCommunicationThread(options.repositories, actor, thread))) {
+          sendError(response, 403, "communication_thread_forbidden", "Actor is not allowed to access this thread");
+          return;
+        }
+
+        sendJson(response, 200, { data: { thread, messages: await options.repositories.communications.getMessages(thread.id) } });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+      return;
+    }
+
+    if (request.method === "POST" && communicationMessagesMatch) {
+      try {
+        const actor = requireActor(request);
+        const threadId = communicationMessagesMatch[1];
+
+        if (!threadId) {
+          sendError(response, 404, "communication_thread_not_found", "Communication thread does not exist");
+          return;
+        }
+
+        const thread = await options.repositories.communications.get(threadId);
+
+        if (!thread) {
+          sendError(response, 404, "communication_thread_not_found", "Communication thread does not exist");
+          return;
+        }
+
+        if (!(await canAccessCommunicationThread(options.repositories, actor, thread))) {
+          sendError(response, 403, "communication_thread_forbidden", "Actor is not allowed to access this thread");
+          return;
+        }
+
+        const input = await readJsonBody<CreateCommunicationMessageRequest>(request);
+        const errors = validateCreateCommunicationMessage(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Communication message payload is invalid", errors);
+          return;
+        }
+
+        const message = await options.repositories.communications.addMessage({ threadId: thread.id, actor, body: input.body });
+        await options.repositories.audit.record({
+          actor,
+          action: "communication.message_created",
+          resourceType: thread.resourceType,
+          resourceId: thread.resourceId,
+          requestId: requestContext.requestId,
+          metadata: { threadId: thread.id, messageId: message.id },
+        });
+
+        sendJson(response, 201, { data: message });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Communication message request could not be processed", String(error));
+        }
+      }
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/v1/vehicles") {
       try {
         const actor = requireActor(request);
@@ -2011,6 +2165,11 @@ function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown
     return true;
   }
 
+  if (message === "communication_thread_forbidden") {
+    sendError(response, 403, message, "Actor is not allowed to access this communication thread");
+    return true;
+  }
+
   return false;
 }
 
@@ -2026,6 +2185,106 @@ function normalizeResidenceType(value: string | null): ResidenceType {
   }
 
   return "multi_unit_private";
+}
+
+function normalizeCommunicationResourceType(value: string | null): CommunicationResourceType | undefined {
+  if (value === "property" || value === "booking" || value === "partner_location" || value === "owner") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function assertCommunicationTypeAccess(actor: Actor, type: CommunicationThreadType): void {
+  if (actor.role === "internal") {
+    return;
+  }
+
+  if (actor.role === "property_manager" && type === "prima_to_property") {
+    return;
+  }
+
+  if (actor.role === "partner" && (type === "prima_to_partner" || type === "partner_to_owner")) {
+    return;
+  }
+
+  if (actor.role === "customer" && (type === "prima_to_owner" || type === "partner_to_owner")) {
+    return;
+  }
+
+  throw new Error("communication_thread_forbidden");
+}
+
+async function assertCommunicationResourceAccess(
+  repositories: Repositories,
+  actor: Actor,
+  resourceType: CommunicationResourceType,
+  resourceId: string,
+): Promise<void> {
+  if (actor.role === "internal") {
+    return;
+  }
+
+  if (resourceType === "property") {
+    assertPropertyManagerAccess(actor, resourceId);
+    return;
+  }
+
+  if (resourceType === "owner") {
+    assertOwnerAccess(actor, resourceId);
+    return;
+  }
+
+  if (resourceType === "partner_location") {
+    if (actor.role !== "partner") {
+      throw new Error("communication_thread_forbidden");
+    }
+
+    const partner = await repositories.partners.get(resourceId);
+
+    if (!partner || partner.organizationId !== actor.organizationId) {
+      throw new Error("communication_thread_forbidden");
+    }
+
+    return;
+  }
+
+  if (resourceType === "booking") {
+    const booking = await repositories.bookings.get(resourceId);
+
+    if (!booking) {
+      throw new Error("booking_not_found");
+    }
+
+    if (actor.role === "customer") {
+      assertOwnerAccess(actor, booking.ownerId);
+      return;
+    }
+
+    if (actor.role === "partner") {
+      const partner = await repositories.partners.get(booking.partnerLocationId);
+
+      if (partner?.organizationId === actor.organizationId) {
+        return;
+      }
+    }
+
+    throw new Error("communication_thread_forbidden");
+  }
+}
+
+async function canAccessCommunicationThread(
+  repositories: Repositories,
+  actor: Actor,
+  thread: CommunicationThread,
+): Promise<boolean> {
+  try {
+    assertCommunicationTypeAccess(actor, thread.type);
+    await assertCommunicationResourceAccess(repositories, actor, thread.resourceType, thread.resourceId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sendAuthVerificationError(response: Parameters<typeof sendError>[0], error: unknown): void {

@@ -255,6 +255,51 @@ export interface AuditEvent {
   readonly createdAt: string;
 }
 
+export type CommunicationThreadType =
+  | "prima_to_property"
+  | "prima_to_owner"
+  | "prima_to_partner"
+  | "partner_to_owner";
+
+export type CommunicationResourceType = "property" | "booking" | "partner_location" | "owner";
+
+export interface CommunicationThread {
+  readonly id: string;
+  readonly type: CommunicationThreadType;
+  readonly resourceType: CommunicationResourceType;
+  readonly resourceId: string;
+  readonly subject: string;
+  readonly createdByRole: ActorRole;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CommunicationMessage {
+  readonly id: string;
+  readonly threadId: string;
+  readonly senderUserId: string;
+  readonly senderRole: ActorRole;
+  readonly body: string;
+  readonly createdAt: string;
+}
+
+export interface CommunicationThreadWithMessages {
+  readonly thread: CommunicationThread;
+  readonly messages: readonly CommunicationMessage[];
+}
+
+export interface CreateCommunicationThreadRequest {
+  readonly type: CommunicationThreadType;
+  readonly resourceType: CommunicationResourceType;
+  readonly resourceId: string;
+  readonly subject: string;
+  readonly initialMessage?: string;
+}
+
+export interface CreateCommunicationMessageRequest {
+  readonly body: string;
+}
+
 export interface PartnerDashboardMetric {
   readonly label: string;
   readonly value: string;
