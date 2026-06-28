@@ -24,7 +24,7 @@ export function PrimaryButton({
       disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, (disabled || loading) && styles.disabled]}>
-      {loading ? <ActivityIndicator color={colors.black} /> : <Text style={styles.primaryLabel}>{label}</Text>}
+      {loading ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryLabel}>{label}</Text>}
     </Pressable>
   );
 }
@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
-  surfaceAccent: { borderColor: '#38795A', backgroundColor: colors.surfaceStrong },
+  surfaceAccent: { borderColor: colors.accent, backgroundColor: colors.surfaceStrong },
   primaryButton: {
     minHeight: 54,
     alignItems: 'center',
@@ -78,16 +78,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     paddingHorizontal: spacing.lg,
   },
-  primaryLabel: { color: colors.black, fontSize: 16, fontWeight: '800' },
+  primaryLabel: { color: colors.white, fontSize: 16, fontWeight: '800' },
   pressed: { opacity: 0.86, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.5 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   sectionCopy: { flex: 1 },
   eyebrow: { color: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
-  sectionTitle: { color: colors.text, fontSize: 21, fontWeight: '800', letterSpacing: -0.5, marginTop: 3 },
-  chip: { alignSelf: 'flex-start', borderRadius: radius.pill, backgroundColor: '#173D2B', paddingHorizontal: 10, paddingVertical: 6 },
-  chipWarning: { backgroundColor: '#40351D' },
-  chipNeutral: { backgroundColor: '#24342D' },
+  sectionTitle: { color: colors.text, fontSize: 21, fontWeight: '800', letterSpacing: 0, marginTop: 3 },
+  chip: { alignSelf: 'flex-start', borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 6 },
+  chipWarning: { backgroundColor: '#FBF2DE' },
+  chipNeutral: { backgroundColor: colors.canvasRaised },
   chipText: { color: colors.accent, fontSize: 11, fontWeight: '800' },
   chipWarningText: { color: colors.warning },
 });

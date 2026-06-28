@@ -182,7 +182,7 @@ async function ensureAndroidChannel() {
     name: 'Booking reminders',
     importance: Notifications.AndroidImportance.DEFAULT,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#66F5A0',
+    lightColor: '#0B4F5A',
   });
 }
 

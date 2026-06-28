@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   vehicleTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
   vehicleCopy: { flex: 1 },
   caption: { color: colors.muted, fontSize: 12 },
-  vehicleName: { color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.7, marginTop: 5 },
+  vehicleName: { color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: 0, marginTop: 5 },
   plate: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.4, marginTop: spacing.sm },
   actions: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl },
   action: { color: colors.accent, fontSize: 12, fontWeight: '800' },

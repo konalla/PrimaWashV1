@@ -499,7 +499,7 @@ function formatVehicle(vehicle?: Vehicle) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   eyebrow: { flex: 1, color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
-  heroTitle: { color: colors.text, fontSize: 28, fontWeight: '900', letterSpacing: -0.8 },
+  heroTitle: { color: colors.text, fontSize: 28, fontWeight: '900', letterSpacing: 0 },
   title: { color: colors.text, fontSize: 18, fontWeight: '900' },
   body: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   reference: { color: colors.subtle, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },

@@ -53,5 +53,5 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     textTransform: 'uppercase',
   },
-  title: { color: colors.text, fontSize: 30, fontWeight: '800', letterSpacing: -1.1 },
+  title: { color: colors.text, fontSize: 30, fontWeight: '800', letterSpacing: 0 },
 });

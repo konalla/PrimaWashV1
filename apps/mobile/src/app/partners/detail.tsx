@@ -165,14 +165,14 @@ function PartnerSkeleton() {
 
 const styles = StyleSheet.create({
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  mark: { width: 58, height: 58, borderRadius: 18, backgroundColor: '#214735', alignItems: 'center', justifyContent: 'center' },
+  mark: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.surfaceStrong, alignItems: 'center', justifyContent: 'center' },
   markText: { color: colors.accent, fontSize: 18, fontWeight: '900' },
   heroCopy: { flex: 1 },
   rating: { color: colors.warning, fontSize: 13, fontWeight: '800' },
   distance: { color: colors.muted, fontSize: 11, marginTop: 5 },
   description: { color: colors.text, fontSize: 15, lineHeight: 22, fontWeight: '700' },
   body: { color: colors.muted, fontSize: 13, lineHeight: 20 },
-  map: { minHeight: 110, borderRadius: 18, backgroundColor: '#102C23', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  map: { minHeight: 110, borderRadius: 18, backgroundColor: colors.canvasRaised, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   mapPin: { color: colors.accent, fontSize: 28 },
   mapText: { color: colors.muted, fontSize: 11 },
   mapCoordinates: { color: colors.subtle, fontSize: 10 },
@@ -185,6 +185,6 @@ const styles = StyleSheet.create({
   skeletonLine: { width: '44%', height: 12, borderRadius: radius.sm, backgroundColor: colors.surfaceStrong },
   skeletonBlock: { height: 110, borderRadius: radius.md, backgroundColor: colors.canvasRaised },
   loadingText: { color: colors.muted, fontSize: 13, textAlign: 'center' },
-  inlineWarning: { borderWidth: 1, borderColor: '#685A2F', borderRadius: radius.md, backgroundColor: '#332D1B', padding: spacing.md },
+  inlineWarning: { borderWidth: 1, borderColor: '#E0C987', borderRadius: radius.md, backgroundColor: '#FBF2DE', padding: spacing.md },
   inlineWarningText: { color: colors.warning, fontSize: 12, fontWeight: '700', textAlign: 'center' },
 });

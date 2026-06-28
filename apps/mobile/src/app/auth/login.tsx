@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   brandMark: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   brandLetter: { color: colors.black, fontSize: 23, fontWeight: '900' },
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '900', letterSpacing: 1.8 },
-  title: { color: colors.text, fontSize: 36, lineHeight: 41, fontWeight: '900', letterSpacing: -1.4 },
+  title: { color: colors.text, fontSize: 36, lineHeight: 41, fontWeight: '900', letterSpacing: 0 },
   body: { color: colors.muted, fontSize: 15, lineHeight: 23 },
   label: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   input: { minHeight: 54, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.canvasRaised, color: colors.text, paddingHorizontal: spacing.lg, fontSize: 16 },

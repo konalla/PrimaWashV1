@@ -139,7 +139,7 @@ function formatPermission(permission: 'granted' | 'denied' | 'undetermined') {
 
 const styles = StyleSheet.create({
   statusLabel: { color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
-  statusTitle: { color: colors.text, fontSize: 22, fontWeight: '900', letterSpacing: -0.6 },
+  statusTitle: { color: colors.text, fontSize: 22, fontWeight: '900', letterSpacing: 0 },
   statusBody: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   permissionButton: {
     alignSelf: 'flex-start',

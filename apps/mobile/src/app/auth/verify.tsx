@@ -62,7 +62,7 @@ export default function VerifyScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, justifyContent: 'center', backgroundColor: colors.canvas, padding: spacing.xl, gap: spacing.xxl },
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '900', letterSpacing: 1.6, marginBottom: spacing.sm },
-  title: { color: colors.text, fontSize: 32, lineHeight: 38, fontWeight: '900', letterSpacing: -1.1 },
+  title: { color: colors.text, fontSize: 32, lineHeight: 38, fontWeight: '900', letterSpacing: 0 },
   body: { color: colors.muted, fontSize: 14, lineHeight: 21, marginTop: spacing.md },
   code: { minHeight: 68, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.canvasRaised, color: colors.text, paddingHorizontal: spacing.lg, fontSize: 28, fontWeight: '800', letterSpacing: 10, textAlign: 'center' },
   dev: { color: colors.warning, fontSize: 11, textAlign: 'center' },

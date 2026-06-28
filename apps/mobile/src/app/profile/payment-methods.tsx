@@ -39,7 +39,7 @@ export default function PaymentMethodsScreen() {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  cardMark: { width: 52, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#254A79' },
+  cardMark: { width: 52, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
   cardMarkText: { color: colors.white, fontSize: 11, fontWeight: '900' },
   copy: { flex: 1 },
   title: { color: colors.text, fontSize: 17, fontWeight: '800' },
