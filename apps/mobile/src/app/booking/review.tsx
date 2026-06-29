@@ -1,4 +1,4 @@
-import type { AvailabilitySlot, Booking, PaymentIntent } from '@prima-wash/contracts';
+import type { AvailabilitySlot, Booking, PaymentIntent, Vehicle } from '@prima-wash/contracts';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -77,10 +77,22 @@ export default function ReviewScreen() {
         </Text>
       </Surface>
       <Surface>
-        <SummaryRow
-          label="Vehicle"
-          value={`${draft.vehicle ? `${draft.vehicle.make ?? ''} ${draft.vehicle.model ?? ''}`.trim() : 'Vehicle'} - ${draft.vehicle?.plateNumber ?? ''}`}
+        <SectionHeading
+          eyebrow="Vehicle for this booking"
+          title={draft.vehicle ? formatVehicleName(draft.vehicle) : 'Choose a vehicle'}
+          trailing={
+            <Pressable onPress={() => router.push('/booking/service')}>
+              <Text style={styles.changeAction}>Change</Text>
+            </Pressable>
+          }
         />
+        <Text style={styles.payment}>
+          {draft.vehicle
+            ? `${draft.vehicle.plateNumber}${draft.vehicle.isPrimary ? ' - Primary garage vehicle' : ''}`
+            : 'Add or select a saved garage vehicle before payment.'}
+        </Text>
+      </Surface>
+      <Surface>
         <SummaryRow label="Service" value={draft.service?.name ?? 'Choose a service'} />
         <SummaryRow label="Appointment" value={draft.slot ? formatAppointment(draft.slot.startsAt) : 'Choose a time'} />
         {draft.hold ? <SummaryRow label="Reserved until" value={formatHoldExpiry(draft.hold.expiresAt)} /> : null}
@@ -156,8 +168,13 @@ function formatHoldExpiry(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function formatVehicleName(vehicle: Vehicle) {
+  return `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || vehicle.nickname || 'Vehicle';
+}
+
 const styles = StyleSheet.create({
   rating: { color: colors.muted, fontSize: 13 },
+  changeAction: { color: colors.accent, fontSize: 12, fontWeight: '900', paddingVertical: spacing.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xl },
   label: { color: colors.muted, fontSize: 13 },
   value: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '700', textAlign: 'right' },

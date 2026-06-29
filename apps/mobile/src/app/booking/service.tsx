@@ -24,6 +24,7 @@ export default function ServiceScreen() {
   const [error, setError] = useState<string>();
   const hasSelectedVehicle = Boolean(draft.vehicle);
   const isPrimaWashDayBooking = Boolean(draft.primaWashDay);
+  const selectedVehicle = draft.vehicle;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,7 +70,26 @@ export default function ServiceScreen() {
           <Text style={styles.description}>Compare ratings, distance, services, and live availability.</Text>
         </Pressable>
       ) : null}
-      <Text style={styles.groupLabel}>Booking for</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.groupLabel}>Vehicle for this booking</Text>
+        <Pressable onPress={() => router.push('/garage/vehicle')}>
+          <Text style={styles.headerAction}>Add vehicle</Text>
+        </Pressable>
+      </View>
+      {selectedVehicle ? (
+        <View style={styles.selectedVehicleCard}>
+          <View style={styles.selectedVehicleCopy}>
+            <Text style={styles.selectedVehicleLabel}>Selected vehicle</Text>
+            <Text style={styles.selectedVehicleName}>{formatVehicleName(selectedVehicle)}</Text>
+            <Text style={styles.selectedVehicleMeta}>
+              {selectedVehicle.plateNumber}{selectedVehicle.isPrimary ? ' - Primary garage vehicle' : ''}
+            </Text>
+          </View>
+          <View style={styles.selectedBadge}>
+            <Text style={styles.selectedBadgeText}>Booked</Text>
+          </View>
+        </View>
+      ) : null}
       {vehicles.length === 0 ? (
         <Pressable onPress={() => router.push('/garage/vehicle')} style={styles.addVehicle}>
           <Text style={styles.name}>Add a vehicle first</Text>
@@ -78,11 +98,14 @@ export default function ServiceScreen() {
       ) : (
         <View style={styles.vehicleList}>
           {vehicles.map((vehicle) => {
-            const selected = draft.vehicle?.id === vehicle.id;
+            const selected = selectedVehicle?.id === vehicle.id;
             return (
               <Pressable key={vehicle.id} onPress={() => setVehicle(vehicle)} style={[styles.vehicleChoice, selected && styles.vehicleChoiceSelected]}>
-                <Text style={styles.vehicleName}>{`${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || 'Vehicle'}</Text>
+                <Text style={styles.vehicleName}>{formatVehicleName(vehicle)}</Text>
                 <Text style={styles.duration}>{vehicle.plateNumber}{vehicle.isPrimary ? ' - Primary' : ''}</Text>
+                <Text style={[styles.vehicleAction, selected && styles.vehicleActionSelected]}>
+                  {selected ? 'Selected for booking' : 'Use this vehicle'}
+                </Text>
               </Pressable>
             );
           })}
@@ -139,14 +162,39 @@ export default function ServiceScreen() {
   );
 }
 
+function formatVehicleName(vehicle: Vehicle) {
+  return `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || vehicle.nickname || 'Vehicle';
+}
+
 const styles = StyleSheet.create({
   intro: { color: colors.muted, fontSize: 14, lineHeight: 21, marginTop: -spacing.sm },
   list: { gap: spacing.md },
-  groupLabel: { color: colors.text, fontSize: 14, fontWeight: '800', marginTop: spacing.sm },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
+  groupLabel: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  headerAction: { color: colors.accent, fontSize: 12, fontWeight: '900' },
+  selectedVehicleCard: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceStrong,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  selectedVehicleCopy: { flex: 1, gap: 3 },
+  selectedVehicleLabel: { color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' },
+  selectedVehicleName: { color: colors.text, fontSize: 20, fontWeight: '900' },
+  selectedVehicleMeta: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  selectedBadge: { borderRadius: radius.pill, backgroundColor: colors.accent, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  selectedBadgeText: { color: colors.white, fontSize: 11, fontWeight: '900' },
   vehicleList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  vehicleChoice: { minWidth: 145, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, padding: spacing.md },
+  vehicleChoice: { minWidth: 145, flexGrow: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, padding: spacing.md },
   vehicleChoiceSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceStrong },
   vehicleName: { color: colors.text, fontSize: 14, fontWeight: '800', marginBottom: 4 },
+  vehicleAction: { color: colors.accent, fontSize: 11, fontWeight: '900', marginTop: spacing.sm },
+  vehicleActionSelected: { color: colors.text },
   addVehicle: { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.accent, borderRadius: radius.lg, padding: spacing.lg, backgroundColor: colors.surface },
   card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.md },
   cardSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceStrong },
