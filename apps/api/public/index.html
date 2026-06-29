@@ -833,6 +833,26 @@
         gap: 18px;
       }
 
+      .app-panel[hidden] {
+        display: none !important;
+      }
+
+      .app-panel {
+        animation: panelIn 160ms ease-out;
+      }
+
+      @keyframes panelIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
       .mobile-app .card {
         border-radius: 26px;
         padding: 20px;
@@ -924,6 +944,26 @@
 
       .appointment-hub .section-header {
         margin-top: 24px;
+      }
+
+      .garage-summary {
+        display: grid;
+        gap: 12px;
+      }
+
+      .garage-vehicle-card {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 16px;
+        background: var(--surface-soft);
+      }
+
+      .bookings-records-duplicate {
+        display: none;
       }
 
       .mobile-app .row {
@@ -1045,7 +1085,7 @@
         <button class="profile-button" type="button" aria-label="Open profile">N</button>
       </header>
 
-      <section class="hero">
+      <section class="hero app-panel" data-app-panel="home">
         <div class="vehicle-hero">
           <div class="vehicle-hero-top">
             <div>
@@ -1062,11 +1102,11 @@
         </div>
 
         <div class="quick-actions" aria-label="Quick actions">
-          <button type="button" data-scroll-booking>
+          <button type="button" data-tab-shortcut="book">
             <span class="quick-icon">✦</span>
             <span><strong>Book care</strong><small>Find a trusted service</small></span>
           </button>
-          <button type="button" data-scroll-appointments>
+          <button type="button" data-tab-shortcut="appointments">
             <span class="quick-icon">◷</span>
             <span><strong>Appointments</strong><small>Track your booking</small></span>
           </button>
@@ -1083,7 +1123,7 @@
       </section>
 
       <section class="layout">
-        <form class="card" id="booking-form" data-app-section="book">
+        <form class="card app-panel" id="booking-form" data-app-panel="book" hidden>
           <div class="journey-progress" aria-label="Booking progress">
             <span class="journey-step is-active">Vehicle</span>
             <span class="journey-step is-active">Service</span>
@@ -1146,7 +1186,7 @@
           <div class="status" id="status" role="status" aria-live="polite">Choose a service and appointment time.</div>
         </form>
 
-        <div class="card appointment-hub" data-app-section="appointments">
+        <div class="card appointment-hub app-panel" data-app-panel="appointments" hidden>
           <p class="eyebrow">Your appointment</p>
           <h2>Booking summary</h2>
           <div class="list" id="result-list">
@@ -1170,14 +1210,14 @@
             </div>
           </div>
 
-          <div class="section-header">
+          <div class="section-header bookings-records-duplicate">
             <div>
               <p class="eyebrow" style="margin-bottom: 8px">Vehicle history</p>
               <h2 style="margin-bottom: 0">Care records</h2>
             </div>
-            <button class="secondary" id="refresh-records" type="button">Refresh records</button>
+            <button class="secondary" type="button">Refresh records</button>
           </div>
-          <div class="list" id="service-records-list">
+          <div class="list bookings-records-duplicate">
             <div class="row">
               <strong>No service records yet</strong>
               <span>Completed care automatically becomes part of your vehicle’s trusted history.</span>
@@ -1199,6 +1239,39 @@
               </div>
             </div>
           </details>
+        </div>
+
+        <div class="card app-panel" data-app-panel="garage" hidden>
+          <p class="eyebrow">Garage</p>
+          <h2>Your vehicle</h2>
+          <div class="garage-summary">
+            <div class="garage-vehicle-card">
+              <div>
+                <span class="caption">Primary vehicle</span>
+                <h3 id="garage-vehicle-title">Tesla Model 3</h3>
+                <span class="vehicle-plate" id="garage-vehicle-plate">PRIMA001</span>
+              </div>
+              <div class="vehicle-monogram" aria-hidden="true">T3</div>
+            </div>
+            <div class="row">
+              <strong>Care profile active</strong>
+              <span>Vehicle details are saved for faster booking and cleaner service records.</span>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <div>
+              <p class="eyebrow" style="margin-bottom: 8px">Vehicle history</p>
+              <h2 style="margin-bottom: 0">Care records</h2>
+            </div>
+            <button class="secondary" id="refresh-records" type="button">Refresh records</button>
+          </div>
+          <div class="list" id="service-records-list">
+            <div class="row">
+              <strong>No service records yet</strong>
+              <span>Completed care automatically becomes part of your vehicle's trusted history.</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1231,6 +1304,9 @@
       const summaryPrice = document.querySelector("#summary-price");
       const summaryStatus = document.querySelector("#summary-status");
       const previewVehicleTitle = document.querySelector("#preview-vehicle-title");
+      const garageVehicleTitle = document.querySelector("#garage-vehicle-title");
+      const garageVehiclePlate = document.querySelector("#garage-vehicle-plate");
+      const appPanels = document.querySelectorAll("[data-app-panel]");
       const makeInput = document.querySelector("#make");
       const modelInput = document.querySelector("#model");
       const plateInput = document.querySelector("#plateNumber");
@@ -1302,8 +1378,22 @@
       }
 
       function updateVehiclePreview() {
-        previewVehicleTitle.textContent = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
-        document.querySelector(".vehicle-plate").textContent = plateInput.value || "YOUR PLATE";
+        const vehicleTitle = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
+        const plate = plateInput.value || "YOUR PLATE";
+        previewVehicleTitle.textContent = vehicleTitle;
+        garageVehicleTitle.textContent = vehicleTitle;
+        document.querySelector(".vehicle-plate").textContent = plate;
+        garageVehiclePlate.textContent = plate;
+      }
+
+      function setActivePanel(target) {
+        appPanels.forEach((panel) => {
+          panel.hidden = panel.dataset.appPanel !== target;
+        });
+        document.querySelectorAll("[data-nav-target]").forEach((item) => {
+          item.classList.toggle("is-active", item.dataset.navTarget === target);
+        });
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
       function renderServiceCards(services) {
@@ -1496,27 +1586,17 @@
       modelInput.addEventListener("input", updateVehiclePreview);
       plateInput.addEventListener("input", updateVehiclePreview);
 
-      document.querySelector("[data-scroll-booking]").addEventListener("click", () => {
-        document.querySelector("#booking-form").scrollIntoView({ behavior: "smooth", block: "start" });
+      document.querySelector("[data-tab-shortcut='book']").addEventListener("click", () => {
+        setActivePanel("book");
       });
 
-      document.querySelector("[data-scroll-appointments]").addEventListener("click", () => {
-        document.querySelector(".appointment-hub").scrollIntoView({ behavior: "smooth", block: "start" });
+      document.querySelector("[data-tab-shortcut='appointments']").addEventListener("click", () => {
+        setActivePanel("appointments");
       });
 
       document.querySelectorAll("[data-nav-target]").forEach((button) => {
         button.addEventListener("click", () => {
-          document.querySelectorAll("[data-nav-target]").forEach((item) => item.classList.toggle("is-active", item === button));
-          const target = button.dataset.navTarget;
-          const targetElement =
-            target === "home"
-              ? document.querySelector(".mobile-app")
-              : target === "book"
-                ? document.querySelector("#booking-form")
-                : target === "appointments"
-                  ? document.querySelector(".appointment-hub")
-                  : document.querySelector(".vehicle-details");
-          targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+          setActivePanel(button.dataset.navTarget);
         });
       });
       refreshBookingsButton.addEventListener("click", async () => {
@@ -1642,6 +1722,7 @@
           `;
           await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
           setStatus("Appointment created. Secure payment to complete your booking.", "success");
+          setActivePanel("appointments");
         } catch (error) {
           setStatus(error.message, "error");
         } finally {
