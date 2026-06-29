@@ -1537,6 +1537,18 @@
         return `${makeInitial}${modelInitial || ""}`;
       }
 
+      function applyVehicleToPreview(vehicle) {
+        const title = vehicleTitle(vehicle);
+
+        plateInput.value = vehicle.plateNumber;
+        makeInput.value = vehicle.make || "";
+        modelInput.value = vehicle.model || "";
+        previewVehicleTitle.textContent = title;
+        bookingVehicleTitle.textContent = title;
+        bookingVehiclePlate.textContent = vehicle.plateNumber;
+        document.querySelector(".vehicle-hero .vehicle-plate").textContent = vehicle.plateNumber;
+      }
+
       function selectVehicle(vehicleId) {
         const vehicle = vehicles.find((item) => item.id === vehicleId);
 
@@ -1545,10 +1557,8 @@
         }
 
         activeVehicleId = vehicle.id;
-        plateInput.value = vehicle.plateNumber;
-        makeInput.value = vehicle.make;
-        modelInput.value = vehicle.model;
-        updateVehiclePreview();
+        applyVehicleToPreview(vehicle);
+        renderGarageVehicles();
       }
 
       function resetVehiclePreview() {
@@ -1561,7 +1571,37 @@
         document.querySelector(".vehicle-hero .vehicle-plate").textContent = "GARAGE EMPTY";
       }
 
-      function removeVehicle(vehicleId) {
+      async function loadGarageVehicles({ seedDefault = false } = {}) {
+        vehicles = await api("/v1/vehicles");
+
+        if (vehicles.length === 0 && seedDefault) {
+          await api("/v1/vehicles", {
+            method: "POST",
+            body: JSON.stringify({
+              plateNumber: "PRIMA001",
+              make: "Tesla",
+              model: "Model 3",
+              year: 2026,
+            }),
+          });
+          vehicles = await api("/v1/vehicles");
+        }
+
+        if (vehicles.length === 0) {
+          activeVehicleId = "";
+          resetVehiclePreview();
+          renderGarageVehicles();
+          return;
+        }
+
+        if (!vehicles.some((vehicle) => vehicle.id === activeVehicleId)) {
+          activeVehicleId = (vehicles.find((vehicle) => vehicle.isPrimary) || vehicles[0]).id;
+        }
+
+        selectVehicle(activeVehicleId);
+      }
+
+      async function removeVehicle(vehicleId) {
         const vehicle = vehicles.find((item) => item.id === vehicleId);
 
         if (!vehicle) {
@@ -1572,20 +1612,41 @@
           return;
         }
 
-        vehicles = vehicles.filter((item) => item.id !== vehicleId);
+        setGarageStatus("Removing vehicle...", "default");
 
-        if (activeVehicleId === vehicleId) {
-          activeVehicleId = vehicles[0]?.id || "";
+        try {
+          await api(`/v1/vehicles/${vehicleId}`, { method: "DELETE" });
+          if (activeVehicleId === vehicleId) {
+            activeVehicleId = "";
+          }
+          await loadGarageVehicles();
+          setGarageStatus("Vehicle removed from Garage.", "success");
+        } catch (error) {
+          setGarageStatus(error.message, "error");
+        }
+      }
+
+      async function saveActiveVehicleDetails() {
+        if (!activeVehicleId) {
+          return;
         }
 
-        if (activeVehicleId) {
-          selectVehicle(activeVehicleId);
-        } else {
-          resetVehiclePreview();
-          renderGarageVehicles();
+        try {
+          await api(`/v1/vehicles/${activeVehicleId}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              plateNumber: normalizePlate(plateInput.value),
+              make: makeInput.value.trim() || "Vehicle",
+              model: modelInput.value.trim(),
+              year: 2026,
+            }),
+          });
+          await loadGarageVehicles();
+          setGarageStatus("Vehicle details saved.", "success");
+        } catch (error) {
+          setGarageStatus(error.message, "error");
+          await loadGarageVehicles();
         }
-
-        setGarageStatus("Vehicle removed from Garage.", "success");
       }
 
       function renderGarageVehicles() {
@@ -1820,13 +1881,15 @@
                 })
                 .join("");
 
-        await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
+        await Promise.all([loadGarageVehicles({ seedDefault: true }), refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
       }
 
       makeInput.addEventListener("input", updateVehiclePreview);
       modelInput.addEventListener("input", updateVehiclePreview);
       plateInput.addEventListener("input", updateVehiclePreview);
-      renderGarageVehicles();
+      makeInput.addEventListener("change", () => void saveActiveVehicleDetails());
+      modelInput.addEventListener("change", () => void saveActiveVehicleDetails());
+      plateInput.addEventListener("change", () => void saveActiveVehicleDetails());
 
       document.querySelector("[data-tab-shortcut='book']").addEventListener("click", () => {
         setActivePanel("book");
@@ -1844,7 +1907,7 @@
         addVehiclePanel.hidden = !addVehiclePanel.hidden;
       });
 
-      saveNewVehicleButton.addEventListener("click", () => {
+      saveNewVehicleButton.addEventListener("click", async () => {
         if (savingVehicle) {
           return;
         }
@@ -1863,23 +1926,29 @@
 
         savingVehicle = true;
         saveNewVehicleButton.disabled = true;
+        setGarageStatus("Saving vehicle...", "default");
 
-        const vehicle = {
-          id: `vehicle-${Date.now()}`,
-          plateNumber,
-          make: newMakeInput.value.trim() || "Vehicle",
-          model: newModelInput.value.trim(),
-        };
+        try {
+          const vehicle = await api("/v1/vehicles", {
+            method: "POST",
+            body: JSON.stringify({
+              plateNumber,
+              make: newMakeInput.value.trim() || "Vehicle",
+              model: newModelInput.value.trim(),
+              year: 2026,
+            }),
+          });
 
-        vehicles = [...vehicles, vehicle];
-        selectVehicle(vehicle.id);
-        addVehiclePanel.hidden = true;
-        setGarageStatus("Vehicle added to Garage.", "success");
-
-        window.setTimeout(() => {
+          activeVehicleId = vehicle.id;
+          await loadGarageVehicles();
+          addVehiclePanel.hidden = true;
+          setGarageStatus("Vehicle added to Garage.", "success");
+        } catch (error) {
+          setGarageStatus(error.message, "error");
+        } finally {
           savingVehicle = false;
           saveNewVehicleButton.disabled = false;
-        }, 0);
+        }
       });
 
       document.querySelectorAll("[data-nav-target]").forEach((button) => {
@@ -1967,15 +2036,11 @@
         const form = new FormData(event.currentTarget);
 
         try {
-          const vehicle = await api("/v1/vehicles", {
-            method: "POST",
-            body: JSON.stringify({
-              plateNumber: form.get("plateNumber"),
-              make: form.get("make"),
-              model: form.get("model"),
-              year: 2026,
-            }),
-          });
+          const vehicle = vehicles.find((item) => item.id === activeVehicleId);
+
+          if (!vehicle) {
+            throw new Error("Add or select a Garage vehicle before booking.");
+          }
 
           const booking = await api("/v1/bookings", {
             method: "POST",
