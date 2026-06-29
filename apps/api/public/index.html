@@ -988,6 +988,24 @@
         gap: 12px;
       }
 
+      [data-app-panel="garage"] {
+        display: grid;
+        gap: 14px;
+      }
+
+      [data-app-panel="garage"][hidden] {
+        display: none !important;
+      }
+
+      [data-app-panel="garage"] .eyebrow,
+      [data-app-panel="garage"] h2 {
+        margin-bottom: 0;
+      }
+
+      .garage-section-header {
+        margin-top: 10px;
+      }
+
       .garage-vehicle-card {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -997,6 +1015,10 @@
         border-radius: 20px;
         padding: 16px;
         background: var(--surface-soft);
+      }
+
+      [data-app-panel="garage"] .add-vehicle-panel {
+        margin-bottom: 0;
       }
 
       .bookings-records-duplicate {
@@ -1293,8 +1315,8 @@
 
         <div class="card app-panel" data-app-panel="garage" hidden>
           <p class="eyebrow">Garage</p>
-          <div class="section-header" style="margin-top: 0">
-            <h2 style="margin-bottom: 0">Your vehicles</h2>
+          <div class="section-header">
+            <h2>Your vehicles</h2>
             <button class="secondary" type="button" data-toggle-add-vehicle>Add vehicle</button>
           </div>
           <div class="garage-summary">
@@ -1334,10 +1356,10 @@
             <button type="button" data-save-new-vehicle>Save vehicle</button>
           </div>
 
-          <div class="section-header">
+          <div class="section-header garage-section-header">
             <div>
-              <p class="eyebrow" style="margin-bottom: 8px">Vehicle history</p>
-              <h2 style="margin-bottom: 0">Care records</h2>
+              <p class="eyebrow">Vehicle history</p>
+              <h2>Care records</h2>
             </div>
             <button class="secondary" id="refresh-records" type="button">Refresh records</button>
           </div>
