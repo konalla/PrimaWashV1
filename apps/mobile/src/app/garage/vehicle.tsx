@@ -11,6 +11,7 @@ import { primaApi } from '@/lib/api';
 export default function VehicleEditorScreen() {
   const { vehicleId } = useLocalSearchParams<{ vehicleId?: string }>();
   const [vehicle, setVehicle] = useState<Vehicle>();
+  const [vehicleCount, setVehicleCount] = useState(0);
   const [plateNumber, setPlateNumber] = useState('');
   const [nickname, setNickname] = useState('');
   const [make, setMake] = useState('');
@@ -19,17 +20,34 @@ export default function VehicleEditorScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!vehicleId) return;
-    primaApi.vehicles().then((vehicles) => {
-      const match = vehicles.find((item) => item.id === vehicleId);
-      if (!match) return;
-      setVehicle(match);
-      setPlateNumber(match.plateNumber);
-      setNickname(match.nickname ?? '');
-      setMake(match.make ?? '');
-      setModel(match.model ?? '');
-      setYear(match.year ? String(match.year) : '');
-    });
+    let active = true;
+
+    primaApi.vehicles()
+      .then((vehicles) => {
+        if (!active) return;
+
+        setVehicleCount(vehicles.length);
+
+        if (!vehicleId) return;
+
+        const match = vehicles.find((item) => item.id === vehicleId);
+        if (!match) return;
+        setVehicle(match);
+        setPlateNumber(match.plateNumber);
+        setNickname(match.nickname ?? '');
+        setMake(match.make ?? '');
+        setModel(match.model ?? '');
+        setYear(match.year ? String(match.year) : '');
+      })
+      .catch((error) => {
+        if (active) {
+          Alert.alert('Garage unavailable', error instanceof Error ? error.message : 'Please try again.');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, [vehicleId]);
 
   async function save() {
@@ -41,7 +59,7 @@ export default function VehicleEditorScreen() {
         make,
         model,
         ...(year ? { year: Number(year) } : {}),
-        ...(!vehicle ? { isPrimary: true } : {}),
+        ...(!vehicle && vehicleCount === 0 ? { isPrimary: true } : {}),
       };
       if (vehicle) {
         await primaApi.updateVehicle(vehicle.id, input);
