@@ -616,7 +616,7 @@
       .mobile-app {
         width: min(100%, 480px);
         min-height: 100vh;
-        padding: 0 18px calc(92px + env(safe-area-inset-bottom));
+        padding: 0 18px calc(124px + env(safe-area-inset-bottom));
         background:
           radial-gradient(circle at 100% 0%, rgba(11, 79, 90, 0.08), transparent 22rem),
           linear-gradient(180deg, #fbfaf6, #f7f5ef 64%, #ede9df);
@@ -935,39 +935,65 @@
         position: fixed;
         z-index: 15;
         right: 50%;
-        bottom: 0;
+        bottom: calc(10px + env(safe-area-inset-bottom));
         display: grid;
-        width: min(100%, 480px);
+        width: min(calc(100% - 28px), 452px);
         grid-template-columns: repeat(4, 1fr);
-        border-top: 1px solid var(--line);
-        padding: 9px 10px calc(9px + env(safe-area-inset-bottom));
-        background: rgba(251, 250, 246, 0.94);
-        backdrop-filter: blur(20px);
+        align-items: end;
+        gap: 6px;
+        border: 1px solid rgba(11, 79, 90, 0.14);
+        border-radius: 26px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 18px 42px rgba(16, 18, 20, 0.18);
+        backdrop-filter: blur(22px);
         transform: translateX(50%);
       }
 
       .bottom-nav-item {
         display: grid;
-        gap: 3px;
-        min-height: 51px;
+        align-content: center;
+        gap: 5px;
+        min-height: 58px;
         margin: 0;
-        border: 0;
-        border-radius: 13px;
-        padding: 6px 4px;
+        border: 1px solid transparent;
+        border-radius: 18px;
+        padding: 8px 5px;
         background: transparent;
-        color: var(--muted-2);
+        color: var(--muted);
         box-shadow: none;
-        font-size: 10px;
-        font-weight: 800;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1;
       }
 
       .bottom-nav-item span {
-        font-size: 18px;
+        font-size: 19px;
+        line-height: 1;
       }
 
       .bottom-nav-item.is-active {
-        background: var(--surface-strong);
-        color: var(--green);
+        border-color: var(--green);
+        background: var(--green);
+        color: #ffffff;
+        box-shadow: 0 10px 24px rgba(11, 79, 90, 0.2);
+      }
+
+      .bottom-nav-item[data-nav-target="book"] {
+        min-height: 68px;
+        border-color: var(--green);
+        background: var(--green);
+        color: #ffffff;
+        box-shadow: 0 14px 30px rgba(11, 79, 90, 0.24);
+        transform: translateY(-7px);
+      }
+
+      .bottom-nav-item[data-nav-target="book"]:not(.is-active) {
+        filter: saturate(0.92);
+      }
+
+      .bottom-nav-item[data-nav-target="book"] span {
+        font-size: 22px;
       }
 
       @media (max-width: 930px) {
