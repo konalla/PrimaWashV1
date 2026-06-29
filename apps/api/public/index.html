@@ -1017,6 +1017,28 @@
         background: var(--surface-soft);
       }
 
+      .garage-vehicle-card.is-selected {
+        border-color: var(--green);
+        background: var(--surface-strong);
+      }
+
+      .garage-vehicle-actions {
+        display: grid;
+        justify-items: end;
+        gap: 8px;
+      }
+
+      .garage-vehicle-actions .secondary {
+        min-height: 38px;
+        padding: 9px 12px;
+      }
+
+      .selected-label {
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
       [data-app-panel="garage"] .add-vehicle-panel {
         margin-bottom: 0;
       }
@@ -1319,19 +1341,12 @@
             <h2>Your vehicles</h2>
             <button class="secondary" type="button" data-toggle-add-vehicle>Add vehicle</button>
           </div>
-          <div class="garage-summary">
-            <div class="garage-vehicle-card">
-              <div>
-                <span class="caption">Primary vehicle</span>
-                <h3 id="garage-vehicle-title">Tesla Model 3</h3>
-                <span class="vehicle-plate" id="garage-vehicle-plate">PRIMA001</span>
-              </div>
-              <div class="vehicle-monogram" aria-hidden="true">T3</div>
-            </div>
-            <div class="row">
-              <strong>Care profile active</strong>
-              <span>Vehicle details are saved for faster booking and cleaner service records.</span>
-            </div>
+          <div class="garage-summary" id="garage-vehicle-list">
+          </div>
+
+          <div class="row">
+            <strong>Care profile active</strong>
+            <span>Vehicle details are saved for faster booking and cleaner service records.</span>
           </div>
 
           <div class="add-vehicle-panel" id="add-vehicle-panel" hidden>
@@ -1403,8 +1418,7 @@
       const previewVehicleTitle = document.querySelector("#preview-vehicle-title");
       const bookingVehicleTitle = document.querySelector("#booking-vehicle-title");
       const bookingVehiclePlate = document.querySelector("#booking-vehicle-plate");
-      const garageVehicleTitle = document.querySelector("#garage-vehicle-title");
-      const garageVehiclePlate = document.querySelector("#garage-vehicle-plate");
+      const garageVehicleList = document.querySelector("#garage-vehicle-list");
       const addVehiclePanel = document.querySelector("#add-vehicle-panel");
       const newPlateInput = document.querySelector("#newPlateNumber");
       const newMakeInput = document.querySelector("#newMake");
@@ -1415,6 +1429,8 @@
       const plateInput = document.querySelector("#plateNumber");
 
       let servicesCache = [];
+      let vehicles = [{ id: "vehicle-1", plateNumber: "PRIMA001", make: "Tesla", model: "Model 3" }];
+      let activeVehicleId = "vehicle-1";
       const statusSteps = ["pending_payment", "confirmed", "checked_in", "in_service", "completed"];
       const statusLabels = {
         pending_payment: "Awaiting confirmation",
@@ -1483,19 +1499,73 @@
       function updateVehiclePreview() {
         const vehicleTitle = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
         const plate = plateInput.value || "YOUR PLATE";
+        const activeVehicle = vehicles.find((vehicle) => vehicle.id === activeVehicleId);
+
+        if (activeVehicle) {
+          activeVehicle.plateNumber = plate;
+          activeVehicle.make = makeInput.value || "Vehicle";
+          activeVehicle.model = modelInput.value || "";
+        }
+
         previewVehicleTitle.textContent = vehicleTitle;
         bookingVehicleTitle.textContent = vehicleTitle;
         bookingVehiclePlate.textContent = plate;
-        garageVehicleTitle.textContent = vehicleTitle;
-        garageVehiclePlate.textContent = plate;
         document.querySelector(".vehicle-hero .vehicle-plate").textContent = plate;
+        renderGarageVehicles();
       }
 
-      function setActiveVehicle({ plateNumber, make, model }) {
-        plateInput.value = plateNumber;
-        makeInput.value = make;
-        modelInput.value = model;
+      function vehicleTitle(vehicle) {
+        return `${vehicle.make || "Vehicle"} ${vehicle.model || ""}`.trim();
+      }
+
+      function vehicleMonogram(vehicle) {
+        const makeInitial = (vehicle.make || "V").slice(0, 1).toUpperCase();
+        const modelInitial = (vehicle.model || "").slice(0, 1).toUpperCase();
+        return `${makeInitial}${modelInitial || ""}`;
+      }
+
+      function selectVehicle(vehicleId) {
+        const vehicle = vehicles.find((item) => item.id === vehicleId);
+
+        if (!vehicle) {
+          return;
+        }
+
+        activeVehicleId = vehicle.id;
+        plateInput.value = vehicle.plateNumber;
+        makeInput.value = vehicle.make;
+        modelInput.value = vehicle.model;
         updateVehiclePreview();
+      }
+
+      function renderGarageVehicles() {
+        garageVehicleList.innerHTML = vehicles
+          .map((vehicle, index) => {
+            const selected = vehicle.id === activeVehicleId;
+
+            return `
+              <div class="garage-vehicle-card ${selected ? "is-selected" : ""}">
+                <div>
+                  <span class="caption">${selected ? "Selected vehicle" : `Vehicle ${index + 1}`}</span>
+                  <h3>${vehicleTitle(vehicle)}</h3>
+                  <span class="vehicle-plate">${vehicle.plateNumber}</span>
+                </div>
+                <div class="garage-vehicle-actions">
+                  <div class="vehicle-monogram" aria-hidden="true">${vehicleMonogram(vehicle)}</div>
+                  ${
+                    selected
+                      ? `<span class="selected-label">Active</span>`
+                      : `<button class="secondary" type="button" data-select-vehicle="${vehicle.id}">Use</button>`
+                  }
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        garageVehicleList.querySelectorAll("[data-select-vehicle]").forEach((button) => {
+          button.addEventListener("click", () => selectVehicle(button.dataset.selectVehicle));
+        });
       }
 
       function setActivePanel(target) {
@@ -1697,6 +1767,7 @@
       makeInput.addEventListener("input", updateVehiclePreview);
       modelInput.addEventListener("input", updateVehiclePreview);
       plateInput.addEventListener("input", updateVehiclePreview);
+      renderGarageVehicles();
 
       document.querySelector("[data-tab-shortcut='book']").addEventListener("click", () => {
         setActivePanel("book");
@@ -1715,13 +1786,17 @@
       });
 
       document.querySelector("[data-save-new-vehicle]").addEventListener("click", () => {
-        setActiveVehicle({
+        const vehicle = {
+          id: `vehicle-${Date.now()}`,
           plateNumber: newPlateInput.value || "NEW PLATE",
           make: newMakeInput.value || "Vehicle",
           model: newModelInput.value || "",
-        });
+        };
+
+        vehicles = [...vehicles, vehicle];
+        selectVehicle(vehicle.id);
         addVehiclePanel.hidden = true;
-        setStatus("Vehicle saved to Garage.", "success");
+        setStatus("Vehicle added to Garage.", "success");
       });
 
       document.querySelectorAll("[data-nav-target]").forEach((button) => {
