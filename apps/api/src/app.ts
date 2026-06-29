@@ -1611,6 +1611,26 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.authorized", authorizedPayment);
 
+        const booking = await options.repositories.bookings.get(authorizedPayment.bookingId);
+
+        if (booking && canTransitionBookingStatus(booking.status, "confirmed")) {
+          const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "confirmed");
+
+          await options.repositories.audit.record({
+            actor,
+            action: "booking.status_changed",
+            resourceType: "booking",
+            resourceId: booking.id,
+            requestId: requestContext.requestId,
+            metadata: {
+              fromStatus: booking.status,
+              toStatus: updatedBooking.status,
+              partnerLocationId: updatedBooking.partnerLocationId,
+              source: "payment_authorization",
+            },
+          });
+        }
+
         sendJson(response, 200, { data: authorizedPayment });
       } catch (error) {
         if (!sendAuthError(response, error)) {

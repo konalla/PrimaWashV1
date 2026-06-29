@@ -1634,7 +1634,7 @@
               method: "POST",
             });
             await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
-          setStatus("Payment secured. Your appointment is ready for partner confirmation.", "success");
+            setStatus("Payment secured. Your appointment is confirmed.", "success");
           } catch (error) {
             setStatus(error.message, "error");
           } finally {
@@ -1705,15 +1705,18 @@
             }),
           });
 
+          const authorizedPayment = await api(`/v1/payments/${payment.id}/authorize`, {
+            method: "POST",
+          });
+
           resultList.innerHTML = `
             <div class="row booking-card">
-              <strong>${vehicle.plateNumber} &middot; ${booking.status.replace("_", " ")}</strong>
+              <strong>${vehicle.plateNumber} &middot; confirmed</strong>
               <span>${formatService(booking.serviceCode)} · ${formatAppointment(booking.scheduledStartAt)}</span>
-              <button class="payment" type="button" data-authorize-payment-id="${payment.id}">Secure payment</button>
             </div>
             <div class="row">
               <strong>${formatMoney(booking.acceptedPrice)}</strong>
-              <span>${paymentLabels[payment.status]} &middot; protected checkout</span>
+              <span>${paymentLabels[authorizedPayment.status]} &middot; protected checkout</span>
             </div>
             <div class="row">
               <strong>Prima Care Guarantee</strong>
@@ -1721,7 +1724,7 @@
             </div>
           `;
           await Promise.all([refreshAuditTrail(), refreshMyBookings(), refreshServiceRecords()]);
-          setStatus("Appointment created. Secure payment to complete your booking.", "success");
+          setStatus("Appointment confirmed. Your payment hold is secured.", "success");
           setActivePanel("appointments");
         } catch (error) {
           setStatus(error.message, "error");

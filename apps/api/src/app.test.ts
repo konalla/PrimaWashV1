@@ -696,7 +696,8 @@ describe("Prima Wash API", () => {
     assert.equal(queueResponse.status, 200);
     assert.equal(item?.primaWashDayId, dayPayload.data.id);
     assert.equal(item?.paymentStatus, "authorized");
-    assert.equal(item?.actionHint, "Payment authorized; ready to confirm");
+    assert.equal(item?.status, "confirmed");
+    assert.equal(item?.actionHint, "Customer expected; check in when vehicle arrives");
   });
 
   it("lets partner actors update onsite execution details for a booking", async () => {
@@ -953,7 +954,8 @@ describe("Prima Wash API", () => {
     assert.equal(response.status, 200);
     assert.equal(queueItem?.paymentStatus, "authorized");
     assert.deepEqual(queueItem?.paymentAmount, { amountMinor: 2500, currency: "USD" });
-    assert.equal(queueItem?.actionHint, "Payment authorized; ready to confirm");
+    assert.equal(queueItem?.status, "confirmed");
+    assert.equal(queueItem?.actionHint, "Customer expected; check in when vehicle arrives");
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Authorized revenue"));
   });
 
@@ -1520,6 +1522,14 @@ describe("Prima Wash API", () => {
     assert.equal(payment.bookingId, booking.id);
     assert.equal(payment.amount.amountMinor, booking.acceptedPrice.amountMinor);
     assert.equal(authorizedPayment.status, "authorized");
+
+    const bookingResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}`, {
+      headers: customerHeaders,
+    });
+    const bookingPayload = (await bookingResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(bookingResponse.status, 200);
+    assert.equal(bookingPayload.data.status, "confirmed");
 
     const confirmed = await updateBookingStatus(booking.id, "confirmed");
     assert.equal(confirmed.status, "confirmed");
