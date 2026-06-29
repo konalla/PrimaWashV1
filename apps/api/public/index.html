@@ -896,6 +896,43 @@
         margin-top: 15px;
       }
 
+      .booking-vehicle-card,
+      .add-vehicle-panel {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 15px;
+        background: var(--surface-soft);
+      }
+
+      .booking-vehicle-card {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+
+      .booking-vehicle-card h3,
+      .garage-vehicle-card h3 {
+        margin-bottom: 8px;
+      }
+
+      .booking-vehicle-card .secondary,
+      .garage-vehicle-card .secondary {
+        margin-top: 0;
+      }
+
+      .booking-confirmation-note {
+        margin: 12px 0 18px;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        padding: 13px;
+        background: var(--surface-strong);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
       .mobile-app .service-card {
         min-height: 84px;
         border-radius: 18px;
@@ -1128,14 +1165,23 @@
             <span class="journey-step is-active">Vehicle</span>
             <span class="journey-step is-active">Service</span>
             <span class="journey-step is-active">Time</span>
-            <span class="journey-step">Review &amp; pay</span>
+            <span class="journey-step">Confirm</span>
           </div>
           <p class="eyebrow">Book vehicle care</p>
-          <h2>What does your car need?</h2>
-          <p class="section-intro">Upfront prices from quality-checked partners near you.</p>
+          <h2>Choose your service</h2>
+          <p class="section-intro">Book care for your saved vehicle. Payment protection and confirmation happen automatically.</p>
+
+          <div class="booking-vehicle-card">
+            <div>
+              <span class="caption">Selected vehicle</span>
+              <h3 id="booking-vehicle-title">Tesla Model 3</h3>
+              <span class="vehicle-plate" id="booking-vehicle-plate">PRIMA001</span>
+            </div>
+            <button class="secondary" type="button" data-tab-shortcut="garage">Change</button>
+          </div>
 
           <details class="vehicle-details">
-            <summary>Vehicle details</summary>
+            <summary>Edit saved vehicle details</summary>
           <div class="form-grid">
             <div class="field-wide">
               <label for="plateNumber">Plate number</label>
@@ -1161,6 +1207,10 @@
           <label for="availabilitySlotId">Choose an appointment</label>
           <select id="availabilitySlotId" name="availabilitySlotId"></select>
 
+          <div class="booking-confirmation-note">
+            Confirming creates the appointment, secures the payment hold, and moves the booking straight into your active appointments.
+          </div>
+
           <div class="summary-grid">
             <div class="mini">
               <span class="caption">Partner</span>
@@ -1182,7 +1232,7 @@
             <div class="trust-item"><strong>Flexible</strong><span>Cancel before check-in</span></div>
           </div>
 
-          <button id="submit-button" type="submit">Continue to secure booking</button>
+          <button id="submit-button" type="submit">Confirm booking</button>
           <div class="status" id="status" role="status" aria-live="polite">Choose a service and appointment time.</div>
         </form>
 
@@ -1243,7 +1293,10 @@
 
         <div class="card app-panel" data-app-panel="garage" hidden>
           <p class="eyebrow">Garage</p>
-          <h2>Your vehicle</h2>
+          <div class="section-header" style="margin-top: 0">
+            <h2 style="margin-bottom: 0">Your vehicles</h2>
+            <button class="secondary" type="button" data-toggle-add-vehicle>Add vehicle</button>
+          </div>
           <div class="garage-summary">
             <div class="garage-vehicle-card">
               <div>
@@ -1257,6 +1310,28 @@
               <strong>Care profile active</strong>
               <span>Vehicle details are saved for faster booking and cleaner service records.</span>
             </div>
+          </div>
+
+          <div class="add-vehicle-panel" id="add-vehicle-panel" hidden>
+            <div>
+              <span class="caption">New vehicle</span>
+              <h3>Add a vehicle</h3>
+            </div>
+            <div class="form-grid">
+              <div class="field-wide">
+                <label for="newPlateNumber">Plate number</label>
+                <input id="newPlateNumber" value="PRIMA002" autocomplete="off" />
+              </div>
+              <div>
+                <label for="newMake">Make</label>
+                <input id="newMake" value="BMW" />
+              </div>
+              <div>
+                <label for="newModel">Model</label>
+                <input id="newModel" value="i4" />
+              </div>
+            </div>
+            <button type="button" data-save-new-vehicle>Save vehicle</button>
           </div>
 
           <div class="section-header">
@@ -1304,8 +1379,14 @@
       const summaryPrice = document.querySelector("#summary-price");
       const summaryStatus = document.querySelector("#summary-status");
       const previewVehicleTitle = document.querySelector("#preview-vehicle-title");
+      const bookingVehicleTitle = document.querySelector("#booking-vehicle-title");
+      const bookingVehiclePlate = document.querySelector("#booking-vehicle-plate");
       const garageVehicleTitle = document.querySelector("#garage-vehicle-title");
       const garageVehiclePlate = document.querySelector("#garage-vehicle-plate");
+      const addVehiclePanel = document.querySelector("#add-vehicle-panel");
+      const newPlateInput = document.querySelector("#newPlateNumber");
+      const newMakeInput = document.querySelector("#newMake");
+      const newModelInput = document.querySelector("#newModel");
       const appPanels = document.querySelectorAll("[data-app-panel]");
       const makeInput = document.querySelector("#make");
       const modelInput = document.querySelector("#model");
@@ -1381,9 +1462,18 @@
         const vehicleTitle = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
         const plate = plateInput.value || "YOUR PLATE";
         previewVehicleTitle.textContent = vehicleTitle;
+        bookingVehicleTitle.textContent = vehicleTitle;
+        bookingVehiclePlate.textContent = plate;
         garageVehicleTitle.textContent = vehicleTitle;
-        document.querySelector(".vehicle-plate").textContent = plate;
         garageVehiclePlate.textContent = plate;
+        document.querySelector(".vehicle-hero .vehicle-plate").textContent = plate;
+      }
+
+      function setActiveVehicle({ plateNumber, make, model }) {
+        plateInput.value = plateNumber;
+        makeInput.value = make;
+        modelInput.value = model;
+        updateVehiclePreview();
       }
 
       function setActivePanel(target) {
@@ -1592,6 +1682,24 @@
 
       document.querySelector("[data-tab-shortcut='appointments']").addEventListener("click", () => {
         setActivePanel("appointments");
+      });
+
+      document.querySelector("[data-tab-shortcut='garage']").addEventListener("click", () => {
+        setActivePanel("garage");
+      });
+
+      document.querySelector("[data-toggle-add-vehicle]").addEventListener("click", () => {
+        addVehiclePanel.hidden = !addVehiclePanel.hidden;
+      });
+
+      document.querySelector("[data-save-new-vehicle]").addEventListener("click", () => {
+        setActiveVehicle({
+          plateNumber: newPlateInput.value || "NEW PLATE",
+          make: newMakeInput.value || "Vehicle",
+          model: newModelInput.value || "",
+        });
+        addVehiclePanel.hidden = true;
+        setStatus("Vehicle saved to Garage.", "success");
       });
 
       document.querySelectorAll("[data-nav-target]").forEach((button) => {
