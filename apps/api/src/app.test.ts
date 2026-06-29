@@ -64,8 +64,12 @@ const propertyManagerHeaders = {
 describe("Prima Wash API", () => {
   let server: Server;
   let baseUrl: string;
+  let previousShowDevAuthCode: string | undefined;
 
   before(async () => {
+    previousShowDevAuthCode = process.env.SHOW_DEV_AUTH_CODE;
+    process.env.SHOW_DEV_AUTH_CODE = "true";
+
     server = createApiServer({
       repositories: createRepositories(),
       enableRequestLogging: false,
@@ -80,6 +84,12 @@ describe("Prima Wash API", () => {
   });
 
   after(async () => {
+    if (previousShowDevAuthCode === undefined) {
+      delete process.env.SHOW_DEV_AUTH_CODE;
+    } else {
+      process.env.SHOW_DEV_AUTH_CODE = previousShowDevAuthCode;
+    }
+
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {

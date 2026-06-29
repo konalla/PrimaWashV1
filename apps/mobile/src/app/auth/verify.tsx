@@ -13,7 +13,9 @@ export default function VerifyScreen() {
     devCode?: string;
   }>();
   const { verifyCode } = useAuth();
-  const [code, setCode] = useState(params.devCode || '');
+  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE === 'true';
+  const visibleDevCode = showDevAuthCode ? params.devCode : undefined;
+  const [code, setCode] = useState(visibleDevCode || '');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
@@ -50,7 +52,7 @@ export default function VerifyScreen() {
           textContentType="oneTimeCode"
           value={code}
         />
-        {params.devCode ? <Text style={styles.dev}>Development code: {params.devCode}</Text> : null}
+        {visibleDevCode ? <Text style={styles.dev}>Development code: {visibleDevCode}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <PrimaryButton disabled={code.length !== 6} label="Verify and continue" loading={loading} onPress={verify} />
       </Surface>

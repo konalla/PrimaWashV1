@@ -116,7 +116,7 @@ export class AuthService {
 }
 
 function shouldExposeDevelopmentCode(): boolean {
-  return process.env.NODE_ENV !== "production" || process.env.SHOW_DEV_AUTH_CODE === "true";
+  return process.env.SHOW_DEV_AUTH_CODE === "true";
 }
 
 export function actorFromAccessToken(token: string, secret: string): Actor {

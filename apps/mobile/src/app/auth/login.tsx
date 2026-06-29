@@ -8,9 +8,10 @@ import { useAuth } from '@/context/auth-context';
 
 export default function LoginScreen() {
   const { requestCode } = useAuth();
-  const [identifier, setIdentifier] = useState('nalla@example.com');
+  const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE === 'true';
 
   async function continueToCode() {
     setLoading(true);
@@ -23,7 +24,7 @@ export default function LoginScreen() {
         params: {
           challengeId: challenge.challengeId,
           deliveryHint: challenge.deliveryHint,
-          devCode: challenge.devCode ?? '',
+          ...(showDevAuthCode && challenge.devCode ? { devCode: challenge.devCode } : {}),
         },
       });
     } catch (caught) {
