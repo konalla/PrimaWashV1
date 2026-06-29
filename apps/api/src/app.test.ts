@@ -760,6 +760,20 @@ describe("Prima Wash API", () => {
     const secondPayload = (await secondResponse.json()) as ApiResponse<Vehicle>;
     assert.equal(secondPayload.data.isPrimary, false);
 
+    const duplicateResponse = await fetch(`${baseUrl}/v1/vehicles`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ plateNumber: "garage2", make: "BMW", model: "i4" }),
+    });
+    assert.equal(duplicateResponse.status, 409);
+
+    const duplicateUpdateResponse = await fetch(`${baseUrl}/v1/vehicles/${firstPayload.data.id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ plateNumber: "GARAGE2" }),
+    });
+    assert.equal(duplicateUpdateResponse.status, 409);
+
     const primaryResponse = await fetch(`${baseUrl}/v1/vehicles/${secondPayload.data.id}`, {
       method: "PATCH",
       headers,

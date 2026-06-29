@@ -1370,6 +1370,7 @@
             </div>
             <button type="button" data-save-new-vehicle>Save vehicle</button>
           </div>
+          <div class="status" id="garage-status" role="status" aria-live="polite"></div>
 
           <div class="section-header garage-section-header">
             <div>
@@ -1419,10 +1420,12 @@
       const bookingVehicleTitle = document.querySelector("#booking-vehicle-title");
       const bookingVehiclePlate = document.querySelector("#booking-vehicle-plate");
       const garageVehicleList = document.querySelector("#garage-vehicle-list");
+      const garageStatus = document.querySelector("#garage-status");
       const addVehiclePanel = document.querySelector("#add-vehicle-panel");
       const newPlateInput = document.querySelector("#newPlateNumber");
       const newMakeInput = document.querySelector("#newMake");
       const newModelInput = document.querySelector("#newModel");
+      const saveNewVehicleButton = document.querySelector("[data-save-new-vehicle]");
       const appPanels = document.querySelectorAll("[data-app-panel]");
       const makeInput = document.querySelector("#make");
       const modelInput = document.querySelector("#model");
@@ -1431,6 +1434,7 @@
       let servicesCache = [];
       let vehicles = [{ id: "vehicle-1", plateNumber: "PRIMA001", make: "Tesla", model: "Model 3" }];
       let activeVehicleId = "vehicle-1";
+      let savingVehicle = false;
       const statusSteps = ["pending_payment", "confirmed", "checked_in", "in_service", "completed"];
       const statusLabels = {
         pending_payment: "Awaiting confirmation",
@@ -1496,6 +1500,15 @@
         summaryStatus.textContent = state === "success" ? "Booked" : state === "error" ? "Needs attention" : "Ready";
       }
 
+      function setGarageStatus(message, state = "default") {
+        garageStatus.textContent = message;
+        garageStatus.className = `status ${state}`;
+      }
+
+      function normalizePlate(value) {
+        return value.trim().toUpperCase().replace(/\s+/g, " ");
+      }
+
       function updateVehiclePreview() {
         const vehicleTitle = `${makeInput.value || "Vehicle"} ${modelInput.value || ""}`.trim();
         const plate = plateInput.value || "YOUR PLATE";
@@ -1538,6 +1551,43 @@
         updateVehiclePreview();
       }
 
+      function resetVehiclePreview() {
+        plateInput.value = "";
+        makeInput.value = "";
+        modelInput.value = "";
+        previewVehicleTitle.textContent = "Add your first vehicle";
+        bookingVehicleTitle.textContent = "Choose a vehicle";
+        bookingVehiclePlate.textContent = "GARAGE EMPTY";
+        document.querySelector(".vehicle-hero .vehicle-plate").textContent = "GARAGE EMPTY";
+      }
+
+      function removeVehicle(vehicleId) {
+        const vehicle = vehicles.find((item) => item.id === vehicleId);
+
+        if (!vehicle) {
+          return;
+        }
+
+        if (!window.confirm(`Remove ${vehicle.plateNumber} from Garage?`)) {
+          return;
+        }
+
+        vehicles = vehicles.filter((item) => item.id !== vehicleId);
+
+        if (activeVehicleId === vehicleId) {
+          activeVehicleId = vehicles[0]?.id || "";
+        }
+
+        if (activeVehicleId) {
+          selectVehicle(activeVehicleId);
+        } else {
+          resetVehiclePreview();
+          renderGarageVehicles();
+        }
+
+        setGarageStatus("Vehicle removed from Garage.", "success");
+      }
+
       function renderGarageVehicles() {
         garageVehicleList.innerHTML = vehicles
           .map((vehicle, index) => {
@@ -1557,14 +1607,23 @@
                       ? `<span class="selected-label">Active</span>`
                       : `<button class="secondary" type="button" data-select-vehicle="${vehicle.id}">Use</button>`
                   }
+                  <button class="danger" type="button" data-remove-vehicle="${vehicle.id}">Remove</button>
                 </div>
               </div>
             `;
           })
-          .join("");
+          .join("") || `
+            <div class="row">
+              <strong>No vehicles yet</strong>
+              <span>Add a vehicle before booking care.</span>
+            </div>
+          `;
 
         garageVehicleList.querySelectorAll("[data-select-vehicle]").forEach((button) => {
           button.addEventListener("click", () => selectVehicle(button.dataset.selectVehicle));
+        });
+        garageVehicleList.querySelectorAll("[data-remove-vehicle]").forEach((button) => {
+          button.addEventListener("click", () => removeVehicle(button.dataset.removeVehicle));
         });
       }
 
@@ -1785,18 +1844,42 @@
         addVehiclePanel.hidden = !addVehiclePanel.hidden;
       });
 
-      document.querySelector("[data-save-new-vehicle]").addEventListener("click", () => {
+      saveNewVehicleButton.addEventListener("click", () => {
+        if (savingVehicle) {
+          return;
+        }
+
+        const plateNumber = normalizePlate(newPlateInput.value);
+
+        if (plateNumber.length < 2) {
+          setGarageStatus("Enter a valid plate number.", "error");
+          return;
+        }
+
+        if (vehicles.some((item) => normalizePlate(item.plateNumber) === plateNumber)) {
+          setGarageStatus("That plate is already saved in your Garage.", "error");
+          return;
+        }
+
+        savingVehicle = true;
+        saveNewVehicleButton.disabled = true;
+
         const vehicle = {
           id: `vehicle-${Date.now()}`,
-          plateNumber: newPlateInput.value || "NEW PLATE",
-          make: newMakeInput.value || "Vehicle",
-          model: newModelInput.value || "",
+          plateNumber,
+          make: newMakeInput.value.trim() || "Vehicle",
+          model: newModelInput.value.trim(),
         };
 
         vehicles = [...vehicles, vehicle];
         selectVehicle(vehicle.id);
         addVehiclePanel.hidden = true;
-        setStatus("Vehicle added to Garage.", "success");
+        setGarageStatus("Vehicle added to Garage.", "success");
+
+        window.setTimeout(() => {
+          savingVehicle = false;
+          saveNewVehicleButton.disabled = false;
+        }, 0);
       });
 
       document.querySelectorAll("[data-nav-target]").forEach((button) => {

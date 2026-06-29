@@ -1356,6 +1356,15 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         }
 
         const ownerId = input.ownerId ?? actor.userId;
+        const normalizedPlateNumber = input.plateNumber.trim().toUpperCase();
+        const existingVehicles = await options.repositories.vehicles.list(ownerId);
+        const duplicateVehicle = existingVehicles.find((vehicle) => vehicle.plateNumber === normalizedPlateNumber);
+
+        if (duplicateVehicle) {
+          sendError(response, 409, "vehicle_already_exists", "This plate is already saved in your Garage");
+          return;
+        }
+
         const vehicle = await options.repositories.vehicles.create({ ...input, ownerId });
 
         await options.repositories.audit.record({
@@ -1409,6 +1418,20 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           sendError(response, 400, "validation_failed", "Vehicle update payload is invalid", errors);
           return;
         }
+
+        if (input.plateNumber !== undefined) {
+          const normalizedPlateNumber = input.plateNumber.trim().toUpperCase();
+          const existingVehicles = await options.repositories.vehicles.list(existing.ownerId);
+          const duplicateVehicle = existingVehicles.find(
+            (vehicle) => vehicle.id !== vehicleId && vehicle.plateNumber === normalizedPlateNumber,
+          );
+
+          if (duplicateVehicle) {
+            sendError(response, 409, "vehicle_already_exists", "This plate is already saved in your Garage");
+            return;
+          }
+        }
+
         sendJson(response, 200, { data: await options.repositories.vehicles.update(vehicleId, input) });
       } catch (error) {
         if (!sendAuthError(response, error)) {

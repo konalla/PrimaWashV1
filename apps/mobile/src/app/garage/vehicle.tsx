@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Vehicle } from '@prima-wash/contracts';
 
@@ -18,6 +18,7 @@ export default function VehicleEditorScreen() {
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -51,13 +52,16 @@ export default function VehicleEditorScreen() {
   }, [vehicleId]);
 
   async function save() {
+    if (savingRef.current) return;
+
+    savingRef.current = true;
     setSaving(true);
     try {
       const input = {
-        plateNumber,
-        nickname,
-        make,
-        model,
+        plateNumber: plateNumber.trim(),
+        nickname: nickname.trim(),
+        make: make.trim(),
+        model: model.trim(),
         ...(year ? { year: Number(year) } : {}),
         ...(!vehicle && vehicleCount === 0 ? { isPrimary: true } : {}),
       };
@@ -70,6 +74,7 @@ export default function VehicleEditorScreen() {
     } catch (error) {
       Alert.alert('Vehicle could not be saved', error instanceof Error ? error.message : 'Please try again.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
