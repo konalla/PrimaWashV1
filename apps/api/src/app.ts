@@ -73,7 +73,12 @@ import {
   validateUpdateBookingStatus,
 } from "./modules/bookings/repository.js";
 import type { Repositories } from "./modules/repositories.js";
-import { validateCreatePaymentIntent } from "./modules/payments/repository.js";
+import { assertPaymentTransition, validateCreatePaymentIntent } from "./modules/payments/repository.js";
+import {
+  createPaymentProvider,
+  type PaymentProvider,
+  type PaymentProviderResult,
+} from "./modules/payments/provider.js";
 import { validateCreateVehicle } from "./modules/vehicles/repository.js";
 import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
 import { validateProfileUpdate } from "./modules/profiles/repository.js";
@@ -90,6 +95,7 @@ import {
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
+  readonly paymentProvider?: PaymentProvider;
   readonly publicDirectory?: string;
   readonly enableRequestLogging?: boolean;
   readonly authSessionSecret?: string;
@@ -98,6 +104,7 @@ export interface CreateApiServerOptions {
 export function createApiServer(options: CreateApiServerOptions): Server {
   const publicDirectory = options.publicDirectory ?? path.resolve("apps/api/public");
   const enableRequestLogging = options.enableRequestLogging ?? true;
+  const paymentProvider = options.paymentProvider ?? createPaymentProvider();
   const authService = new AuthService(
     options.authSessionSecret ??
       process.env.AUTH_SESSION_SECRET ??
@@ -1630,9 +1637,18 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         assertOwnerAccess(actor, payment.ownerId);
 
+        assertPaymentTransition(payment.status, "authorized");
+        const providerResult = await paymentProvider.authorize(payment);
         const authorizedPayment = await options.repositories.payments.authorize(payment.id);
 
-        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.authorized", authorizedPayment);
+        await recordPaymentAudit(
+          options.repositories,
+          actor,
+          requestContext.requestId,
+          "payment.authorized",
+          authorizedPayment,
+          providerResult,
+        );
 
         const booking = await options.repositories.bookings.get(authorizedPayment.bookingId);
 
@@ -1682,9 +1698,18 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        assertPaymentTransition(payment.status, "captured");
+        const providerResult = await paymentProvider.capture(payment);
         const capturedPayment = await options.repositories.payments.captureByBookingId(payment.bookingId);
 
-        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.captured", capturedPayment);
+        await recordPaymentAudit(
+          options.repositories,
+          actor,
+          requestContext.requestId,
+          "payment.captured",
+          capturedPayment,
+          providerResult,
+        );
 
         sendJson(response, 200, { data: capturedPayment });
       } catch (error) {
@@ -1707,9 +1732,25 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const payment = await options.repositories.payments.get(paymentIntentId);
+
+        if (!payment) {
+          sendError(response, 404, "payment_intent_not_found", "Payment intent does not exist");
+          return;
+        }
+
+        assertPaymentTransition(payment.status, "refunded");
+        const providerResult = await paymentProvider.refund(payment);
         const refundedPayment = await options.repositories.payments.refund(paymentIntentId);
 
-        await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.refunded", refundedPayment);
+        await recordPaymentAudit(
+          options.repositories,
+          actor,
+          requestContext.requestId,
+          "payment.refunded",
+          refundedPayment,
+          providerResult,
+        );
 
         sendJson(response, 200, { data: refundedPayment });
       } catch (error) {
@@ -1813,7 +1854,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         }
 
         const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "cancelled");
-        const voidedPayment = await options.repositories.payments.voidByBookingId(updatedBooking.id);
+        const voidedPayment = await voidAuthorizedPaymentByBooking(
+          options.repositories,
+          paymentProvider,
+          updatedBooking.id,
+        );
 
         await options.repositories.audit.record({
           actor,
@@ -1831,7 +1876,14 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         });
 
         if (voidedPayment) {
-          await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.voided", voidedPayment);
+          await recordPaymentAudit(
+            options.repositories,
+            actor,
+            requestContext.requestId,
+            "payment.voided",
+            voidedPayment.payment,
+            voidedPayment.providerResult,
+          );
         }
 
         await recordProductEvent(options.repositories, {
@@ -1965,7 +2017,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
         }
 
-        let capturedPayment: PaymentIntent | undefined;
+        let capturedPayment: { readonly payment: PaymentIntent; readonly providerResult: PaymentProviderResult } | undefined;
 
         if (input.status === "completed") {
           const payment = await options.repositories.payments.getByBookingId(booking.id);
@@ -1980,7 +2032,12 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             return;
           }
 
-          capturedPayment = await options.repositories.payments.captureByBookingId(booking.id);
+          assertPaymentTransition(payment.status, "captured");
+          const providerResult = await paymentProvider.capture(payment);
+          capturedPayment = {
+            payment: await options.repositories.payments.captureByBookingId(booking.id),
+            providerResult,
+          };
         }
 
         const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, input.status);
@@ -1999,7 +2056,14 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         });
 
         if (capturedPayment) {
-          await recordPaymentAudit(options.repositories, actor, requestContext.requestId, "payment.captured", capturedPayment);
+          await recordPaymentAudit(
+            options.repositories,
+            actor,
+            requestContext.requestId,
+            "payment.captured",
+            capturedPayment.payment,
+            capturedPayment.providerResult,
+          );
         }
 
         const serviceRecord = await createServiceRecordIfCompleted(options.repositories, updatedBooking);
@@ -2715,6 +2779,7 @@ async function recordPaymentAudit(
   requestId: string,
   action: string,
   payment: PaymentIntent,
+  providerResult?: PaymentProviderResult,
 ): Promise<void> {
   await repositories.audit.record({
     actor,
@@ -2727,8 +2792,41 @@ async function recordPaymentAudit(
       ownerId: payment.ownerId,
       amount: payment.amount,
       status: payment.status,
+      ...(providerResult
+        ? {
+            paymentProvider: providerResult.provider,
+            providerOperation: providerResult.operation,
+            providerReference: providerResult.providerReference,
+            providerStatus: providerResult.status,
+            providerProcessedAt: providerResult.processedAt,
+          }
+        : {}),
     },
   });
+}
+
+async function voidAuthorizedPaymentByBooking(
+  repositories: Repositories,
+  paymentProvider: PaymentProvider,
+  bookingId: string,
+): Promise<{ readonly payment: PaymentIntent; readonly providerResult: PaymentProviderResult } | undefined> {
+  const payment = await repositories.payments.getByBookingId(bookingId);
+
+  if (!payment || payment.status !== "authorized") {
+    return undefined;
+  }
+
+  const providerResult = await paymentProvider.void(payment);
+  const voidedPayment = await repositories.payments.voidByBookingId(bookingId);
+
+  if (!voidedPayment) {
+    throw new Error("payment_intent_not_found");
+  }
+
+  return {
+    payment: voidedPayment,
+    providerResult,
+  };
 }
 
 function sendPaymentError(

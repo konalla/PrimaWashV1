@@ -32,9 +32,30 @@ import type {
 } from "@prima-wash/contracts";
 import { createApiServer } from "./app.js";
 import { createRepositories } from "./modules/repositories.js";
+import type { PaymentProvider, PaymentProviderOperation, PaymentProviderResult } from "./modules/payments/provider.js";
 
 interface ApiResponse<T> {
   readonly data: T;
+}
+
+function createRecordingPaymentProvider(operations: PaymentProviderOperation[]): PaymentProvider {
+  async function record(operation: PaymentProviderOperation): Promise<PaymentProviderResult> {
+    operations.push(operation);
+    return {
+      provider: "recording",
+      operation,
+      providerReference: `recording_${operation}_${operations.length}`,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+    };
+  }
+
+  return {
+    authorize: () => record("authorize"),
+    capture: () => record("capture"),
+    refund: () => record("refund"),
+    void: () => record("void"),
+  };
 }
 
 const customerHeaders = {
@@ -65,6 +86,7 @@ describe("Prima Wash API", () => {
   let server: Server;
   let baseUrl: string;
   let previousShowDevAuthCode: string | undefined;
+  const paymentProviderOperations: PaymentProviderOperation[] = [];
 
   before(async () => {
     previousShowDevAuthCode = process.env.SHOW_DEV_AUTH_CODE;
@@ -72,6 +94,7 @@ describe("Prima Wash API", () => {
 
     server = createApiServer({
       repositories: createRepositories(),
+      paymentProvider: createRecordingPaymentProvider(paymentProviderOperations),
       enableRequestLogging: false,
     });
 
@@ -1540,12 +1563,14 @@ describe("Prima Wash API", () => {
     const booking = await createBooking(vehicle.id, "wash_premium");
 
     const payment = await createPaymentIntent(booking.id);
+    const operationCount = paymentProviderOperations.length;
     const authorizedPayment = await authorizePayment(payment.id);
 
     assert.equal(payment.status, "requires_authorization");
     assert.equal(payment.bookingId, booking.id);
     assert.equal(payment.amount.amountMinor, booking.acceptedPrice.amountMinor);
     assert.equal(authorizedPayment.status, "authorized");
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["authorize"]);
 
     const bookingResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}`, {
       headers: customerHeaders,
@@ -1563,6 +1588,7 @@ describe("Prima Wash API", () => {
     const vehicle = await createVehicle("PAYCAP1");
     const booking = await createBooking(vehicle.id, "wash_basic");
     const payment = await authorizeBookingPayment(booking.id);
+    const operationCount = paymentProviderOperations.length;
 
     await updateBookingStatus(booking.id, "confirmed");
     await updateBookingStatus(booking.id, "checked_in");
@@ -1578,12 +1604,14 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.id, payment.id);
     assert.equal(payload.data.status, "captured");
     assert.ok(payload.data.capturedAt);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["capture"]);
   });
 
   it("voids authorized payment when customer cancels before service starts", async () => {
     const vehicle = await createVehicle("PAYVOID1");
     const booking = await createBooking(vehicle.id, "wash_basic");
     await authorizeBookingPayment(booking.id);
+    const operationCount = paymentProviderOperations.length;
 
     const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/cancel`, {
       method: "POST",
@@ -1600,6 +1628,7 @@ describe("Prima Wash API", () => {
 
     assert.equal(paymentPayload.data.status, "voided");
     assert.ok(paymentPayload.data.voidedAt);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["void"]);
   });
 
   it("prevents customers from paying another owner's booking", async () => {

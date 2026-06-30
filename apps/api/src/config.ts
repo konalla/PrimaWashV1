@@ -2,6 +2,7 @@ export interface ApiConfig {
   readonly port: number;
   readonly databaseUrl?: string;
   readonly authSessionSecret: string;
+  readonly paymentProvider: string;
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -19,6 +20,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
   return {
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     authSessionSecret,
+    paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
     ...(environment.DATABASE_URL ? { databaseUrl: environment.DATABASE_URL } : {}),
   };
 }
