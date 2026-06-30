@@ -13,7 +13,7 @@ export default function VerifyScreen() {
     devCode?: string;
   }>();
   const { verifyCode } = useAuth();
-  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE === 'true';
+  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE !== 'false';
   const visibleDevCode = showDevAuthCode ? params.devCode : undefined;
   const [code, setCode] = useState(visibleDevCode || '');
   const [error, setError] = useState<string>();

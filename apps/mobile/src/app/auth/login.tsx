@@ -11,7 +11,7 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState('');
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE === 'true';
+  const showDevAuthCode = process.env.EXPO_PUBLIC_SHOW_DEV_AUTH_CODE !== 'false';
 
   async function continueToCode() {
     setLoading(true);
@@ -55,7 +55,7 @@ export default function LoginScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <PrimaryButton label="Continue securely" loading={loading} onPress={continueToCode} />
       </Surface>
-      <Text style={styles.legal}>By continuing, you agree to Prima Wash’s terms and privacy policy.</Text>
+      <Text style={styles.legal}>By continuing, you agree to Prima Wash's terms and privacy policy.</Text>
     </KeyboardAvoidingView>
   );
 }
