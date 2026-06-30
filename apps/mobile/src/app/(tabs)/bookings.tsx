@@ -87,10 +87,10 @@ export default function BookingsScreen() {
                 onPress={async () => {
                   try {
                     const nextPayment = payment ?? await primaApi.createPaymentIntent({ bookingId: booking.id });
-                    await primaApi.authorizePayment(nextPayment.id);
-                    await load();
+                    const checkoutPath = `/booking/checkout?bookingId=${encodeURIComponent(booking.id)}&paymentIntentId=${encodeURIComponent(nextPayment.id)}`;
+                    router.push(checkoutPath as never);
                   } catch (caught) {
-                    setError(caught instanceof Error ? caught.message : 'Payment could not be authorized.');
+                    setError(caught instanceof Error ? caught.message : 'Checkout could not be opened.');
                   }
                 }}>
                 <Text style={styles.payNow}>Complete payment authorization</Text>

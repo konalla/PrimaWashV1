@@ -42,7 +42,13 @@
           "locationWhenInUsePermission": "Allow Prima Wash to use your location to sort nearby vehicle-care partners. Your location stays on this device."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.primawash"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

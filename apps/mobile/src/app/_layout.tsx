@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from '@/context/auth-context';
 import { BookingProvider } from '@/context/booking-context';
 import { LocationProvider } from '@/context/location-context';
 import { NotificationProvider } from '@/context/notification-context';
+import { StripeProvider } from '@/lib/stripe';
 
 const primaTheme = {
   ...DefaultTheme,
@@ -19,19 +20,23 @@ const primaTheme = {
   },
 };
 
+const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? 'pk_test_missing';
+
 export default function RootLayout() {
   return (
     <ThemeProvider value={primaTheme}>
-      <AuthProvider>
-        <LocationProvider>
-          <NotificationProvider>
-            <BookingProvider>
-              <StatusBar style="dark" />
-              <Navigation />
-            </BookingProvider>
-          </NotificationProvider>
-        </LocationProvider>
-      </AuthProvider>
+      <StripeProvider merchantIdentifier="merchant.com.primawash" publishableKey={stripePublishableKey}>
+        <AuthProvider>
+          <LocationProvider>
+            <NotificationProvider>
+              <BookingProvider>
+                <StatusBar style="dark" />
+                <Navigation />
+              </BookingProvider>
+            </NotificationProvider>
+          </LocationProvider>
+        </AuthProvider>
+      </StripeProvider>
     </ThemeProvider>
   );
 }
@@ -54,6 +59,7 @@ function Navigation() {
         <Stack.Screen name="booking/service" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/time" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/review" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="booking/checkout" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/confirmed" options={{ animation: 'fade' }} />
         <Stack.Screen name="booking/detail" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="condo/prima-wash-days" options={{ animation: 'slide_from_right' }} />

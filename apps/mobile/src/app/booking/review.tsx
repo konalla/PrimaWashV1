@@ -12,8 +12,8 @@ import { primaApi } from '@/lib/api';
 import { formatAppointment, formatMoney } from '@/lib/format';
 
 export default function ReviewScreen() {
-  const { draft, complete } = useBooking();
-  const { preferences, supported: notificationsSupported, scheduleForBooking } = useNotifications();
+  const { draft } = useBooking();
+  const { preferences, supported: notificationsSupported } = useNotifications();
   const [submitting, setSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<Booking>();
   const [pendingPayment, setPendingPayment] = useState<PaymentIntent>();
@@ -50,15 +50,8 @@ export default function ReviewScreen() {
       const existingPayment = pendingPayment ?? await primaApi.paymentForBooking(booking.id);
       const payment = existingPayment ?? await primaApi.createPaymentIntent({ bookingId: booking.id });
       setPendingPayment(payment);
-      const authorizedPayment =
-        payment.status === 'authorized' ? payment : await primaApi.authorizePayment(payment.id);
-      await scheduleForBooking({
-        booking,
-        partnerName: locationName ?? 'Prima Wash',
-        serviceName: draft.service.name,
-      });
-      complete(booking, authorizedPayment);
-      router.replace('/booking/confirmed');
+      const checkoutPath = `/booking/checkout?bookingId=${encodeURIComponent(booking.id)}&paymentIntentId=${encodeURIComponent(payment.id)}`;
+      router.push(checkoutPath as never);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The booking could not be completed. Please try again.');
     } finally {
@@ -118,7 +111,9 @@ export default function ReviewScreen() {
       ) : null}
       <Surface>
         <SectionHeading eyebrow="Payment" title="Protected checkout" />
-        <Text style={styles.payment}>Card ending 4242. Payment is authorized now and captured when care is completed.</Text>
+        <Text style={styles.payment}>
+          We will create a secure payment authorization next. Payment is captured only after care is completed.
+        </Text>
       </Surface>
       <Surface>
         <SectionHeading eyebrow="Reminders" title={preferences.appointmentReminders ? 'Reminder enabled' : 'Reminder off'} />
@@ -143,7 +138,7 @@ export default function ReviewScreen() {
       <Text style={styles.policy}>Free cancellation before vehicle check-in. By confirming, you agree to the booking and cancellation terms.</Text>
       <PrimaryButton
         disabled={!canSubmit}
-        label={pendingBooking ? 'Resume secure payment' : 'Confirm and authorize payment'}
+        label={pendingBooking ? 'Continue secure payment' : 'Continue to secure checkout'}
         loading={submitting}
         onPress={confirmBooking}
       />
