@@ -14,6 +14,7 @@ import type { DatabasePool } from "../../db/pool.js";
 interface PropertyInterestInput {
   readonly ownerId: string;
   readonly propertyId?: string;
+  readonly residenceType?: ResidenceType;
   readonly propertyName?: string;
   readonly propertyAddress?: string;
   readonly requestedServiceCodes?: readonly ServiceCode[];
@@ -63,7 +64,7 @@ export class InMemoryPropertyRepository implements PropertyRepository {
     const now = new Date().toISOString();
     const property = input.propertyId
       ? this.#properties.get(input.propertyId)
-      : this.findOrCreateSuggestedProperty(input.propertyName, input.propertyAddress, now);
+      : this.findOrCreateSuggestedProperty(input.propertyName, input.propertyAddress, input.residenceType, now);
 
     if (!property) {
       throw new Error("property_not_found");
@@ -114,7 +115,12 @@ export class InMemoryPropertyRepository implements PropertyRepository {
     return this.buildLead(updated);
   }
 
-  private findOrCreateSuggestedProperty(name: string | undefined, address: string | undefined, now: string): Property {
+  private findOrCreateSuggestedProperty(
+    name: string | undefined,
+    address: string | undefined,
+    residenceType: ResidenceType | undefined,
+    now: string,
+  ): Property {
     const trimmedName = name?.trim();
 
     if (!trimmedName) {
@@ -132,7 +138,7 @@ export class InMemoryPropertyRepository implements PropertyRepository {
     const property: Property = {
       id: `prop_${crypto.randomUUID()}`,
       marketId: "sg",
-      residenceType: "multi_unit_private",
+      residenceType: residenceType ?? "multi_unit_private",
       name: trimmedName,
       ...(address?.trim() ? { addressLine1: address.trim() } : {}),
       city: "Singapore",
@@ -235,9 +241,15 @@ export class PostgresPropertyRepository implements PropertyRepository {
           `insert into properties (
              id, market_id, residence_type, name, address_line_1, city, region, country_code, activation_status, created_at, updated_at
            )
-           values ($1, 'sg', 'multi_unit_private', $2, $3, 'Singapore', 'Singapore', 'SG', 'suggested', $4, $4)
+           values ($1, 'sg', $2, $3, $4, 'Singapore', 'Singapore', 'SG', 'suggested', $5, $5)
            on conflict (market_id, lower(name), coalesce(address_line_1, '')) do nothing`,
-          [propertyId, input.propertyName?.trim(), input.propertyAddress?.trim() || null, now],
+          [
+            propertyId,
+            input.residenceType ?? "multi_unit_private",
+            input.propertyName?.trim(),
+            input.propertyAddress?.trim() || null,
+            now,
+          ],
         );
       }
 
@@ -330,9 +342,20 @@ export class PostgresPropertyRepository implements PropertyRepository {
 
 export function validateCreatePropertyInterest(input: CreatePropertyInterestRequest): string[] {
   const errors: string[] = [];
+  const residenceTypes: readonly ResidenceType[] = [
+    "multi_unit_private",
+    "public_housing",
+    "landed",
+    "commercial",
+    "other",
+  ];
 
   if (!input.propertyId && (!input.propertyName || input.propertyName.trim().length < 2)) {
     errors.push("propertyName must contain at least 2 characters when propertyId is not supplied");
+  }
+
+  if (input.residenceType !== undefined && !residenceTypes.includes(input.residenceType)) {
+    errors.push("residenceType is not supported");
   }
 
   if (input.propertyAddress !== undefined && input.propertyAddress.trim().length === 0) {

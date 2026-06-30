@@ -149,6 +149,7 @@ export interface PropertyInterest {
 
 export interface CreatePropertyInterestRequest {
   readonly propertyId?: string;
+  readonly residenceType?: ResidenceType;
   readonly propertyName?: string;
   readonly propertyAddress?: string;
   readonly requestedServiceCodes?: readonly ServiceCode[];

@@ -25,14 +25,14 @@ const residenceOptions: readonly ResidenceOption[] = [
   {
     residenceType: 'public_housing',
     label: 'HDB / public housing',
-    title: 'Find trusted care nearby',
-    body: 'Use the current marketplace flow to compare verified partners and live appointment times.',
+    title: 'Request Prima Wash at your block',
+    body: 'Save your HDB block or car park. We can track demand and approach the right operator when there is enough resident interest.',
   },
   {
     residenceType: 'landed',
     label: 'Landed property',
-    title: 'Find trusted care nearby',
-    body: 'Save your area and continue with trusted partner discovery.',
+    title: 'Book care at your home',
+    body: 'Save your service area and access notes so at-home mobile detailing can be offered where partner coverage exists.',
   },
 ];
 
@@ -68,6 +68,7 @@ export default function ResidenceScreen() {
   useEffect(() => {
     if (selectedType !== 'multi_unit_private') {
       setProperties([]);
+      setSelectedProperty(undefined);
       return;
     }
 
@@ -104,7 +105,8 @@ export default function ResidenceScreen() {
     [selectedType],
   );
   const isCondo = selectedType === 'multi_unit_private';
-  const canSave = isCondo ? propertyName.trim().length >= 2 : serviceAreaLabel.trim().length >= 2;
+  const isSharedProperty = selectedType === 'multi_unit_private' || selectedType === 'public_housing';
+  const canSave = isSharedProperty ? propertyName.trim().length >= 2 : serviceAreaLabel.trim().length >= 2;
 
   async function saveResidence() {
     if (!selectedOption) {
@@ -116,7 +118,13 @@ export default function ResidenceScreen() {
       const residentialProfile: UpdateCustomerResidentialProfileRequest = {
         residenceType: selectedOption.residenceType,
         localResidenceLabel: selectedOption.label,
-        ...(isCondo
+        marketMode:
+          selectedOption.residenceType === 'landed'
+            ? 'mobile_dispatch'
+            : selectedOption.residenceType === 'public_housing' || selectedOption.residenceType === 'multi_unit_private'
+              ? 'residence_partnership'
+              : 'open_marketplace',
+        ...(isSharedProperty
           ? {
               propertyName: propertyName.trim(),
               propertyAddress: propertyAddress.trim() || undefined,
@@ -128,8 +136,9 @@ export default function ResidenceScreen() {
             }),
       };
 
-      if (isCondo) {
+      if (isSharedProperty) {
         await primaApi.createPropertyInterest({
+          residenceType: selectedOption.residenceType,
           ...(selectedProperty ? { propertyId: selectedProperty.id } : { propertyName: propertyName.trim() }),
           propertyAddress: propertyAddress.trim() || undefined,
           requestedServiceCodes: ['wash_basic', 'wash_premium', 'detail_interior'],
@@ -175,10 +184,15 @@ export default function ResidenceScreen() {
       </View>
 
       <Surface>
-        {isCondo ? (
+        {isSharedProperty ? (
           <>
-            <Field label="Condo name" value={propertyName} onChangeText={setPropertyName} placeholder="Example Residences" />
-            <View style={styles.suggestions}>
+            <Field
+              label={isCondo ? 'Condo name' : 'HDB block or car park'}
+              value={propertyName}
+              onChangeText={setPropertyName}
+              placeholder={isCondo ? 'Example Residences' : 'Tampines Block 842A MSCP'}
+            />
+            {isCondo ? <View style={styles.suggestions}>
               <View style={styles.suggestionsHeader}>
                 <Text style={styles.suggestionsTitle}>{loadingProperties ? 'Searching condos...' : 'Known condos'}</Text>
                 {selectedProperty ? <StatusChip tone="neutral">Selected</StatusChip> : null}
@@ -199,7 +213,7 @@ export default function ResidenceScreen() {
                     <View style={styles.propertyCopy}>
                       <Text style={styles.propertyName}>{property.name}</Text>
                       <Text style={styles.propertyMeta}>
-                        {property.addressLine1 ?? property.region} · {property.interestCount} interested
+                        {property.addressLine1 ?? property.region} - {property.interestCount} interested
                       </Text>
                     </View>
                     <StatusChip tone={property.activationStatus === 'active' ? 'success' : 'warning'}>
@@ -211,13 +225,22 @@ export default function ResidenceScreen() {
               {!loadingProperties && properties.length === 0 ? (
                 <Text style={styles.emptySuggestion}>No match yet. Add your condo and we will track resident demand.</Text>
               ) : null}
-            </View>
-            <Field label="Condo address" value={propertyAddress} onChangeText={setPropertyAddress} placeholder="Street address" />
+            </View> : (
+              <Text style={styles.emptySuggestion}>
+                HDB service requires an approved car park or block arrangement. Saving this creates a demand signal for Prima Wash outreach.
+              </Text>
+            )}
+            <Field
+              label={isCondo ? 'Condo address' : 'Block or car park address'}
+              value={propertyAddress}
+              onChangeText={setPropertyAddress}
+              placeholder="Street address"
+            />
             <Field
               label="Parking or access notes"
               value={parkingNotes}
               onChangeText={setParkingNotes}
-              placeholder="Visitor lots, basement level, tower, or lobby"
+              placeholder={isCondo ? 'Visitor lots, basement level, tower, or lobby' : 'Car park level, gantry, EV charging area, or block notes'}
               multiline
             />
           </>
@@ -227,7 +250,7 @@ export default function ResidenceScreen() {
               label="Service area"
               value={serviceAreaLabel}
               onChangeText={setServiceAreaLabel}
-              placeholder={selectedType === 'public_housing' ? 'Tampines, Toa Payoh, Jurong...' : 'Bukit Timah, Katong, Sentosa...'}
+              placeholder="Bukit Timah, Katong, Sentosa..."
             />
             <Field
               label="Parking or access notes"

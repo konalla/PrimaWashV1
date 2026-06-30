@@ -397,7 +397,35 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.profile.residentialProfile?.propertyActivationStatus, "suggested");
   });
 
-  it("exposes an internal condo activation lead dashboard", async () => {
+  it("creates a suggested HDB car park lead when a resident requests shared service", async () => {
+    const session = await createCustomerSession("hdb-interest@example.com");
+    const response = await fetch(`${baseUrl}/v1/property-interests`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        residenceType: "public_housing",
+        propertyName: "Tampines Block 842A MSCP",
+        propertyAddress: "842A Tampines Street 82",
+        requestedServiceCodes: ["wash_basic", "wash_premium"],
+        preferredTimeWindows: ["Saturday morning"],
+        parkingNotes: "Multi-storey car park with EV charging bays nearby.",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<CreatePropertyInterestResponse>;
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.property.residenceType, "public_housing");
+    assert.equal(payload.data.property.name, "Tampines Block 842A MSCP");
+    assert.equal(payload.data.profile.residentialProfile?.residenceType, "public_housing");
+    assert.equal(payload.data.profile.residentialProfile?.marketMode, "residence_partnership");
+    assert.equal(payload.data.profile.residentialProfile?.localResidenceLabel, "HDB / public housing");
+    assert.equal(payload.data.profile.residentialProfile?.propertyName, "Tampines Block 842A MSCP");
+  });
+
+  it("exposes an internal property activation lead dashboard", async () => {
     const leadResponse = await fetch(`${baseUrl}/v1/internal/property-leads`, {
       headers: internalHeaders,
     });
@@ -405,7 +433,8 @@ describe("Prima Wash API", () => {
 
     assert.equal(leadResponse.status, 200);
     assert.ok(leadPayload.data.some((property) => property.id === "prop_sg_marina_one"));
-    assert.ok(leadPayload.data.every((property) => property.residenceType === "multi_unit_private"));
+    assert.ok(leadPayload.data.some((property) => property.residenceType === "multi_unit_private"));
+    assert.ok(leadPayload.data.some((property) => property.residenceType === "public_housing"));
   });
 
   it("lets internal operators update condo activation status and outreach details", async () => {

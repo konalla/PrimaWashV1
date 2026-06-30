@@ -349,6 +349,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const propertyInterestInput = {
           ownerId: actor.userId,
           ...(input.propertyId ? { propertyId: input.propertyId } : {}),
+          ...(input.residenceType ? { residenceType: input.residenceType } : {}),
           ...(input.propertyName ? { propertyName: input.propertyName } : {}),
           ...(input.propertyAddress ? { propertyAddress: input.propertyAddress } : {}),
           ...(input.requestedServiceCodes ? { requestedServiceCodes: input.requestedServiceCodes } : {}),
@@ -358,7 +359,8 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const { property, interest } = await options.repositories.properties.registerInterest(propertyInterestInput);
         const residentialProfile = {
           residenceType: property.residenceType,
-          localResidenceLabel: "Condominium",
+          localResidenceLabel: localResidenceLabelForProperty(property.residenceType),
+          marketMode: propertyMarketMode(property.residenceType),
           propertyId: property.id,
           propertyName: property.name,
           propertyActivationStatus: property.activationStatus,
@@ -2449,6 +2451,38 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     sendError(response, 404, "not_found", "Route not found");
   });
+}
+
+function localResidenceLabelForProperty(residenceType: ResidenceType): string {
+  if (residenceType === "public_housing") {
+    return "HDB / public housing";
+  }
+
+  if (residenceType === "landed") {
+    return "Landed property";
+  }
+
+  if (residenceType === "commercial") {
+    return "Commercial property";
+  }
+
+  return "Condominium";
+}
+
+function propertyMarketMode(residenceType: ResidenceType): "residence_partnership" | "open_marketplace" | "mobile_dispatch" | "fleet_or_corporate" {
+  if (residenceType === "landed") {
+    return "mobile_dispatch";
+  }
+
+  if (residenceType === "commercial") {
+    return "fleet_or_corporate";
+  }
+
+  if (residenceType === "multi_unit_private" || residenceType === "public_housing") {
+    return "residence_partnership";
+  }
+
+  return "open_marketplace";
 }
 
 function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown): boolean {

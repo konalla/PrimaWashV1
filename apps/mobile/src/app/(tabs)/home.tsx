@@ -76,7 +76,7 @@ export default function HomeScreen() {
         <Surface accent>
           <Text style={styles.cardEyebrow}>RESIDENTIAL SETUP</Text>
           <Text style={styles.cardTitle}>Tell us where you usually park.</Text>
-          <Text style={styles.body}>Condo residents unlock Prima Wash Days. HDB and landed-property owners continue with trusted nearby care.</Text>
+          <Text style={styles.body}>Prima Wash adapts to condos, HDB car parks, landed homes, and trusted nearby care.</Text>
           <PrimaryButton label="Choose residence type" onPress={() => router.push('/profile/residence' as never)} />
         </Surface>
       ) : null}
@@ -97,7 +97,11 @@ export default function HomeScreen() {
               ? profile.residentialProfile.propertyActivationStatus === 'active'
                 ? 'Book approved Prima Wash Days at your condo.'
                 : `Your condo interest is saved${profile.residentialProfile.propertyInterestCount ? ` with ${profile.residentialProfile.propertyInterestCount} resident signals` : ''}. You can still find trusted care nearby.`
-              : 'Use the marketplace flow to compare verified partners and appointment times.'}
+              : profile.residentialProfile.residenceType === 'public_housing'
+                ? `Your HDB request is saved${profile.residentialProfile.propertyInterestCount ? ` with ${profile.residentialProfile.propertyInterestCount} resident signals` : ''}. Shared car-park service requires approval, and trusted nearby care remains available now.`
+                : profile.residentialProfile.residenceType === 'landed'
+                  ? 'At-home mobile detailing can be offered where partner coverage exists. Trusted nearby care remains available now.'
+                  : 'Use the marketplace flow to compare verified partners and appointment times.'}
           </Text>
         </Surface>
       ) : null}
@@ -134,7 +138,7 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.healthRow}>
-          <Text style={styles.health}>{vehicle ? '● Care profile active' : 'Create a reusable vehicle profile'}</Text>
+          <Text style={styles.health}>{vehicle ? 'Care profile active' : 'Create a reusable vehicle profile'}</Text>
           <Text onPress={() => router.push('/(tabs)/garage')} style={styles.manage}>Manage</Text>
         </View>
       </Surface>
@@ -154,22 +158,35 @@ export default function HomeScreen() {
 
       <SectionHeading eyebrow="Trusted care" title="What would you like to do?" />
       <View style={styles.actionGrid}>
+        {profile?.residentialProfile?.residenceType === 'landed' ? (
+          <Pressable onPress={() => router.push('/partners')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+            <Text style={styles.actionIcon}>Home</Text>
+            <Text style={styles.actionTitle}>Book at my home</Text>
+            <Text style={styles.actionBody}>Use your saved access notes for at-home mobile detailing coverage.</Text>
+          </Pressable>
+        ) : null}
+        {profile?.residentialProfile?.residenceType === 'public_housing' ? (
+          <Pressable onPress={() => router.push('/profile/residence' as never)} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+            <Text style={styles.actionIcon}>HDB</Text>
+            <Text style={styles.actionTitle}>Request my car park</Text>
+            <Text style={styles.actionBody}>Update block, MSCP, or access notes so Prima Wash can build the demand case.</Text>
+          </Pressable>
+        ) : null}
         <Pressable onPress={() => router.push('/partners')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
-          <Text style={styles.actionIcon}>✦</Text>
+          <Text style={styles.actionIcon}>Care</Text>
           <Text style={styles.actionTitle}>Book vehicle care</Text>
           <Text style={styles.actionBody}>Compare trusted services and live times.</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/(tabs)/bookings')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
-          <Text style={styles.actionIcon}>◷</Text>
+          <Text style={styles.actionIcon}>Live</Text>
           <Text style={styles.actionTitle}>Track a booking</Text>
           <Text style={styles.actionBody}>Follow every stage from arrival to ready.</Text>
         </Pressable>
       </View>
-
       <Surface>
         <View style={styles.guaranteeRow}>
           <View style={styles.guaranteeIcon}>
-            <Text style={styles.guaranteeIconText}>✓</Text>
+            <Text style={styles.guaranteeIconText}>OK</Text>
           </View>
           <View style={styles.guaranteeCopy}>
             <Text style={styles.cardEyebrow}>PRIMA CARE GUARANTEE</Text>
@@ -180,7 +197,17 @@ export default function HomeScreen() {
       </Surface>
 
       <PrimaryButton
-        label={nextPrimaWashDay ? 'View condo service days' : profile?.residentialProfile?.residenceType === 'multi_unit_private' ? 'Find trusted care nearby for now' : 'Find trusted care nearby'}
+        label={
+          nextPrimaWashDay
+            ? 'View service days'
+            : profile?.residentialProfile?.residenceType === 'landed'
+              ? 'Find at-home or nearby care'
+              : profile?.residentialProfile?.residenceType === 'public_housing'
+                ? 'Find nearby care while we build HDB access'
+                : profile?.residentialProfile?.residenceType === 'multi_unit_private'
+                  ? 'Find trusted care nearby for now'
+                  : 'Find trusted care nearby'
+        }
         onPress={() => (nextPrimaWashDay ? router.push('/condo/prima-wash-days' as never) : router.push('/partners'))}
       />
     </AppScreen>
@@ -199,9 +226,9 @@ const styles = StyleSheet.create({
   healthRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, flexDirection: 'row', justifyContent: 'space-between' },
   health: { color: colors.accent, fontSize: 12, fontWeight: '700' },
   manage: { color: colors.muted, fontSize: 12, fontWeight: '700' },
-  actionGrid: { flexDirection: 'row', gap: spacing.md },
-  actionCard: { flex: 1, minHeight: 162, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg },
-  actionIcon: { color: colors.accent, fontSize: 25, marginBottom: spacing.lg },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  actionCard: { flexGrow: 1, flexBasis: '47%', minHeight: 162, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg },
+  actionIcon: { color: colors.accent, fontSize: 13, fontWeight: '900', marginBottom: spacing.lg },
   actionTitle: { color: colors.text, fontSize: 16, fontWeight: '800', lineHeight: 21 },
   actionBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: spacing.sm },
   pressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
