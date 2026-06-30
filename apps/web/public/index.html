@@ -402,6 +402,12 @@
         color: var(--blue);
       }
 
+      .payment-chip.is-refunded {
+        border-color: var(--line);
+        background: #f3f0ea;
+        color: var(--muted);
+      }
+
       .payment-chip.is-blocked {
         border-color: rgba(255, 143, 143, 0.34);
         background: rgba(255, 143, 143, 0.1);
@@ -2927,6 +2933,10 @@
       function renderDrawerActions(item) {
         const next = nextStatusByStatus[item.status];
         const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
+        const refundButton =
+          item.paymentIntentId && item.paymentStatus === "captured"
+            ? `<button class="action danger" type="button" data-refund-payment-id="${item.paymentIntentId}">Refund payment</button>`
+            : "";
         const nextButton =
           next && !paymentBlocked
             ? `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
@@ -2939,7 +2949,7 @@
           ? `<button class="action danger" type="button" data-drawer-cancel>Cancel booking</button>`
           : "";
 
-        return `${nextButton}${blockedButton}${cancelButton}<button class="action" type="button" data-close-booking-dialog>Close</button>`;
+        return `${nextButton}${blockedButton}${refundButton}${cancelButton}<button class="action" type="button" data-close-booking-dialog>Close</button>`;
       }
 
       function findQueueItem(bookingId) {
@@ -3324,6 +3334,10 @@
           return "is-captured";
         }
 
+        if (status === "refunded" || status === "voided") {
+          return "is-refunded";
+        }
+
         if (!status || status === "requires_authorization") {
           return "is-blocked";
         }
@@ -3468,6 +3482,23 @@
 
         if (!response.ok) {
           throw new Error(payload.message || "Cancellation failed");
+        }
+
+        return payload.data;
+      }
+
+      async function refundPayment(paymentIntentId) {
+        const response = await fetch(`${apiBase}/v1/payments/${paymentIntentId}/refund`, {
+          method: "POST",
+          headers: {
+            "x-prima-user-id": "usr_internal_dashboard",
+            "x-prima-role": "internal",
+          },
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Refund failed");
         }
 
         return payload.data;
@@ -3707,6 +3738,33 @@
             showToast(error.message, "error");
           } finally {
             drawerCancelButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const refundPaymentButton = event.target.closest("button[data-refund-payment-id]");
+
+        if (refundPaymentButton) {
+          if (
+            !window.confirm(
+              "Refund this captured payment? The booking will remain in the operational record and the customer payment history will show the refund.",
+            )
+          ) {
+            return;
+          }
+
+          refundPaymentButton.disabled = true;
+
+          try {
+            await refundPayment(refundPaymentButton.dataset.refundPaymentId);
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Payment refunded.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            refundPaymentButton.disabled = false;
           }
 
           return;

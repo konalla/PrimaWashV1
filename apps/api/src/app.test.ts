@@ -826,6 +826,7 @@ describe("Prima Wash API", () => {
     assert.equal(bookingResponse.status, 201);
     assert.equal(queueResponse.status, 200);
     assert.equal(item?.primaWashDayId, dayPayload.data.id);
+    assert.ok(item?.paymentIntentId);
     assert.equal(item?.paymentStatus, "authorized");
     assert.equal(item?.status, "confirmed");
     assert.equal(item?.actionHint, "Customer expected; check in when vehicle arrives");
@@ -1097,6 +1098,7 @@ describe("Prima Wash API", () => {
     const queueItem = payload.data.queue.find((item) => item.bookingId === booking.id);
 
     assert.equal(response.status, 200);
+    assert.ok(queueItem?.paymentIntentId);
     assert.equal(queueItem?.paymentStatus, "authorized");
     assert.deepEqual(queueItem?.paymentAmount, { amountMinor: 2500, currency: "USD" });
     assert.equal(queueItem?.status, "confirmed");

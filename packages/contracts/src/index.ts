@@ -325,6 +325,7 @@ export interface PartnerQueueItem {
   readonly executionNotes?: string;
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
+  readonly paymentIntentId?: string;
   readonly paymentStatus?: PaymentStatus;
   readonly paymentAmount?: Money;
   readonly actionHint: string;

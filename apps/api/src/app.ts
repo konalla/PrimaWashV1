@@ -2693,7 +2693,7 @@ function buildPartnerDashboard(
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
-        ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
+        ...(payment ? { paymentIntentId: payment.id, paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,
       };
@@ -2816,7 +2816,7 @@ function buildPrimaWashDayBookingItems(
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
-        ...(payment ? { paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
+        ...(payment ? { paymentIntentId: payment.id, paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,
         scheduledEndAt: booking.scheduledEndAt,
