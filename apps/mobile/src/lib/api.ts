@@ -5,6 +5,7 @@ import type {
   AvailabilitySlot,
   AvailabilitySearchResponse,
   AuthSession,
+  BillingSession,
   BookingHold,
   CommunicationThread,
   CommunicationThreadWithMessages,
@@ -20,6 +21,7 @@ import type {
   CreatePropertyInterestResponse,
   CreateVehicleRequest,
   PaymentIntent,
+  PaymentMethodSummary,
   PartnerLocation,
   PrimaWashDay,
   Property,
@@ -151,6 +153,9 @@ export const primaApi = {
     }),
   paymentForBooking: (bookingId: string) =>
     request<PaymentIntent | null>(`/v1/payments?bookingId=${encodeURIComponent(bookingId)}`),
+  billingSession: () =>
+    request<BillingSession>('/v1/billing/session', { method: 'POST' }),
+  paymentMethods: () => request<readonly PaymentMethodSummary[]>('/v1/billing/payment-methods'),
   serviceRecords: () => request<readonly ServiceRecord[]>('/v1/service-records'),
   createVehicle: (input: CreateVehicleRequest) =>
     request<Vehicle>('/v1/vehicles', { method: 'POST', body: JSON.stringify(input) }),

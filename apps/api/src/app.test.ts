@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import type {
   ApiErrorResponse,
   AuthSession,
+  BillingSession,
   CommunicationMessage,
   CommunicationThreadWithMessages,
   CustomerProfile,
@@ -22,6 +23,7 @@ import type {
   PartnerAvailabilitySlot,
   MavoResponse,
   PaymentIntent,
+  PaymentMethodSummary,
   PrimaWashDayBookingItem,
   Property,
   PropertyManagementDashboardResponse,
@@ -53,6 +55,43 @@ function createRecordingPaymentProvider(operations: PaymentProviderOperation[]):
   }
 
   return {
+    ensureCustomer: async (profile) => {
+      await record("customer");
+      return {
+        provider: "recording",
+        providerCustomerId: `recording_customer_${profile.userId}`,
+      };
+    },
+    createEphemeralKey: async (customer) => {
+      await record("ephemeral_key");
+      return {
+        provider: "recording",
+        providerCustomerId: customer.providerCustomerId,
+        ephemeralKeySecret: `recording_ephemeral_${customer.providerCustomerId}`,
+      };
+    },
+    createSetupIntent: async (customer) => {
+      await record("setup_intent");
+      return {
+        provider: "recording",
+        providerReference: `recording_setup_${customer.providerCustomerId}`,
+        clientSecret: `recording_setup_secret_${customer.providerCustomerId}`,
+      };
+    },
+    listPaymentMethods: async (customer) => {
+      await record("list_payment_methods");
+      return [
+        {
+          id: `recording_pm_${customer.providerCustomerId}`,
+          provider: "recording",
+          brand: "Visa",
+          last4: "4242",
+          expMonth: 12,
+          expYear: 2029,
+          isDefault: true,
+        },
+      ];
+    },
     createIntent: () => record("create"),
     authorize: () => record("authorize"),
     capture: () => record("capture"),
@@ -247,6 +286,57 @@ describe("Prima Wash API", () => {
 
     assert.equal(readResponse.status, 200);
     assert.equal(readPayload.data.residentialProfile?.propertyName, "The Seafront Residences");
+  });
+
+  it("creates reusable billing sessions and lists saved payment methods", async () => {
+    const session = await createCustomerSession("billing@example.com");
+    const headers = authHeaders(session);
+    const operationCount = paymentProviderOperations.length;
+
+    const response = await fetch(`${baseUrl}/v1/billing/session`, {
+      method: "POST",
+      headers,
+    });
+    const payload = (await response.json()) as ApiResponse<BillingSession>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.provider, "recording");
+    assert.equal(payload.data.providerCustomerId, `recording_customer_${session.user.id}`);
+    assert.equal(payload.data.ephemeralKeySecret, `recording_ephemeral_recording_customer_${session.user.id}`);
+    assert.equal(payload.data.setupIntentClientSecret, `recording_setup_secret_recording_customer_${session.user.id}`);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["customer", "ephemeral_key", "setup_intent"]);
+
+    const profileResponse = await fetch(`${baseUrl}/v1/profile`, { headers });
+    const profilePayload = (await profileResponse.json()) as ApiResponse<CustomerProfile>;
+
+    assert.equal(profilePayload.data.billingProfile?.provider, "recording");
+    assert.equal(profilePayload.data.billingProfile.providerCustomerId, `recording_customer_${session.user.id}`);
+
+    const secondOperationCount = paymentProviderOperations.length;
+    const secondResponse = await fetch(`${baseUrl}/v1/billing/session`, {
+      method: "POST",
+      headers,
+    });
+
+    assert.equal(secondResponse.status, 200);
+    assert.deepEqual(paymentProviderOperations.slice(secondOperationCount), ["ephemeral_key", "setup_intent"]);
+
+    const methodsOperationCount = paymentProviderOperations.length;
+    const methodsResponse = await fetch(`${baseUrl}/v1/billing/payment-methods`, { headers });
+    const methodsPayload = (await methodsResponse.json()) as ApiResponse<readonly PaymentMethodSummary[]>;
+
+    assert.equal(methodsResponse.status, 200);
+    assert.equal(methodsPayload.data[0]?.last4, "4242");
+    assert.deepEqual(paymentProviderOperations.slice(methodsOperationCount), ["list_payment_methods"]);
+
+    const vehicle = await createVehicle("BILLPAY1", headers);
+    const booking = await createBooking(vehicle.id, "wash_basic", "slot_demo_1100", headers);
+    const createOperationCount = paymentProviderOperations.length;
+    const payment = await createPaymentIntent(booking.id, headers);
+
+    assert.equal(payment.provider, "recording");
+    assert.equal(payment.status, "requires_authorization");
+    assert.deepEqual(paymentProviderOperations.slice(createOperationCount), ["create"]);
   });
 
   it("lists condos and registers interest for an existing condo", async () => {
@@ -1741,10 +1831,10 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "partner_role_required");
   });
 
-  async function createVehicle(plateNumber: string): Promise<Vehicle> {
+  async function createVehicle(plateNumber: string, headers: Record<string, string> = customerHeaders): Promise<Vehicle> {
     const response = await fetch(`${baseUrl}/v1/vehicles`, {
       method: "POST",
-      headers: customerHeaders,
+      headers,
       body: JSON.stringify({
         plateNumber,
         make: "Tesla",
@@ -1774,10 +1864,22 @@ describe("Prima Wash API", () => {
     return verifyPayload.data;
   }
 
-  async function createBooking(vehicleId: string, serviceCode: string, availabilitySlotId = "slot_demo_1100"): Promise<Booking> {
+  function authHeaders(session: AuthSession): Record<string, string> {
+    return {
+      authorization: `Bearer ${session.accessToken}`,
+      "content-type": "application/json",
+    };
+  }
+
+  async function createBooking(
+    vehicleId: string,
+    serviceCode: string,
+    availabilitySlotId = "slot_demo_1100",
+    headers: Record<string, string> = customerHeaders,
+  ): Promise<Booking> {
     const response = await fetch(`${baseUrl}/v1/bookings`, {
       method: "POST",
-      headers: customerHeaders,
+      headers,
       body: JSON.stringify({
         vehicleId,
         availabilitySlotId,
@@ -1807,10 +1909,13 @@ describe("Prima Wash API", () => {
     return payload.data;
   }
 
-  async function createPaymentIntent(bookingId: string): Promise<PaymentIntent> {
+  async function createPaymentIntent(
+    bookingId: string,
+    headers: Record<string, string> = customerHeaders,
+  ): Promise<PaymentIntent> {
     const response = await fetch(`${baseUrl}/v1/payments/intents`, {
       method: "POST",
-      headers: customerHeaders,
+      headers,
       body: JSON.stringify({ bookingId }),
     });
     const payload = (await response.json()) as ApiResponse<PaymentIntent>;

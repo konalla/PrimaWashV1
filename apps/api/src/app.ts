@@ -6,6 +6,7 @@ import type {
   AvailabilitySearchResponse,
   AvailabilitySearchSlot,
   Actor,
+  BillingSession,
   Booking,
   BookingHold,
   RequestAuthCodeRequest,
@@ -20,6 +21,7 @@ import type {
   CommunicationResourceType,
   CommunicationThread,
   CommunicationThreadType,
+  CustomerProfile,
   CreateBookingRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
@@ -33,6 +35,7 @@ import type {
   PartnerDashboardResponse,
   PartnerAvailabilitySlot,
   PaymentIntent,
+  PaymentMethodSummary,
   PaymentStatus,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
@@ -77,6 +80,7 @@ import type { Repositories } from "./modules/repositories.js";
 import { assertPaymentTransition, validateCreatePaymentIntent } from "./modules/payments/repository.js";
 import {
   createPaymentProvider,
+  type PaymentCustomer,
   type PaymentProvider,
   type PaymentProviderResult,
 } from "./modules/payments/provider.js";
@@ -238,6 +242,80 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           sendError(response, 404, "profile_not_found", "Customer profile does not exist");
         }
       }
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/billing/session") {
+      try {
+        const actor = requireActor(request);
+        assertOwnerAccess(actor, actor.userId);
+        const profile = await options.repositories.profiles.get(actor.userId);
+
+        if (!profile) {
+          sendError(response, 404, "profile_not_found", "Customer profile does not exist");
+          return;
+        }
+
+        const { customer, profile: updatedProfile } = await ensureBillingCustomer(
+          options.repositories,
+          paymentProvider,
+          profile,
+        );
+        const [ephemeralKey, setupIntent] = await Promise.all([
+          paymentProvider.createEphemeralKey(customer),
+          paymentProvider.createSetupIntent(customer),
+        ]);
+        const session: BillingSession = {
+          provider: customer.provider,
+          providerCustomerId: customer.providerCustomerId,
+          ephemeralKeySecret: ephemeralKey.ephemeralKeySecret,
+          setupIntentClientSecret: setupIntent.clientSecret,
+        };
+
+        await options.repositories.audit.record({
+          actor,
+          action: "billing.session_created",
+          resourceType: "customer_profile",
+          resourceId: actor.userId,
+          requestId: requestContext.requestId,
+          metadata: {
+            paymentProvider: customer.provider,
+            providerCustomerId: customer.providerCustomerId,
+            billingProfileCreated: !profile.billingProfile,
+            updatedAt: updatedProfile.updatedAt,
+          },
+        });
+
+        sendJson(response, 200, { data: session });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "billing_session_failed", "Billing session could not be created", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/billing/payment-methods") {
+      try {
+        const actor = requireActor(request);
+        assertOwnerAccess(actor, actor.userId);
+        const profile = await options.repositories.profiles.get(actor.userId);
+
+        if (!profile) {
+          sendError(response, 404, "profile_not_found", "Customer profile does not exist");
+          return;
+        }
+
+        const { customer } = await ensureBillingCustomer(options.repositories, paymentProvider, profile);
+        const paymentMethods: readonly PaymentMethodSummary[] = await paymentProvider.listPaymentMethods(customer);
+        sendJson(response, 200, { data: paymentMethods });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "payment_methods_failed", "Payment methods could not be loaded", String(error));
+        }
+      }
+
       return;
     }
 
@@ -1620,7 +1698,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         }
 
         const existingPayment = await options.repositories.payments.getByBookingId(booking.id);
-        const providerResult = existingPayment ? undefined : await paymentProvider.createIntent(booking);
+        const ownerProfile = existingPayment ? undefined : await options.repositories.profiles.get(booking.ownerId);
+        const billingCustomer = ownerProfile
+          ? (await ensureBillingCustomer(options.repositories, paymentProvider, ownerProfile)).customer
+          : undefined;
+        const providerResult = existingPayment ? undefined : await paymentProvider.createIntent(booking, billingCustomer);
         const payment = existingPayment ?? await options.repositories.payments.createForBooking(booking, providerResult);
 
         await options.repositories.audit.record({
@@ -2813,6 +2895,34 @@ async function recordProductEvent(
   },
 ): Promise<void> {
   await repositories.productEvents.record(input);
+}
+
+async function ensureBillingCustomer(
+  repositories: Repositories,
+  paymentProvider: PaymentProvider,
+  profile: CustomerProfile,
+): Promise<{ readonly customer: PaymentCustomer; readonly profile: CustomerProfile }> {
+  if (profile.billingProfile) {
+    return {
+      customer: {
+        provider: profile.billingProfile.provider,
+        providerCustomerId: profile.billingProfile.providerCustomerId,
+      },
+      profile,
+    };
+  }
+
+  const customer = await paymentProvider.ensureCustomer(profile);
+  const updatedProfile = await repositories.profiles.setBillingProfile(profile.userId, {
+    provider: customer.provider,
+    providerCustomerId: customer.providerCustomerId,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return {
+    customer,
+    profile: updatedProfile,
+  };
 }
 
 async function recordPaymentAudit(

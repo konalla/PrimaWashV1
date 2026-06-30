@@ -1,4 +1,5 @@
 import type {
+  CustomerBillingProfile,
   CustomerProfile,
   CustomerResidentialProfile,
   ResidenceType,
@@ -11,6 +12,7 @@ export interface ProfileRepository {
   get(userId: string): Promise<CustomerProfile | undefined>;
   upsertIdentity(userId: string, identifier: string, displayName: string): Promise<CustomerProfile>;
   update(userId: string, input: UpdateCustomerProfileRequest): Promise<CustomerProfile>;
+  setBillingProfile(userId: string, billingProfile: CustomerBillingProfile): Promise<CustomerProfile>;
 }
 
 export class InMemoryProfileRepository implements ProfileRepository {
@@ -53,6 +55,22 @@ export class InMemoryProfileRepository implements ProfileRepository {
     this.#profiles.set(userId, updated);
     return updated;
   }
+
+  async setBillingProfile(userId: string, billingProfile: CustomerBillingProfile): Promise<CustomerProfile> {
+    const existing = this.#profiles.get(userId);
+
+    if (!existing) {
+      throw new Error("profile_not_found");
+    }
+
+    const updated = {
+      ...existing,
+      billingProfile,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#profiles.set(userId, updated);
+    return updated;
+  }
 }
 
 export class PostgresProfileRepository implements ProfileRepository {
@@ -60,7 +78,7 @@ export class PostgresProfileRepository implements ProfileRepository {
 
   async get(userId: string): Promise<CustomerProfile | undefined> {
     const result = await this.pool.query<ProfileRow>(
-      `select user_id, identifier, display_name, phone_number, email, residential_profile, created_at, updated_at
+      `select user_id, identifier, display_name, phone_number, email, residential_profile, billing_profile, created_at, updated_at
        from customer_profiles where user_id = $1`,
       [userId],
     );
@@ -82,7 +100,7 @@ export class PostgresProfileRepository implements ProfileRepository {
         `insert into customer_profiles (user_id, identifier, display_name, phone_number, email, created_at, updated_at)
          values ($1, $2, $3, $4, $5, $6, $6)
          on conflict (user_id) do update set identifier = excluded.identifier
-         returning user_id, identifier, display_name, phone_number, email, residential_profile, created_at, updated_at`,
+         returning user_id, identifier, display_name, phone_number, email, residential_profile, billing_profile, created_at, updated_at`,
         [
           userId,
           identifier,
@@ -111,7 +129,7 @@ export class PostgresProfileRepository implements ProfileRepository {
            residential_profile = coalesce($5, residential_profile),
            updated_at = $6
        where user_id = $1
-       returning user_id, identifier, display_name, phone_number, email, residential_profile, created_at, updated_at`,
+       returning user_id, identifier, display_name, phone_number, email, residential_profile, billing_profile, created_at, updated_at`,
       [
         userId,
         input.displayName?.trim() ?? null,
@@ -122,6 +140,23 @@ export class PostgresProfileRepository implements ProfileRepository {
           : null,
         new Date().toISOString(),
       ],
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("profile_not_found");
+    }
+
+    return mapProfileRow(result.rows[0]);
+  }
+
+  async setBillingProfile(userId: string, billingProfile: CustomerBillingProfile): Promise<CustomerProfile> {
+    const result = await this.pool.query<ProfileRow>(
+      `update customer_profiles
+       set billing_profile = $2::jsonb,
+           updated_at = $3
+       where user_id = $1
+       returning user_id, identifier, display_name, phone_number, email, residential_profile, billing_profile, created_at, updated_at`,
+      [userId, JSON.stringify(billingProfile), new Date().toISOString()],
     );
 
     if (!result.rows[0]) {
@@ -157,6 +192,7 @@ interface ProfileRow {
   readonly phone_number: string | null;
   readonly email: string | null;
   readonly residential_profile: CustomerResidentialProfile | string | null;
+  readonly billing_profile: CustomerBillingProfile | string | null;
   readonly created_at: Date | string;
   readonly updated_at: Date | string;
 }
@@ -187,6 +223,7 @@ function mapProfileRow(row: ProfileRow): CustomerProfile {
     ...(row.phone_number ? { phoneNumber: row.phone_number } : {}),
     ...(row.email ? { email: row.email } : {}),
     ...(row.residential_profile ? { residentialProfile: parseResidentialProfile(row.residential_profile) } : {}),
+    ...(row.billing_profile ? { billingProfile: parseBillingProfile(row.billing_profile) } : {}),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
@@ -290,4 +327,12 @@ function parseResidentialProfile(value: CustomerResidentialProfile | string): Cu
   }
 
   return JSON.parse(value) as CustomerResidentialProfile;
+}
+
+function parseBillingProfile(value: CustomerBillingProfile | string): CustomerBillingProfile {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return JSON.parse(value) as CustomerBillingProfile;
 }

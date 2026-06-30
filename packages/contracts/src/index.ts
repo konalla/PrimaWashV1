@@ -55,7 +55,14 @@ export interface CustomerProfile {
   readonly phoneNumber?: string;
   readonly email?: string;
   readonly residentialProfile?: CustomerResidentialProfile;
+  readonly billingProfile?: CustomerBillingProfile;
   readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CustomerBillingProfile {
+  readonly provider: string;
+  readonly providerCustomerId: string;
   readonly updatedAt: string;
 }
 
@@ -700,6 +707,23 @@ export interface PaymentIntent {
 
 export interface CreatePaymentIntentRequest {
   readonly bookingId: string;
+}
+
+export interface BillingSession {
+  readonly provider: string;
+  readonly providerCustomerId: string;
+  readonly ephemeralKeySecret?: string;
+  readonly setupIntentClientSecret?: string;
+}
+
+export interface PaymentMethodSummary {
+  readonly id: string;
+  readonly provider: string;
+  readonly brand: string;
+  readonly last4: string;
+  readonly expMonth: number;
+  readonly expYear: number;
+  readonly isDefault: boolean;
 }
 
 export interface UpdateBookingStatusRequest {

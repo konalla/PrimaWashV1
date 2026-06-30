@@ -88,9 +88,13 @@ export default function CheckoutScreen() {
       throw new Error('Stripe client secret is missing for this payment intent.');
     }
 
+    const billingSession = await primaApi.billingSession();
+
     const initResult = await initPaymentSheet({
       merchantDisplayName: 'Prima Wash',
       paymentIntentClientSecret: targetPayment.clientSecret,
+      customerId: billingSession.providerCustomerId,
+      customerEphemeralKeySecret: billingSession.ephemeralKeySecret,
       returnURL: 'primawash://stripe-redirect',
     });
 
