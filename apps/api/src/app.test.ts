@@ -23,6 +23,7 @@ import type {
   PartnerAvailabilitySlot,
   MavoResponse,
   PaymentIntent,
+  PaymentHistoryItem,
   PaymentMethodSummary,
   PrimaWashDayBookingItem,
   Property,
@@ -1776,6 +1777,57 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.status, "captured");
     assert.ok(payload.data.capturedAt);
     assert.deepEqual(paymentProviderOperations.slice(operationCount), ["capture"]);
+  });
+
+  it("refunds captured payments from internal operations and exposes customer payment history", async () => {
+    const vehicle = await createVehicle("PAYREF1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await authorizeBookingPayment(booking.id);
+
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+    await updateBookingStatus(booking.id, "completed");
+
+    const operationCount = paymentProviderOperations.length;
+    const refundResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const refundPayload = (await refundResponse.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(refundResponse.status, 200);
+    assert.equal(refundPayload.data.status, "refunded");
+    assert.ok(refundPayload.data.refundedAt);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["refund"]);
+
+    const historyResponse = await fetch(`${baseUrl}/v1/payments/history`, {
+      headers: customerHeaders,
+    });
+    const historyPayload = (await historyResponse.json()) as ApiResponse<readonly PaymentHistoryItem[]>;
+    const historyItem = historyPayload.data.find((item) => item.paymentIntentId === payment.id);
+
+    assert.equal(historyResponse.status, 200);
+    assert.equal(historyItem?.status, "refunded");
+    assert.equal(historyItem?.bookingId, booking.id);
+    assert.equal(historyItem?.amount.amountMinor, booking.acceptedPrice.amountMinor);
+    assert.ok(historyItem?.capturedAt);
+    assert.ok(historyItem?.refundedAt);
+  });
+
+  it("rejects refund attempts before payment capture", async () => {
+    const vehicle = await createVehicle("PAYREF2");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await authorizeBookingPayment(booking.id);
+
+    const response = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 409);
+    assert.equal(payload.code, "invalid_payment_status_transition");
   });
 
   it("voids authorized payment when customer cancels before service starts", async () => {

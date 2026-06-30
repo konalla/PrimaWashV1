@@ -57,6 +57,7 @@ export default function ProfileScreen() {
       <Surface>
         <Setting label="Residence setup" onPress={() => router.push('/profile/residence' as never)} />
         <Setting label="Payment methods" onPress={() => router.push('/profile/payment-methods')} />
+        <Setting label="Payment history" bordered onPress={() => router.push('/profile/payment-history' as never)} />
         <Setting label="Notifications" bordered onPress={() => router.push('/profile/notifications')} />
         <Setting label="Help and support" bordered onPress={() => router.push('/profile/help')} />
         <Setting label="Privacy and security" bordered onPress={() => router.push('/profile/privacy')} />

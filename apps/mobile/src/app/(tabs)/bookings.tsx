@@ -119,7 +119,7 @@ export default function BookingsScreen() {
         })
       )}
       <Pressable disabled={refreshing} onPress={load}>
-        <Text style={styles.refresh}>{refreshing ? 'Refreshing…' : 'Refresh bookings'}</Text>
+        <Text style={styles.refresh}>{refreshing ? 'Refreshing...' : 'Refresh bookings'}</Text>
       </Pressable>
     </AppScreen>
   );
@@ -130,15 +130,31 @@ function customerStatusLabel(booking: Booking, payment?: PaymentIntent | null) {
     return 'Awaiting confirmation';
   }
 
+  if (payment?.status === 'refunded') {
+    return 'Refunded';
+  }
+
   return booking.status.replaceAll('_', ' ');
 }
 
 function customerPaymentLine(booking: Booking, payment: PaymentIntent) {
   if (booking.status === 'pending_payment' && payment.status === 'authorized') {
-    return 'Payment authorized · Partner confirmation next';
+    return 'Authorized hold - partner confirmation next';
   }
 
-  return `Payment ${payment.status.replaceAll('_', ' ')}`;
+  if (payment.status === 'captured') {
+    return 'Charged after service completion';
+  }
+
+  if (payment.status === 'voided') {
+    return 'Authorization released';
+  }
+
+  if (payment.status === 'refunded') {
+    return 'Refund issued';
+  }
+
+  return 'Payment needs authorization';
 }
 
 function Milestones({ status }: { readonly status: Booking['status'] }) {

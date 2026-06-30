@@ -65,6 +65,7 @@ function Navigation() {
         <Stack.Screen name="condo/prima-wash-days" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="garage/vehicle" options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
         <Stack.Screen name="profile/payment-methods" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="profile/payment-history" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile/notifications" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile/help" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile/privacy" options={{ animation: 'slide_from_right' }} />

@@ -34,6 +34,7 @@ import type {
   ProductEventName,
   PartnerDashboardResponse,
   PartnerAvailabilitySlot,
+  PaymentHistoryItem,
   PaymentIntent,
   PaymentMethodSummary,
   PaymentStatus,
@@ -1641,6 +1642,19 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/v1/payments/history") {
+      try {
+        const actor = requireActor(request);
+        const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
+        assertOwnerAccess(actor, ownerId);
+        sendJson(response, 200, { data: await buildPaymentHistory(options.repositories, ownerId) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/v1/payments") {
       try {
         const actor = requireActor(request);
@@ -2742,6 +2756,41 @@ async function buildPaymentLookup(
   );
 
   return new Map(entries.filter((entry): entry is readonly [string, PaymentIntent] => Boolean(entry)));
+}
+
+async function buildPaymentHistory(
+  repositories: Repositories,
+  ownerId: string,
+): Promise<readonly PaymentHistoryItem[]> {
+  const bookings = await repositories.bookings.list(ownerId);
+  const paymentByBookingId = await buildPaymentLookup(repositories, bookings);
+
+  return bookings
+    .map((booking) => {
+      const payment = paymentByBookingId.get(booking.id);
+
+      if (!payment) {
+        return undefined;
+      }
+
+      return {
+        paymentIntentId: payment.id,
+        bookingId: booking.id,
+        serviceCode: booking.serviceCode,
+        scheduledStartAt: booking.scheduledStartAt,
+        amount: payment.amount,
+        status: payment.status,
+        ...(payment.provider ? { provider: payment.provider } : {}),
+        ...(payment.providerReference ? { providerReference: payment.providerReference } : {}),
+        ...(payment.authorizedAt ? { authorizedAt: payment.authorizedAt } : {}),
+        ...(payment.capturedAt ? { capturedAt: payment.capturedAt } : {}),
+        ...(payment.refundedAt ? { refundedAt: payment.refundedAt } : {}),
+        ...(payment.voidedAt ? { voidedAt: payment.voidedAt } : {}),
+        createdAt: payment.createdAt,
+      };
+    })
+    .filter((item): item is PaymentHistoryItem => Boolean(item))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function buildPrimaWashDayBookingItems(

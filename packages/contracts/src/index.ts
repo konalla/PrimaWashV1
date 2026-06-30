@@ -726,6 +726,22 @@ export interface PaymentMethodSummary {
   readonly isDefault: boolean;
 }
 
+export interface PaymentHistoryItem {
+  readonly paymentIntentId: string;
+  readonly bookingId: string;
+  readonly serviceCode: ServiceCode;
+  readonly scheduledStartAt: string;
+  readonly amount: Money;
+  readonly status: PaymentStatus;
+  readonly provider?: string;
+  readonly providerReference?: string;
+  readonly authorizedAt?: string;
+  readonly capturedAt?: string;
+  readonly refundedAt?: string;
+  readonly voidedAt?: string;
+  readonly createdAt: string;
+}
+
 export interface UpdateBookingStatusRequest {
   readonly status: BookingStatus;
 }

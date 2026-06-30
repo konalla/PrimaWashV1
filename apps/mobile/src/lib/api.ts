@@ -21,6 +21,7 @@ import type {
   CreatePropertyInterestResponse,
   CreateVehicleRequest,
   PaymentIntent,
+  PaymentHistoryItem,
   PaymentMethodSummary,
   PartnerLocation,
   PrimaWashDay,
@@ -153,6 +154,7 @@ export const primaApi = {
     }),
   paymentForBooking: (bookingId: string) =>
     request<PaymentIntent | null>(`/v1/payments?bookingId=${encodeURIComponent(bookingId)}`),
+  paymentHistory: () => request<readonly PaymentHistoryItem[]>('/v1/payments/history'),
   billingSession: () =>
     request<BillingSession>('/v1/billing/session', { method: 'POST' }),
   paymentMethods: () => request<readonly PaymentMethodSummary[]>('/v1/billing/payment-methods'),

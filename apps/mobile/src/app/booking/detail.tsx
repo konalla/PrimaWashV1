@@ -294,18 +294,8 @@ export default function BookingDetailScreen() {
           </Surface>
 
           <Surface>
-            <SectionHeading eyebrow="Payment" title={payment ? `Payment ${payment.status.replaceAll('_', ' ')}` : 'Payment not created'} />
-            <Text style={styles.body}>
-              {payment
-                ? payment.status === 'authorized'
-                  ? 'Payment is authorized. It will be captured only when the service is completed.'
-                  : payment.status === 'captured'
-                    ? 'Payment was captured after service completion.'
-                    : payment.status === 'voided'
-                      ? 'Payment authorization was voided after cancellation.'
-                      : 'Payment authorization still needs attention.'
-                : 'No payment intent exists yet for this booking.'}
-            </Text>
+            <SectionHeading eyebrow="Payment" title={payment ? paymentTitle(payment) : 'Payment not created'} />
+            <Text style={styles.body}>{payment ? paymentBody(payment) : 'No payment intent exists yet for this booking.'}</Text>
             {needsPayment ? (
               <PrimaryButton label="Complete payment authorization" loading={actionLoading} onPress={openCheckout} />
             ) : null}
@@ -441,7 +431,43 @@ function customerStatusLabel(booking: Booking, payment?: PaymentIntent | null) {
     return 'Awaiting confirmation';
   }
 
+  if (payment?.status === 'refunded') {
+    return 'Refunded';
+  }
+
   return booking.status.replaceAll('_', ' ');
+}
+
+function paymentTitle(payment: PaymentIntent) {
+  const labels: Record<PaymentIntent['status'], string> = {
+    requires_authorization: 'Payment needs authorization',
+    authorized: 'Authorized hold',
+    captured: 'Payment charged',
+    voided: 'Authorization released',
+    refunded: 'Payment refunded',
+  };
+
+  return labels[payment.status];
+}
+
+function paymentBody(payment: PaymentIntent) {
+  if (payment.status === 'authorized') {
+    return 'Payment is authorized. It will be captured only when the service is completed.';
+  }
+
+  if (payment.status === 'captured') {
+    return 'Payment was captured after service completion.';
+  }
+
+  if (payment.status === 'voided') {
+    return 'The payment authorization was released after cancellation.';
+  }
+
+  if (payment.status === 'refunded') {
+    return 'Payment has been refunded. The refund will settle through the original payment method.';
+  }
+
+  return 'Payment authorization still needs attention.';
 }
 
 function formatSenderRole(role: CommunicationMessage['senderRole']) {
