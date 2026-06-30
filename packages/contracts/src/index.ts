@@ -758,6 +758,7 @@ export interface CreateBookingRequest {
   readonly availabilitySlotId?: string;
   readonly primaWashDayId?: string;
   readonly holdId?: string;
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode;
   readonly serviceCode: ServiceCode;
 }
 

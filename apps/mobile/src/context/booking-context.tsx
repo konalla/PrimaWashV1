@@ -2,6 +2,7 @@ import type {
   AvailabilitySearchSlot,
   AvailabilitySlot,
   Booking,
+  BookingOnsiteServiceMode,
   BookingHold,
   PartnerLocation,
   PaymentIntent,
@@ -31,6 +32,7 @@ interface BookingDraft {
   readonly vehicle?: Vehicle;
   readonly partner?: PartnerLocation;
   readonly primaWashDay?: PrimaWashDay;
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode;
 }
 
 interface BookingContextValue {
@@ -41,6 +43,7 @@ interface BookingContextValue {
   setSlot(slot: AvailabilitySlot): void;
   setHeldSlot(slot: AvailabilitySearchSlot, hold: BookingHold): void;
   setPrimaWashDay(day: PrimaWashDay): void;
+  setOnsiteServiceMode(mode: BookingOnsiteServiceMode): void;
   setVehicle(vehicle: Vehicle): void;
   setPartner(partner: PartnerLocation): void;
   complete(booking: Booking, payment: PaymentIntent): void;
@@ -72,6 +75,7 @@ export function BookingProvider({ children }: PropsWithChildren) {
       partner: undefined,
       primaWashDay: day,
       hold: undefined,
+      onsiteServiceMode: 'onsite',
       slot: {
         primaWashDayId: day.id,
         partnerLocationId: day.partnerLocationId,
@@ -84,6 +88,9 @@ export function BookingProvider({ children }: PropsWithChildren) {
       },
       ...(current.service && day.serviceCodes.includes(current.service.code) ? {} : { service: undefined }),
     }));
+  }, []);
+  const setOnsiteServiceMode = useCallback((onsiteServiceMode: BookingOnsiteServiceMode) => {
+    setDraft((current) => ({ ...current, onsiteServiceMode }));
   }, []);
   const setVehicle = useCallback((vehicle: Vehicle) => {
     setDraft((current) => ({
@@ -116,12 +123,13 @@ export function BookingProvider({ children }: PropsWithChildren) {
       setSlot,
       setHeldSlot,
       setPrimaWashDay,
+      setOnsiteServiceMode,
       setVehicle,
       setPartner,
       complete,
       reset,
     }),
-    [complete, draft, latestBooking, latestPayment, reset, setHeldSlot, setPartner, setPrimaWashDay, setService, setSlot, setVehicle],
+    [complete, draft, latestBooking, latestPayment, reset, setHeldSlot, setOnsiteServiceMode, setPartner, setPrimaWashDay, setService, setSlot, setVehicle],
   );
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;

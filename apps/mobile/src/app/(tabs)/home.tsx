@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useCallback, useState } from 'react';
-import type { CustomerProfile, PrimaWashDay, Vehicle } from '@prima-wash/contracts';
+import type { BookingOnsiteServiceMode, CustomerProfile, PrimaWashDay, Vehicle } from '@prima-wash/contracts';
 
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
@@ -12,13 +12,18 @@ import { formatAppointment, formatService } from '@/lib/format';
 import { primaApi } from '@/lib/api';
 
 export default function HomeScreen() {
-  const { latestBooking } = useBooking();
+  const { latestBooking, setOnsiteServiceMode } = useBooking();
   const { session } = useAuth();
   const [profileName, setProfileName] = useState(session?.user.displayName ?? 'there');
   const [profile, setProfile] = useState<CustomerProfile>();
   const [primaWashDays, setPrimaWashDays] = useState<readonly PrimaWashDay[]>([]);
   const [vehicle, setVehicle] = useState<Vehicle>();
   const nextPrimaWashDay = primaWashDays[0];
+
+  function openCareMode(mode: BookingOnsiteServiceMode) {
+    setOnsiteServiceMode(mode);
+    router.push('/partners');
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -158,11 +163,28 @@ export default function HomeScreen() {
 
       <SectionHeading eyebrow="Trusted care" title="What would you like to do?" />
       <View style={styles.actionGrid}>
+        {nextPrimaWashDay ? (
+          <Pressable onPress={() => router.push('/condo/prima-wash-days' as never)} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+            <Text style={styles.actionIcon}>Condo</Text>
+            <Text style={styles.actionTitle}>Prima Wash Day</Text>
+            <Text style={styles.actionBody}>Use your condo's approved temporary service window.</Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={() => openCareMode('onsite')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+          <Text style={styles.actionIcon}>Drive</Text>
+          <Text style={styles.actionTitle}>Drive to nearby carer</Text>
+          <Text style={styles.actionBody}>Compare trusted services and live times near you.</Text>
+        </Pressable>
+        <Pressable onPress={() => openCareMode('pickup_return')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+          <Text style={styles.actionIcon}>Pickup</Text>
+          <Text style={styles.actionTitle}>Pickup and return</Text>
+          <Text style={styles.actionBody}>Have a partner collect your car, complete care, and bring it back.</Text>
+        </Pressable>
         {profile?.residentialProfile?.residenceType === 'landed' ? (
-          <Pressable onPress={() => router.push('/partners')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+          <Pressable onPress={() => openCareMode('onsite')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
             <Text style={styles.actionIcon}>Home</Text>
-            <Text style={styles.actionTitle}>Book at my home</Text>
-            <Text style={styles.actionBody}>Use your saved access notes for at-home mobile detailing coverage.</Text>
+            <Text style={styles.actionTitle}>At-home service</Text>
+            <Text style={styles.actionBody}>Use saved access notes when mobile detailing coverage is available.</Text>
           </Pressable>
         ) : null}
         {profile?.residentialProfile?.residenceType === 'public_housing' ? (
@@ -172,11 +194,6 @@ export default function HomeScreen() {
             <Text style={styles.actionBody}>Update block, MSCP, or access notes so Prima Wash can build the demand case.</Text>
           </Pressable>
         ) : null}
-        <Pressable onPress={() => router.push('/partners')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
-          <Text style={styles.actionIcon}>Care</Text>
-          <Text style={styles.actionTitle}>Book vehicle care</Text>
-          <Text style={styles.actionBody}>Compare trusted services and live times.</Text>
-        </Pressable>
         <Pressable onPress={() => router.push('/(tabs)/bookings')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
           <Text style={styles.actionIcon}>Live</Text>
           <Text style={styles.actionTitle}>Track a booking</Text>
@@ -197,18 +214,8 @@ export default function HomeScreen() {
       </Surface>
 
       <PrimaryButton
-        label={
-          nextPrimaWashDay
-            ? 'View service days'
-            : profile?.residentialProfile?.residenceType === 'landed'
-              ? 'Find at-home or nearby care'
-              : profile?.residentialProfile?.residenceType === 'public_housing'
-                ? 'Find nearby care while we build HDB access'
-                : profile?.residentialProfile?.residenceType === 'multi_unit_private'
-                  ? 'Find trusted care nearby for now'
-                  : 'Find trusted care nearby'
-        }
-        onPress={() => (nextPrimaWashDay ? router.push('/condo/prima-wash-days' as never) : router.push('/partners'))}
+        label="Choose care option"
+        onPress={() => openCareMode('onsite')}
       />
     </AppScreen>
   );

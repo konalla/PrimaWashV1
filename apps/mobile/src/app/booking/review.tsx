@@ -19,6 +19,7 @@ export default function ReviewScreen() {
   const [pendingPayment, setPendingPayment] = useState<PaymentIntent>();
   const [error, setError] = useState<string>();
   const locationName = draft.primaWashDay?.propertyName ?? draft.partner?.name;
+  const onsiteServiceMode = draft.primaWashDay ? 'onsite' : draft.onsiteServiceMode ?? 'onsite';
   const canSubmit = Boolean(draft.service && draft.slot && draft.vehicle && (draft.partner || draft.primaWashDay));
 
   async function confirmBooking() {
@@ -45,6 +46,7 @@ export default function ReviewScreen() {
               ? { availabilitySlotId: draft.slot.id }
               : {}),
         serviceCode: draft.service.code,
+        onsiteServiceMode,
       });
       setPendingBooking(booking);
       const existingPayment = pendingPayment ?? await primaApi.paymentForBooking(booking.id);
@@ -87,6 +89,7 @@ export default function ReviewScreen() {
       </Surface>
       <Surface>
         <SummaryRow label="Service" value={draft.service?.name ?? 'Choose a service'} />
+        <SummaryRow label="Care mode" value={formatServiceMode(onsiteServiceMode)} />
         <SummaryRow label="Appointment" value={draft.slot ? formatAppointment(draft.slot.startsAt) : 'Choose a time'} />
         {draft.hold ? <SummaryRow label="Reserved until" value={formatHoldExpiry(draft.hold.expiresAt)} /> : null}
         {draft.primaWashDay ? <SummaryRow label="Service area" value={draft.primaWashDay.approvedServiceArea} /> : null}
@@ -106,6 +109,14 @@ export default function ReviewScreen() {
           <SectionHeading eyebrow="Condo operations" title="Temporary on-site service" />
           <Text style={styles.payment}>
             Prima Wash will coordinate this booking inside the approved condo operating window and service area.
+          </Text>
+        </Surface>
+      ) : null}
+      {onsiteServiceMode === 'pickup_return' ? (
+        <Surface>
+          <SectionHeading eyebrow="Pickup and return" title="Vehicle handover required" />
+          <Text style={styles.payment}>
+            Prima Wash will coordinate pickup, care, and return with the partner. Final handover notes can be confirmed after payment.
           </Text>
         </Surface>
       ) : null}
@@ -161,6 +172,10 @@ function isLegacyAvailabilitySlot(slot: unknown): slot is AvailabilitySlot {
 
 function formatHoldExpiry(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatServiceMode(mode: 'onsite' | 'pickup_return') {
+  return mode === 'pickup_return' ? 'Pickup and return' : 'Drive to carer / on-site';
 }
 
 function formatVehicleName(vehicle: Vehicle) {

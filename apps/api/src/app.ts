@@ -2355,6 +2355,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           ...(availabilitySlotId ? { availabilitySlotId } : {}),
           ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
           ...(input.holdId ? { holdId: input.holdId } : {}),
+          ...(input.onsiteServiceMode ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
         });
 
         if (consumedHold) {
@@ -2373,6 +2374,8 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             partnerLocationId: booking.partnerLocationId,
             primaWashDayId: booking.primaWashDayId,
             serviceCode: booking.serviceCode,
+            onsiteServiceMode: booking.onsiteServiceMode,
+            valetRequested: booking.valetRequested,
             acceptedPrice: booking.acceptedPrice,
           },
         });
@@ -2386,6 +2389,8 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             vehicleId: booking.vehicleId,
             primaWashDayId: booking.primaWashDayId,
             serviceCode: booking.serviceCode,
+            onsiteServiceMode: booking.onsiteServiceMode,
+            valetRequested: booking.valetRequested,
             acceptedPrice: booking.acceptedPrice,
           },
         });

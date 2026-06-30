@@ -85,6 +85,7 @@ export class InMemoryBookingRepository implements BookingRepository {
         vehicleId: input.vehicleId,
         partnerLocationId: day.partnerLocationId,
         primaWashDayId: day.id,
+        onsiteServiceMode: input.onsiteServiceMode,
         serviceCode: input.serviceCode,
         scheduledStartAt: day.startsAt,
         durationMinutes: service.durationMinutes,
@@ -131,6 +132,7 @@ export class InMemoryBookingRepository implements BookingRepository {
       ownerId: input.ownerId,
       vehicleId: input.vehicleId,
       partnerLocationId: slot.partnerLocationId,
+      onsiteServiceMode: input.onsiteServiceMode,
       serviceCode: input.serviceCode,
       scheduledStartAt: slot.startsAt,
       durationMinutes: service.durationMinutes,
@@ -264,6 +266,7 @@ export class PostgresBookingRepository implements BookingRepository {
           vehicleId: input.vehicleId,
           partnerLocationId: day.partner_location_id,
           primaWashDayId: day.id,
+          onsiteServiceMode: input.onsiteServiceMode,
           serviceCode: input.serviceCode,
           scheduledStartAt: new Date(day.starts_at).toISOString(),
           durationMinutes: day.duration_minutes,
@@ -277,9 +280,9 @@ export class PostgresBookingRepository implements BookingRepository {
           `insert into bookings (
             id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
             scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-            accepted_price_currency, created_at
+            accepted_price_currency, onsite_service_mode, valet_requested, created_at
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
           returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                     scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                     accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
@@ -296,6 +299,8 @@ export class PostgresBookingRepository implements BookingRepository {
             booking.scheduledEndAt,
             booking.acceptedPrice.amountMinor,
             booking.acceptedPrice.currency,
+            booking.onsiteServiceMode ?? null,
+            booking.valetRequested,
             booking.createdAt,
           ],
         );
@@ -369,6 +374,7 @@ export class PostgresBookingRepository implements BookingRepository {
         ownerId: input.ownerId,
         vehicleId: input.vehicleId,
         partnerLocationId: slot.partner_location_id,
+        onsiteServiceMode: input.onsiteServiceMode,
         serviceCode: input.serviceCode,
         scheduledStartAt: new Date(slot.starts_at).toISOString(),
         durationMinutes: slot.duration_minutes,
@@ -382,9 +388,9 @@ export class PostgresBookingRepository implements BookingRepository {
         `insert into bookings (
           id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
           scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
-          accepted_price_currency, created_at
+          accepted_price_currency, onsite_service_mode, valet_requested, created_at
         )
-        values ($1, $2, $3, $4, null, $5, $6, $7, $8, $9, $10, $11)
+        values ($1, $2, $3, $4, null, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
@@ -400,6 +406,8 @@ export class PostgresBookingRepository implements BookingRepository {
           booking.scheduledEndAt,
           booking.acceptedPrice.amountMinor,
           booking.acceptedPrice.currency,
+          booking.onsiteServiceMode ?? null,
+          booking.valetRequested,
           booking.createdAt,
         ],
       );
@@ -497,6 +505,10 @@ export function validateCreateBooking(input: Partial<CreateBookingRequest>): str
     errors.push("primaWashDayId must be valid");
   }
 
+  if (input.onsiteServiceMode !== undefined && !["onsite", "pickup_return"].includes(input.onsiteServiceMode)) {
+    errors.push("onsiteServiceMode must be onsite or pickup_return");
+  }
+
   if (!input.serviceCode) {
     errors.push("serviceCode is required");
   }
@@ -571,6 +583,7 @@ interface BuildBookingInput {
   readonly vehicleId: string;
   readonly partnerLocationId: string;
   readonly primaWashDayId?: string;
+  readonly onsiteServiceMode?: BookingOnsiteServiceMode | undefined;
   readonly serviceCode: ServiceCode;
   readonly scheduledStartAt: string;
   readonly durationMinutes: number;
@@ -632,7 +645,8 @@ function buildBooking(input: BuildBookingInput): Booking {
     ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
     serviceCode: input.serviceCode,
     status: "pending_payment",
-    valetRequested: false,
+    ...(input.onsiteServiceMode ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
+    valetRequested: input.onsiteServiceMode === "pickup_return",
     scheduledStartAt: input.scheduledStartAt,
     scheduledEndAt,
     acceptedPrice: input.acceptedPrice,

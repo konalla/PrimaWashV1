@@ -340,6 +340,25 @@ describe("Prima Wash API", () => {
     assert.deepEqual(paymentProviderOperations.slice(createOperationCount), ["create"]);
   });
 
+  it("persists customer-selected pickup and return mode when creating a booking", async () => {
+    const vehicle = await createVehicle("PICKUP1");
+    const response = await fetch(`${baseUrl}/v1/bookings`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({
+        vehicleId: vehicle.id,
+        availabilitySlotId: "slot_demo_1100",
+        serviceCode: "wash_basic",
+        onsiteServiceMode: "pickup_return",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<Booking>;
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.onsiteServiceMode, "pickup_return");
+    assert.equal(payload.data.valetRequested, true);
+  });
+
   it("lists condos and registers interest for an existing condo", async () => {
     const session = await createCustomerSession("condo-interest@example.com");
     const headers = {
