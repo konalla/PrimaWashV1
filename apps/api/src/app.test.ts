@@ -1,5 +1,6 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
@@ -32,6 +33,7 @@ import type {
 } from "@prima-wash/contracts";
 import { createApiServer } from "./app.js";
 import { createRepositories } from "./modules/repositories.js";
+import type { Repositories } from "./modules/repositories.js";
 import type { PaymentProvider, PaymentProviderOperation, PaymentProviderResult } from "./modules/payments/provider.js";
 
 interface ApiResponse<T> {
@@ -87,16 +89,20 @@ describe("Prima Wash API", () => {
   let server: Server;
   let baseUrl: string;
   let previousShowDevAuthCode: string | undefined;
+  let repositories: Repositories;
   const paymentProviderOperations: PaymentProviderOperation[] = [];
+  const stripeWebhookSecret = "whsec_test_secret";
 
   before(async () => {
     previousShowDevAuthCode = process.env.SHOW_DEV_AUTH_CODE;
     process.env.SHOW_DEV_AUTH_CODE = "true";
+    repositories = createRepositories();
 
     server = createApiServer({
-      repositories: createRepositories(),
+      repositories,
       paymentProvider: createRecordingPaymentProvider(paymentProviderOperations),
       enableRequestLogging: false,
+      stripeWebhookSecret,
     });
 
     await new Promise<void>((resolve) => {
@@ -1559,6 +1565,76 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "payment_authorization_required");
   });
 
+  it("reconciles Stripe payment authorization webhooks idempotently", async () => {
+    const vehicle = await createVehicle("PAYHOOK1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const providerReference = `pi_${booking.id.slice(-12)}`;
+    const payment = await repositories.payments.createForBooking(booking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${booking.id.slice(-8)}`,
+    });
+    const event = {
+      id: `evt_${booking.id.slice(-12)}`,
+      type: "payment_intent.amount_capturable_updated",
+      data: {
+        object: {
+          object: "payment_intent",
+          id: providerReference,
+          status: "requires_capture",
+        },
+      },
+    };
+
+    const response = await postStripeWebhook(event);
+    const payload = (await response.json()) as ApiResponse<{
+      readonly outcome: string;
+      readonly paymentIntentId: string;
+      readonly paymentStatus: string;
+    }>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.outcome, "reconciled");
+    assert.equal(payload.data.paymentIntentId, payment.id);
+    assert.equal(payload.data.paymentStatus, "authorized");
+
+    const paymentResponse = await fetch(`${baseUrl}/v1/payments?bookingId=${booking.id}`, {
+      headers: customerHeaders,
+    });
+    const paymentPayload = (await paymentResponse.json()) as ApiResponse<PaymentIntent>;
+    const bookingResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}`, {
+      headers: customerHeaders,
+    });
+    const bookingPayload = (await bookingResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(paymentPayload.data.status, "authorized");
+    assert.equal(bookingPayload.data.status, "confirmed");
+
+    const duplicateResponse = await postStripeWebhook(event);
+    const duplicatePayload = (await duplicateResponse.json()) as ApiResponse<{ readonly outcome: string }>;
+
+    assert.equal(duplicateResponse.status, 200);
+    assert.equal(duplicatePayload.data.outcome, "duplicate");
+  });
+
+  it("rejects Stripe webhooks with an invalid signature", async () => {
+    const response = await fetch(`${baseUrl}/v1/webhooks/stripe`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": "t=123,v1=not-a-valid-signature",
+      },
+      body: JSON.stringify({ id: "evt_invalid", type: "payment_intent.succeeded", data: { object: {} } }),
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "stripe_signature_invalid");
+  });
+
   it("creates and authorizes customer-scoped payment intents", async () => {
     const vehicle = await createVehicle("PAYAUTH1");
     const booking = await createBooking(vehicle.id, "wash_premium");
@@ -1757,6 +1833,21 @@ describe("Prima Wash API", () => {
   async function authorizeBookingPayment(bookingId: string): Promise<PaymentIntent> {
     const payment = await createPaymentIntent(bookingId);
     return authorizePayment(payment.id);
+  }
+
+  async function postStripeWebhook(event: unknown): Promise<Response> {
+    const body = JSON.stringify(event);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHmac("sha256", stripeWebhookSecret).update(`${timestamp}.${body}`).digest("hex");
+
+    return fetch(`${baseUrl}/v1/webhooks/stripe`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "stripe-signature": `t=${timestamp},v1=${signature}`,
+      },
+      body,
+    });
   }
 
   async function updateBookingStatus(bookingId: string, status: BookingStatus): Promise<Booking> {

@@ -17,6 +17,7 @@ const server = createApiServer({
   paymentProvider,
   publicDirectory,
   authSessionSecret: config.authSessionSecret,
+  ...(config.stripeWebhookSecret ? { stripeWebhookSecret: config.stripeWebhookSecret } : {}),
 });
 
 server.listen(config.port, "0.0.0.0", () => {

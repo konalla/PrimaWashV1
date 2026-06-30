@@ -4,6 +4,7 @@ export interface ApiConfig {
   readonly authSessionSecret: string;
   readonly paymentProvider: string;
   readonly stripeSecretKey?: string;
+  readonly stripeWebhookSecret?: string;
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -23,6 +24,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     authSessionSecret,
     paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
+    ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
     ...(environment.DATABASE_URL ? { databaseUrl: environment.DATABASE_URL } : {}),
   };
 }

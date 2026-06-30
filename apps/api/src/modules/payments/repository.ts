@@ -10,6 +10,8 @@ export interface PaymentRepository {
   captureByBookingId(bookingId: string): Promise<PaymentIntent>;
   refund(paymentIntentId: string): Promise<PaymentIntent>;
   voidByBookingId(bookingId: string): Promise<PaymentIntent | undefined>;
+  getByProviderReference(provider: string, providerReference: string): Promise<PaymentIntent | undefined>;
+  reconcileStatus(paymentIntentId: string, status: PaymentStatus): Promise<PaymentIntent>;
 }
 
 export class InMemoryPaymentRepository implements PaymentRepository {
@@ -81,6 +83,28 @@ export class InMemoryPaymentRepository implements PaymentRepository {
     const voided = transitionPayment(payment, "voided");
     this.#payments.set(payment.id, voided);
     return voided;
+  }
+
+  async getByProviderReference(provider: string, providerReference: string): Promise<PaymentIntent | undefined> {
+    return Array.from(this.#payments.values()).find(
+      (payment) => payment.provider === provider && payment.providerReference === providerReference,
+    );
+  }
+
+  async reconcileStatus(paymentIntentId: string, status: PaymentStatus): Promise<PaymentIntent> {
+    const payment = this.#payments.get(paymentIntentId);
+
+    if (!payment) {
+      throw new Error("payment_intent_not_found");
+    }
+
+    if (payment.status === status) {
+      return payment;
+    }
+
+    const reconciled = transitionPayment(payment, status);
+    this.#payments.set(payment.id, reconciled);
+    return reconciled;
   }
 }
 
@@ -172,6 +196,33 @@ export class PostgresPaymentRepository implements PaymentRepository {
     }
 
     return this.transition(payment.id, "voided");
+  }
+
+  async getByProviderReference(provider: string, providerReference: string): Promise<PaymentIntent | undefined> {
+    const result = await this.pool.query<PaymentIntentRow>(
+      `select id, booking_id, owner_id, amount_minor, currency, status,
+              provider, provider_reference, client_secret,
+              authorized_at, captured_at, refunded_at, voided_at, created_at
+       from payment_intents
+       where provider = $1 and provider_reference = $2`,
+      [provider, providerReference],
+    );
+
+    return result.rows[0] ? mapPaymentIntentRow(result.rows[0]) : undefined;
+  }
+
+  async reconcileStatus(paymentIntentId: string, status: PaymentStatus): Promise<PaymentIntent> {
+    const payment = await this.get(paymentIntentId);
+
+    if (!payment) {
+      throw new Error("payment_intent_not_found");
+    }
+
+    if (payment.status === status) {
+      return payment;
+    }
+
+    return this.transition(paymentIntentId, status);
   }
 
   private async transition(paymentIntentId: string, status: PaymentStatus): Promise<PaymentIntent> {

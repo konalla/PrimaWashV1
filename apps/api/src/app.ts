@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import type {
   AvailabilitySearchResponse,
@@ -49,7 +50,7 @@ import type {
   UpdateSchedulingConfigRequest,
 } from "@prima-wash/contracts";
 import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, assertPropertyManagerAccess, requireActor } from "./http/auth.js";
-import { readJsonBody } from "./http/body.js";
+import { readJsonBody, readRawBody } from "./http/body.js";
 import { attachRequestLogging, type RequestContext } from "./http/request-log.js";
 import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
 import { findServiceOffering, serviceCatalog } from "./modules/availability/catalog.js";
@@ -99,6 +100,7 @@ export interface CreateApiServerOptions {
   readonly publicDirectory?: string;
   readonly enableRequestLogging?: boolean;
   readonly authSessionSecret?: string;
+  readonly stripeWebhookSecret?: string;
 }
 
 export function createApiServer(options: CreateApiServerOptions): Server {
@@ -139,6 +141,35 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         timestamp: new Date().toISOString(),
       };
       sendJson(response, 200, payload);
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/webhooks/stripe") {
+      try {
+        if (!options.stripeWebhookSecret) {
+          sendError(response, 503, "stripe_webhook_not_configured", "Stripe webhook secret is not configured");
+          return;
+        }
+
+        const rawBody = await readRawBody(request);
+        const event = verifyStripeWebhookEvent(
+          rawBody,
+          getHeaderValue(request.headers["stripe-signature"]),
+          options.stripeWebhookSecret,
+        );
+        const result = await reconcileStripeWebhookEvent(options.repositories, event, requestContext.requestId);
+        sendJson(response, 200, { data: result });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "stripe_webhook_failed";
+
+        if (message === "stripe_signature_missing" || message === "stripe_signature_invalid") {
+          sendError(response, 400, message, "Stripe webhook signature is invalid");
+          return;
+        }
+
+        sendError(response, 400, "stripe_webhook_failed", "Stripe webhook could not be processed", message);
+      }
+
       return;
     }
 
@@ -3123,6 +3154,299 @@ function getRequestId(request: Parameters<typeof attachRequestLogging>[0]): stri
   }
 
   return crypto.randomUUID();
+}
+
+interface StripeWebhookEvent {
+  readonly id: string;
+  readonly type: string;
+  readonly data: {
+    readonly object: StripeWebhookObject;
+  };
+}
+
+type StripeWebhookObject = StripeWebhookPaymentIntent | StripeWebhookRefund | StripeWebhookCharge;
+
+interface StripeWebhookPaymentIntent {
+  readonly object: "payment_intent";
+  readonly id: string;
+  readonly status?: string;
+}
+
+interface StripeWebhookRefund {
+  readonly object: "refund";
+  readonly id: string;
+  readonly payment_intent?: string;
+}
+
+interface StripeWebhookCharge {
+  readonly object: "charge";
+  readonly id: string;
+  readonly payment_intent?: string;
+  readonly refunded?: boolean;
+}
+
+interface StripeWebhookAction {
+  readonly providerReference: string;
+  readonly targetStatus: PaymentStatus;
+  readonly reason: string;
+}
+
+interface StripeWebhookReconciliationResult {
+  readonly received: true;
+  readonly eventId: string;
+  readonly eventType: string;
+  readonly outcome: "reconciled" | "duplicate" | "ignored";
+  readonly paymentIntentId?: string;
+  readonly paymentStatus?: PaymentStatus;
+  readonly reason?: string;
+}
+
+function verifyStripeWebhookEvent(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+  webhookSecret: string,
+): StripeWebhookEvent {
+  if (!signatureHeader) {
+    throw new Error("stripe_signature_missing");
+  }
+
+  const signatureParts = Object.fromEntries(
+    signatureHeader.split(",").map((part) => {
+      const [key, ...valueParts] = part.split("=");
+      return [key, valueParts.join("=")];
+    }),
+  );
+  const timestamp = signatureParts.t;
+  const signature = signatureParts.v1;
+
+  if (!timestamp || !signature) {
+    throw new Error("stripe_signature_invalid");
+  }
+
+  const timestampSeconds = Number.parseInt(timestamp, 10);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  if (!Number.isFinite(timestampSeconds) || Math.abs(nowSeconds - timestampSeconds) > 300) {
+    throw new Error("stripe_signature_invalid");
+  }
+
+  const expectedSignature = createHmac("sha256", webhookSecret)
+    .update(`${timestamp}.${rawBody.toString("utf8")}`)
+    .digest("hex");
+
+  if (!safeCompareHex(signature, expectedSignature)) {
+    throw new Error("stripe_signature_invalid");
+  }
+
+  return JSON.parse(rawBody.toString("utf8")) as StripeWebhookEvent;
+}
+
+function safeCompareHex(left: string, right: string): boolean {
+  try {
+    const leftBuffer = Buffer.from(left, "hex");
+    const rightBuffer = Buffer.from(right, "hex");
+    return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+  } catch {
+    return false;
+  }
+}
+
+async function reconcileStripeWebhookEvent(
+  repositories: Repositories,
+  event: StripeWebhookEvent,
+  requestId: string,
+): Promise<StripeWebhookReconciliationResult> {
+  const action = getStripeWebhookAction(event);
+
+  if (!action) {
+    await recordIgnoredStripeWebhook(repositories, event, requestId, "event_not_actionable");
+    return {
+      received: true,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: "ignored",
+      reason: "event_not_actionable",
+    };
+  }
+
+  const payment = await repositories.payments.getByProviderReference("stripe", action.providerReference);
+
+  if (!payment) {
+    await recordIgnoredStripeWebhook(repositories, event, requestId, "payment_intent_not_found", action);
+    return {
+      received: true,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: "ignored",
+      reason: "payment_intent_not_found",
+    };
+  }
+
+  if (payment.status === action.targetStatus) {
+    await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "duplicate");
+    return {
+      received: true,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: "duplicate",
+      paymentIntentId: payment.id,
+      paymentStatus: payment.status,
+    };
+  }
+
+  try {
+    assertPaymentTransition(payment.status, action.targetStatus);
+  } catch {
+    await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "ignored", "invalid_payment_status_transition");
+    return {
+      received: true,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: "ignored",
+      paymentIntentId: payment.id,
+      paymentStatus: payment.status,
+      reason: "invalid_payment_status_transition",
+    };
+  }
+
+  const reconciledPayment = await repositories.payments.reconcileStatus(payment.id, action.targetStatus);
+
+  await recordStripeWebhookAudit(repositories, event, requestId, reconciledPayment, action, "reconciled");
+
+  if (action.targetStatus === "authorized") {
+    const booking = await repositories.bookings.get(reconciledPayment.bookingId);
+
+    if (booking && canTransitionBookingStatus(booking.status, "confirmed")) {
+      const updatedBooking = await repositories.bookings.updateStatus(booking.id, "confirmed");
+      await repositories.audit.record({
+        action: "booking.status_changed",
+        resourceType: "booking",
+        resourceId: booking.id,
+        requestId,
+        metadata: {
+          fromStatus: booking.status,
+          toStatus: updatedBooking.status,
+          partnerLocationId: updatedBooking.partnerLocationId,
+          source: "stripe_webhook",
+          stripeEventId: event.id,
+        },
+      });
+    }
+  }
+
+  return {
+    received: true,
+    eventId: event.id,
+    eventType: event.type,
+    outcome: "reconciled",
+    paymentIntentId: reconciledPayment.id,
+    paymentStatus: reconciledPayment.status,
+  };
+}
+
+function getStripeWebhookAction(event: StripeWebhookEvent): StripeWebhookAction | undefined {
+  const object = event.data.object;
+
+  if (event.type === "payment_intent.amount_capturable_updated" && object.object === "payment_intent") {
+    return {
+      providerReference: object.id,
+      targetStatus: "authorized",
+      reason: object.status ?? "amount_capturable_updated",
+    };
+  }
+
+  if (event.type === "payment_intent.succeeded" && object.object === "payment_intent") {
+    return {
+      providerReference: object.id,
+      targetStatus: "captured",
+      reason: object.status ?? "payment_intent_succeeded",
+    };
+  }
+
+  if (event.type === "payment_intent.canceled" && object.object === "payment_intent") {
+    return {
+      providerReference: object.id,
+      targetStatus: "voided",
+      reason: object.status ?? "payment_intent_canceled",
+    };
+  }
+
+  if (event.type === "refund.created" && object.object === "refund" && object.payment_intent) {
+    return {
+      providerReference: object.payment_intent,
+      targetStatus: "refunded",
+      reason: "refund_created",
+    };
+  }
+
+  if (event.type === "charge.refunded" && object.object === "charge" && object.payment_intent && object.refunded) {
+    return {
+      providerReference: object.payment_intent,
+      targetStatus: "refunded",
+      reason: "charge_refunded",
+    };
+  }
+
+  return undefined;
+}
+
+async function recordStripeWebhookAudit(
+  repositories: Repositories,
+  event: StripeWebhookEvent,
+  requestId: string,
+  payment: PaymentIntent,
+  action: StripeWebhookAction,
+  outcome: StripeWebhookReconciliationResult["outcome"],
+  reason?: string,
+): Promise<void> {
+  await repositories.audit.record({
+    action: "payment.stripe_webhook_reconciled",
+    resourceType: "payment_intent",
+    resourceId: payment.id,
+    requestId,
+    metadata: {
+      stripeEventId: event.id,
+      stripeEventType: event.type,
+      providerReference: action.providerReference,
+      targetStatus: action.targetStatus,
+      status: payment.status,
+      outcome,
+      reason: reason ?? action.reason,
+    },
+  });
+}
+
+async function recordIgnoredStripeWebhook(
+  repositories: Repositories,
+  event: StripeWebhookEvent,
+  requestId: string,
+  reason: string,
+  action?: StripeWebhookAction,
+): Promise<void> {
+  await repositories.audit.record({
+    action: "payment.stripe_webhook_ignored",
+    resourceType: "stripe_event",
+    resourceId: event.id,
+    requestId,
+    metadata: {
+      stripeEventType: event.type,
+      reason,
+      ...(action
+        ? {
+            providerReference: action.providerReference,
+            targetStatus: action.targetStatus,
+          }
+        : {}),
+    },
+  });
+}
+
+function getHeaderValue(header: string | readonly string[] | undefined): string | undefined {
+  if (typeof header === "string") {
+    return header;
+  }
+
+  return header?.[0];
 }
 
 async function readOptionalJsonBody<T>(request: Parameters<typeof readJsonBody>[0]): Promise<Partial<T>> {
