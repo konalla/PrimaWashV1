@@ -688,6 +688,9 @@ export interface PaymentIntent {
   readonly ownerId: string;
   readonly amount: Money;
   readonly status: PaymentStatus;
+  readonly provider?: string;
+  readonly providerReference?: string;
+  readonly clientSecret?: string;
   readonly authorizedAt?: string;
   readonly capturedAt?: string;
   readonly refundedAt?: string;

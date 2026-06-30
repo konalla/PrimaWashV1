@@ -51,6 +51,7 @@ function createRecordingPaymentProvider(operations: PaymentProviderOperation[]):
   }
 
   return {
+    createIntent: () => record("create"),
     authorize: () => record("authorize"),
     capture: () => record("capture"),
     refund: () => record("refund"),
@@ -1562,6 +1563,7 @@ describe("Prima Wash API", () => {
     const vehicle = await createVehicle("PAYAUTH1");
     const booking = await createBooking(vehicle.id, "wash_premium");
 
+    const createOperationCount = paymentProviderOperations.length;
     const payment = await createPaymentIntent(booking.id);
     const operationCount = paymentProviderOperations.length;
     const authorizedPayment = await authorizePayment(payment.id);
@@ -1569,7 +1571,10 @@ describe("Prima Wash API", () => {
     assert.equal(payment.status, "requires_authorization");
     assert.equal(payment.bookingId, booking.id);
     assert.equal(payment.amount.amountMinor, booking.acceptedPrice.amountMinor);
+    assert.equal(payment.provider, "recording");
+    assert.equal(payment.providerReference, `recording_create_${createOperationCount + 1}`);
     assert.equal(authorizedPayment.status, "authorized");
+    assert.deepEqual(paymentProviderOperations.slice(createOperationCount, operationCount), ["create"]);
     assert.deepEqual(paymentProviderOperations.slice(operationCount), ["authorize"]);
 
     const bookingResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}`, {

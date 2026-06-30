@@ -1588,7 +1588,9 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           assertPartnerOrInternal(actor);
         }
 
-        const payment = await options.repositories.payments.createForBooking(booking);
+        const existingPayment = await options.repositories.payments.getByBookingId(booking.id);
+        const providerResult = existingPayment ? undefined : await paymentProvider.createIntent(booking);
+        const payment = existingPayment ?? await options.repositories.payments.createForBooking(booking, providerResult);
 
         await options.repositories.audit.record({
           actor,
@@ -1601,6 +1603,15 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             ownerId: payment.ownerId,
             amount: payment.amount,
             status: payment.status,
+            ...(providerResult
+              ? {
+                  paymentProvider: providerResult.provider,
+                  providerOperation: providerResult.operation,
+                  providerReference: providerResult.providerReference,
+                  providerStatus: providerResult.status,
+                  providerProcessedAt: providerResult.processedAt,
+                }
+              : {}),
           },
         });
 

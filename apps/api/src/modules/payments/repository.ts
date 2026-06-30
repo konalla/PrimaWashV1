@@ -1,10 +1,11 @@
 import type { Booking, CreatePaymentIntentRequest, PaymentIntent, PaymentStatus } from "@prima-wash/contracts";
 import type { DatabasePool } from "../../db/pool.js";
+import type { PaymentProviderResult } from "./provider.js";
 
 export interface PaymentRepository {
   get(paymentIntentId: string): Promise<PaymentIntent | undefined>;
   getByBookingId(bookingId: string): Promise<PaymentIntent | undefined>;
-  createForBooking(booking: Booking): Promise<PaymentIntent>;
+  createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent>;
   authorize(paymentIntentId: string): Promise<PaymentIntent>;
   captureByBookingId(bookingId: string): Promise<PaymentIntent>;
   refund(paymentIntentId: string): Promise<PaymentIntent>;
@@ -22,14 +23,14 @@ export class InMemoryPaymentRepository implements PaymentRepository {
     return Array.from(this.#payments.values()).find((payment) => payment.bookingId === bookingId);
   }
 
-  async createForBooking(booking: Booking): Promise<PaymentIntent> {
+  async createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent> {
     const existing = await this.getByBookingId(booking.id);
 
     if (existing) {
       return existing;
     }
 
-    const payment = buildPaymentIntent(booking);
+    const payment = buildPaymentIntent(booking, providerResult);
     this.#payments.set(payment.id, payment);
     return payment;
   }
@@ -89,6 +90,7 @@ export class PostgresPaymentRepository implements PaymentRepository {
   async get(paymentIntentId: string): Promise<PaymentIntent | undefined> {
     const result = await this.pool.query<PaymentIntentRow>(
       `select id, booking_id, owner_id, amount_minor, currency, status,
+              provider, provider_reference, client_secret,
               authorized_at, captured_at, refunded_at, voided_at, created_at
        from payment_intents
        where id = $1`,
@@ -101,6 +103,7 @@ export class PostgresPaymentRepository implements PaymentRepository {
   async getByBookingId(bookingId: string): Promise<PaymentIntent | undefined> {
     const result = await this.pool.query<PaymentIntentRow>(
       `select id, booking_id, owner_id, amount_minor, currency, status,
+              provider, provider_reference, client_secret,
               authorized_at, captured_at, refunded_at, voided_at, created_at
        from payment_intents
        where booking_id = $1`,
@@ -110,15 +113,15 @@ export class PostgresPaymentRepository implements PaymentRepository {
     return result.rows[0] ? mapPaymentIntentRow(result.rows[0]) : undefined;
   }
 
-  async createForBooking(booking: Booking): Promise<PaymentIntent> {
-    const payment = buildPaymentIntent(booking);
+  async createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent> {
+    const payment = buildPaymentIntent(booking, providerResult);
     const result = await this.pool.query<PaymentIntentRow>(
       `insert into payment_intents (
-        id, booking_id, owner_id, amount_minor, currency, status, created_at
+        id, booking_id, owner_id, amount_minor, currency, status, provider, provider_reference, client_secret, created_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       on conflict (booking_id) do update set booking_id = excluded.booking_id
-      returning id, booking_id, owner_id, amount_minor, currency, status,
+      returning id, booking_id, owner_id, amount_minor, currency, status, provider, provider_reference, client_secret,
                 authorized_at, captured_at, refunded_at, voided_at, created_at`,
       [
         payment.id,
@@ -127,6 +130,9 @@ export class PostgresPaymentRepository implements PaymentRepository {
         payment.amount.amountMinor,
         payment.amount.currency,
         payment.status,
+        payment.provider ?? null,
+        payment.providerReference ?? null,
+        payment.clientSecret ?? null,
         payment.createdAt,
       ],
     );
@@ -193,7 +199,7 @@ export class PostgresPaymentRepository implements PaymentRepository {
       `update payment_intents
        set status = $2, ${timestampColumn} = coalesce(${timestampColumn}, $3)
        where id = $1
-       returning id, booking_id, owner_id, amount_minor, currency, status,
+       returning id, booking_id, owner_id, amount_minor, currency, status, provider, provider_reference, client_secret,
                  authorized_at, captured_at, refunded_at, voided_at, created_at`,
       [paymentIntentId, status, new Date().toISOString()],
     );
@@ -243,6 +249,9 @@ interface PaymentIntentRow {
   readonly amount_minor: number;
   readonly currency: string;
   readonly status: PaymentStatus;
+  readonly provider: string | null;
+  readonly provider_reference: string | null;
+  readonly client_secret: string | null;
   readonly authorized_at: Date | string | null;
   readonly captured_at: Date | string | null;
   readonly refunded_at: Date | string | null;
@@ -250,13 +259,16 @@ interface PaymentIntentRow {
   readonly created_at: Date | string;
 }
 
-function buildPaymentIntent(booking: Booking): PaymentIntent {
+function buildPaymentIntent(booking: Booking, providerResult?: PaymentProviderResult): PaymentIntent {
   return {
     id: `pay_${crypto.randomUUID()}`,
     bookingId: booking.id,
     ownerId: booking.ownerId,
     amount: booking.acceptedPrice,
     status: "requires_authorization",
+    ...(providerResult ? { provider: providerResult.provider } : {}),
+    ...(providerResult ? { providerReference: providerResult.providerReference } : {}),
+    ...(providerResult?.clientSecret ? { clientSecret: providerResult.clientSecret } : {}),
     createdAt: new Date().toISOString(),
   };
 }
@@ -285,6 +297,9 @@ function mapPaymentIntentRow(row: PaymentIntentRow): PaymentIntent {
       currency: row.currency,
     },
     status: row.status,
+    ...(row.provider ? { provider: row.provider } : {}),
+    ...(row.provider_reference ? { providerReference: row.provider_reference } : {}),
+    ...(row.client_secret ? { clientSecret: row.client_secret } : {}),
     ...(row.authorized_at ? { authorizedAt: new Date(row.authorized_at).toISOString() } : {}),
     ...(row.captured_at ? { capturedAt: new Date(row.captured_at).toISOString() } : {}),
     ...(row.refunded_at ? { refundedAt: new Date(row.refunded_at).toISOString() } : {}),

@@ -7,7 +7,9 @@ import { createRepositories } from "./modules/repositories.js";
 
 const config = loadConfig();
 const repositories = createRepositories(config.databaseUrl);
-const paymentProvider = createPaymentProvider(config.paymentProvider);
+const paymentProvider = createPaymentProvider(config.paymentProvider, {
+  ...(config.stripeSecretKey ? { stripeSecretKey: config.stripeSecretKey } : {}),
+});
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(moduleDirectory, "../public");
 const server = createApiServer({

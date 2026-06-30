@@ -3,6 +3,7 @@ export interface ApiConfig {
   readonly databaseUrl?: string;
   readonly authSessionSecret: string;
   readonly paymentProvider: string;
+  readonly stripeSecretKey?: string;
 }
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -21,6 +22,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     authSessionSecret,
     paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
+    ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.DATABASE_URL ? { databaseUrl: environment.DATABASE_URL } : {}),
   };
 }
