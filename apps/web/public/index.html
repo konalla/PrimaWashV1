@@ -673,10 +673,28 @@
         font-weight: 800;
       }
 
+      .filter-count {
+        display: inline-grid;
+        place-items: center;
+        min-width: 22px;
+        height: 22px;
+        margin-left: 6px;
+        border-radius: 99px;
+        background: #f4f1eb;
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
       .filter-chip[aria-pressed="true"] {
         border-color: rgba(11, 79, 90, 0.34);
         background: #e7efed;
         color: var(--ink);
+      }
+
+      .filter-chip[aria-pressed="true"] .filter-count {
+        background: var(--blue);
+        color: #fff;
       }
 
       .location-copy {
@@ -1639,10 +1657,10 @@
             <span class="sync-label">Sorted by urgency</span>
           </div>
           <div class="filter-bar" aria-label="Filter bookings">
-            <button class="filter-chip" type="button" data-queue-filter="attention" aria-pressed="true">Needs attention</button>
-            <button class="filter-chip" type="button" data-queue-filter="upcoming" aria-pressed="false">Upcoming</button>
-            <button class="filter-chip" type="button" data-queue-filter="active" aria-pressed="false">In service</button>
-            <button class="filter-chip" type="button" data-queue-filter="all" aria-pressed="false">All</button>
+            <button class="filter-chip" type="button" data-queue-filter="attention" aria-pressed="false"><span>Needs attention</span><span class="filter-count" data-queue-count="attention">0</span></button>
+            <button class="filter-chip" type="button" data-queue-filter="upcoming" aria-pressed="true"><span>Upcoming</span><span class="filter-count" data-queue-count="upcoming">0</span></button>
+            <button class="filter-chip" type="button" data-queue-filter="active" aria-pressed="false"><span>In service</span><span class="filter-count" data-queue-count="active">0</span></button>
+            <button class="filter-chip" type="button" data-queue-filter="all" aria-pressed="false"><span>All</span><span class="filter-count" data-queue-count="all">0</span></button>
           </div>
           <div class="cluster" id="queue"></div>
         </div>
@@ -1936,7 +1954,7 @@
       let primaWashDaysCache = [];
       let primaWashDayBookingsCache = [];
       let selectedPrimaWashDayQueueId = null;
-      let activeQueueFilter = "attention";
+      let activeQueueFilter = "upcoming";
       let selectedBookingId = null;
       let communicationDialogHeaders = null;
       let capacityTemplates = [];
@@ -2513,6 +2531,7 @@
           <span><strong>${mavo.monthlyActiveVehicleOwners}</strong> monthly active vehicle owners</span>
         `;
 
+        syncQueueFilterControls(data.queue);
         const filteredQueue = filterQueue(data.queue, activeQueueFilter);
 
         if (!selectedPrimaWashDayQueueId) {
@@ -2521,7 +2540,7 @@
 
         queueEl.innerHTML =
           filteredQueue.length === 0
-            ? `<div class="empty">Nothing needs attention right now. New bookings will appear here automatically.</div>`
+            ? renderQueueEmptyState(data.queue, activeQueueFilter)
             : filteredQueue
                 .map(
                   (item) => `
@@ -2581,9 +2600,7 @@
 
         selectedPrimaWashDayQueueId = dayId;
         activeQueueFilter = "all";
-        document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
-          chip.setAttribute("aria-pressed", "false");
-        });
+        syncQueueFilterControls(dayBookings);
 
         document.querySelector("#queue-section .section-heading h2").textContent = day
           ? `${day.propertyName} queue`
@@ -2725,6 +2742,58 @@
         updatePlannerPreview();
       }
 
+      function queueCounts(queue) {
+        return {
+          attention: filterQueue(queue, "attention").length,
+          upcoming: filterQueue(queue, "upcoming").length,
+          active: filterQueue(queue, "active").length,
+          all: filterQueue(queue, "all").length,
+        };
+      }
+
+      function syncQueueFilterControls(queue) {
+        const counts = queueCounts(queue);
+        document.querySelectorAll("[data-queue-count]").forEach((countEl) => {
+          countEl.textContent = String(counts[countEl.dataset.queueCount] || 0);
+        });
+        document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
+          chip.setAttribute("aria-pressed", String(chip.dataset.queueFilter === activeQueueFilter));
+        });
+      }
+
+      function renderQueueEmptyState(queue, filter) {
+        const counts = queueCounts(queue);
+
+        if (counts.all === 0) {
+          return `<div class="empty">No bookings yet. New customer bookings will appear here automatically.</div>`;
+        }
+
+        if (filter === "attention" && counts.upcoming > 0) {
+          return `
+            <div class="empty">
+              No bookings need attention. ${counts.upcoming} upcoming ${counts.upcoming === 1 ? "booking is" : "bookings are"} ready.
+              <br /><button class="action" type="button" data-switch-queue-filter="upcoming">Show upcoming</button>
+            </div>
+          `;
+        }
+
+        if (filter === "active" && counts.upcoming > 0) {
+          return `
+            <div class="empty">
+              No bookings are currently in service. ${counts.upcoming} upcoming ${counts.upcoming === 1 ? "booking is" : "bookings are"} waiting.
+              <br /><button class="action" type="button" data-switch-queue-filter="upcoming">Show upcoming</button>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="empty">
+            No bookings match this filter.
+            <br /><button class="action" type="button" data-switch-queue-filter="all">Show all bookings</button>
+          </div>
+        `;
+      }
+
       function filterQueue(queue, filter) {
         if (filter === "attention") {
           return queue.filter((item) => item.status === "pending_payment");
@@ -2744,6 +2813,10 @@
       function workflowClass(item) {
         if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
           return "is-blocked";
+        }
+
+        if ((item.status === "pending_payment" && item.paymentStatus === "authorized") || item.status === "confirmed") {
+          return "is-active";
         }
 
         if (["checked_in", "in_service"].includes(item.status)) {
@@ -4615,9 +4688,6 @@
         button.addEventListener("click", () => {
           selectedPrimaWashDayQueueId = null;
           activeQueueFilter = button.dataset.queueFilter;
-          document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
-            chip.setAttribute("aria-pressed", String(chip === button));
-          });
 
           if (dashboardCache) {
             renderDashboard(dashboardCache.data, dashboardCache.mavo);
@@ -4625,11 +4695,26 @@
         });
       });
 
+      document.addEventListener("click", (event) => {
+        const switchFilterButton = event.target.closest("button[data-switch-queue-filter]");
+
+        if (!switchFilterButton) {
+          return;
+        }
+
+        selectedPrimaWashDayQueueId = null;
+        activeQueueFilter = switchFilterButton.dataset.switchQueueFilter;
+
+        if (dashboardCache) {
+          renderDashboard(dashboardCache.data, dashboardCache.mavo);
+        }
+      });
+
       partnerLocationSelect.addEventListener("change", async () => {
         selectedPartnerLocationId = partnerLocationSelect.value;
         selectedBookingId = null;
         selectedPrimaWashDayQueueId = null;
-        activeQueueFilter = "attention";
+        activeQueueFilter = "upcoming";
         document.querySelectorAll("[data-queue-filter]").forEach((chip) => {
           chip.setAttribute("aria-pressed", String(chip.dataset.queueFilter === activeQueueFilter));
         });
