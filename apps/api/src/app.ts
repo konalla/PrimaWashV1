@@ -23,6 +23,7 @@ import type {
   CommunicationThreadType,
   CustomerProfile,
   CreateBookingRequest,
+  PartnerBookingDecisionRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
   CreatePrimaWashDayRequest,
@@ -74,6 +75,7 @@ import { validateSchedulingConfig } from "./modules/scheduling/repository.js";
 import {
   canTransitionBookingStatus,
   validateCreateBooking,
+  validatePartnerBookingDecision,
   validateUpdateBookingExecution,
   validateUpdateBookingStatus,
 } from "./modules/bookings/repository.js";
@@ -1905,6 +1907,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
     const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
+    const bookingPartnerDecisionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/partner-decision$/);
     const availabilityUpdateMatch = requestUrl.pathname.match(/^\/v1\/partner\/availability\/([^/]+)$/);
 
     if (request.method === "PATCH" && availabilityUpdateMatch) {
@@ -2101,6 +2104,173 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       } catch (error) {
         if (!sendAuthError(response, error)) {
           sendError(response, 400, "invalid_request", "Booking execution request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && bookingPartnerDecisionMatch) {
+      try {
+        const actor = requireActor(request);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingPartnerDecisionMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<PartnerBookingDecisionRequest>(request);
+        const errors = validatePartnerBookingDecision(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Partner decision payload is invalid", errors);
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
+
+        if (input.decision === "accept") {
+          if (!canTransitionBookingStatus(booking.status, "confirmed")) {
+            sendError(response, 409, "invalid_booking_status_transition", `Cannot accept booking from ${booking.status}`);
+            return;
+          }
+
+          const payment = await options.repositories.payments.getByBookingId(booking.id);
+
+          if (!payment || payment.status !== "authorized") {
+            sendError(
+              response,
+              409,
+              "payment_authorization_required",
+              "Booking requires an authorized payment before partner acceptance",
+            );
+            return;
+          }
+
+          const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "confirmed");
+          await options.repositories.audit.record({
+            actor,
+            action: "booking.partner_decision",
+            resourceType: "booking",
+            resourceId: booking.id,
+            requestId: requestContext.requestId,
+            metadata: {
+              decision: input.decision,
+              fromStatus: booking.status,
+              toStatus: updatedBooking.status,
+              partnerLocationId: updatedBooking.partnerLocationId,
+              onsiteServiceMode: updatedBooking.onsiteServiceMode,
+            },
+          });
+
+          sendJson(response, 200, { data: { booking: updatedBooking } });
+          return;
+        }
+
+        if (input.decision === "request_clarification") {
+          const message = input.message?.trim();
+          const thread = await options.repositories.communications.create({
+            type: "partner_to_owner",
+            resourceType: "booking",
+            resourceId: booking.id,
+            subject: `Booking ${booking.id.slice(-8).toUpperCase()} clarification`,
+            actor,
+            ...(message ? { initialMessage: message } : {}),
+          });
+          await options.repositories.audit.record({
+            actor,
+            action: "booking.partner_decision",
+            resourceType: "booking",
+            resourceId: booking.id,
+            requestId: requestContext.requestId,
+            metadata: {
+              decision: input.decision,
+              threadId: thread.id,
+              partnerLocationId: booking.partnerLocationId,
+              onsiteServiceMode: booking.onsiteServiceMode,
+            },
+          });
+
+          sendJson(response, 200, { data: { booking, thread } });
+          return;
+        }
+
+        if (!canTransitionBookingStatus(booking.status, "cancelled")) {
+          sendError(response, 409, "booking_cannot_be_cancelled", `Cannot reject booking from ${booking.status}`);
+          return;
+        }
+
+        const message = input.message?.trim();
+        const thread = await options.repositories.communications.create({
+          type: "partner_to_owner",
+          resourceType: "booking",
+          resourceId: booking.id,
+          subject: `Booking ${booking.id.slice(-8).toUpperCase()} mode unavailable`,
+          actor,
+          ...(message ? { initialMessage: message } : {}),
+        });
+        const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "cancelled");
+        const voidedPayment = await voidAuthorizedPaymentByBooking(options.repositories, paymentProvider, updatedBooking.id);
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.partner_decision",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            decision: input.decision,
+            fromStatus: booking.status,
+            toStatus: updatedBooking.status,
+            threadId: thread.id,
+            partnerLocationId: updatedBooking.partnerLocationId,
+            onsiteServiceMode: updatedBooking.onsiteServiceMode,
+          },
+        });
+
+        if (voidedPayment) {
+          await recordPaymentAudit(
+            options.repositories,
+            actor,
+            requestContext.requestId,
+            "payment.voided",
+            voidedPayment.payment,
+            voidedPayment.providerResult,
+          );
+        }
+
+        await recordProductEvent(options.repositories, {
+          ownerId: updatedBooking.ownerId,
+          name: "booking_cancelled",
+          resourceType: "booking",
+          resourceId: updatedBooking.id,
+          metadata: {
+            cancelledBy: actor.role,
+            reason: "partner_rejected_service_mode",
+            onsiteServiceMode: updatedBooking.onsiteServiceMode,
+          },
+        });
+
+        sendJson(response, 200, { data: { booking: updatedBooking, thread } });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "partner_booking_forbidden") {
+            sendError(response, 403, message, "Partner is not allowed to manage this booking");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Partner decision request could not be processed", message);
         }
       }
 
@@ -2645,6 +2815,22 @@ async function canAccessCommunicationThread(
     return true;
   } catch {
     return false;
+  }
+}
+
+async function assertPartnerBookingAccess(repositories: Repositories, actor: Actor, booking: Booking): Promise<void> {
+  if (actor.role === "internal") {
+    return;
+  }
+
+  if (actor.role !== "partner") {
+    throw new Error("partner_booking_forbidden");
+  }
+
+  const partner = await repositories.partners.get(booking.partnerLocationId);
+
+  if (!partner || partner.organizationId !== actor.organizationId) {
+    throw new Error("partner_booking_forbidden");
   }
 }
 

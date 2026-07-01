@@ -2701,20 +2701,32 @@
         const cancelButton = cancellableStatuses.has(item.status)
           ? `<button class="action danger" data-cancel-booking-id="${item.bookingId}">Cancel</button>`
           : "";
+        const clarificationButton =
+          item.status === "pending_payment"
+            ? `<button class="action" data-partner-decision="${item.bookingId}" data-decision="request_clarification">Ask question</button>`
+            : "";
+        const rejectButton =
+          item.status === "pending_payment"
+            ? `<button class="action danger" data-partner-decision="${item.bookingId}" data-decision="reject_mode">Cannot service mode</button>`
+            : "";
 
         if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
           const label = item.paymentStatus === "requires_authorization" ? "Needs authorization" : "No payment hold";
           return `
             <div class="blocker-card">${label}. Ask the customer to authorize payment before confirming.</div>
+            ${clarificationButton}
+            ${rejectButton}
             ${cancelButton}
           `;
         }
 
         const nextButton = next
-          ? `<button class="action primary-command" data-booking-id="${item.bookingId}" data-next-status="${next.status}">${next.label}</button>`
+          ? next.status === "confirmed"
+            ? `<button class="action primary-command" data-partner-decision="${item.bookingId}" data-decision="accept">Accept booking</button>`
+            : `<button class="action primary-command" data-booking-id="${item.bookingId}" data-next-status="${next.status}">${next.label}</button>`
           : "";
 
-        return `${nextButton}${cancelButton}`;
+        return `${nextButton}${clarificationButton}${rejectButton}${cancelButton}`;
       }
 
       function openBookingDrawer(bookingId) {
@@ -2940,7 +2952,9 @@
             : "";
         const nextButton =
           next && !paymentBlocked
-            ? `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
+            ? next.status === "confirmed"
+              ? `<button class="action primary-command" type="button" data-drawer-partner-decision="accept">Accept booking</button>`
+              : `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
             : "";
         const blockedButton =
           next && paymentBlocked
@@ -2949,8 +2963,12 @@
         const cancelButton = cancellableStatuses.has(item.status)
           ? `<button class="action danger" type="button" data-drawer-cancel>Cancel booking</button>`
           : "";
+        const decisionButtons =
+          item.status === "pending_payment"
+            ? `<button class="action" type="button" data-drawer-partner-decision="request_clarification">Request clarification</button><button class="action danger" type="button" data-drawer-partner-decision="reject_mode">Cannot service this mode</button>`
+            : "";
 
-        return `${nextButton}${blockedButton}${refundButton}${cancelButton}<button class="action" type="button" data-close-booking-dialog>Close</button>`;
+        return `${nextButton}${blockedButton}${decisionButtons}${refundButton}${cancelButton}<button class="action" type="button" data-close-booking-dialog>Close</button>`;
       }
 
       function findQueueItem(bookingId) {
@@ -3393,6 +3411,24 @@
         return payload.data;
       }
 
+      async function submitPartnerDecision(bookingId, decision, message) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/partner-decision`, {
+          method: "POST",
+          headers: {
+            ...partnerHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ decision, ...(message ? { message } : {}) }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Partner decision failed");
+        }
+
+        return payload.data;
+      }
+
       async function updatePropertyLead(propertyId, input) {
         const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/activation`, {
           method: "PATCH",
@@ -3721,6 +3757,42 @@
           return;
         }
 
+        const drawerPartnerDecisionButton = event.target.closest("button[data-drawer-partner-decision]");
+
+        if (drawerPartnerDecisionButton) {
+          if (!selectedBookingId) {
+            return;
+          }
+
+          const decision = drawerPartnerDecisionButton.dataset.drawerPartnerDecision;
+          const message = decision === "accept"
+            ? ""
+            : window.prompt(
+                decision === "reject_mode"
+                  ? "Explain why this service mode cannot be handled."
+                  : "What clarification do you need from the owner?",
+              );
+
+          if (message === null || (decision !== "accept" && !message.trim())) {
+            return;
+          }
+
+          drawerPartnerDecisionButton.disabled = true;
+
+          try {
+            await submitPartnerDecision(selectedBookingId, decision, message.trim());
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast(decision === "accept" ? "Booking accepted." : decision === "reject_mode" ? "Booking rejected and owner notified." : "Clarification requested.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            drawerPartnerDecisionButton.disabled = false;
+          }
+
+          return;
+        }
+
         const drawerCancelButton = event.target.closest("button[data-drawer-cancel]");
 
         if (drawerCancelButton) {
@@ -3791,6 +3863,37 @@
             showToast(error.message, "error");
           } finally {
             button.disabled = false;
+          }
+
+          return;
+        }
+
+        const partnerDecisionButton = event.target.closest("button[data-partner-decision]");
+
+        if (partnerDecisionButton) {
+          const decision = partnerDecisionButton.dataset.decision;
+          const message = decision === "accept"
+            ? ""
+            : window.prompt(
+                decision === "reject_mode"
+                  ? "Explain why this service mode cannot be handled."
+                  : "What clarification do you need from the owner?",
+              );
+
+          if (message === null || (decision !== "accept" && !message.trim())) {
+            return;
+          }
+
+          partnerDecisionButton.disabled = true;
+
+          try {
+            await submitPartnerDecision(partnerDecisionButton.dataset.partnerDecision, decision, message.trim());
+            await loadDashboard();
+            showToast(decision === "accept" ? "Booking accepted." : decision === "reject_mode" ? "Booking rejected and owner notified." : "Clarification requested.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            partnerDecisionButton.disabled = false;
           }
 
           return;

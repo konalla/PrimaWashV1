@@ -412,6 +412,13 @@ export interface UpdateBookingExecutionRequest {
   readonly technicianCheckedOut?: boolean;
 }
 
+export type PartnerBookingDecision = "accept" | "request_clarification" | "reject_mode";
+
+export interface PartnerBookingDecisionRequest {
+  readonly decision: PartnerBookingDecision;
+  readonly message?: string;
+}
+
 export interface Vehicle {
   readonly id: string;
   readonly ownerId: string;

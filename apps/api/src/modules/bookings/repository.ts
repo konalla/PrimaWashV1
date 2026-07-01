@@ -4,6 +4,7 @@ import type {
   BookingStatus,
   CreateBookingRequest,
   Money,
+  PartnerBookingDecisionRequest,
   ServiceCode,
   UpdateBookingExecutionRequest,
 } from "@prima-wash/contracts";
@@ -581,6 +582,27 @@ export function validateUpdateBookingExecution(input: Partial<UpdateBookingExecu
 
   if (input.executionNotes !== undefined && input.executionNotes.length > 2000) {
     errors.push("executionNotes must be 2000 characters or fewer");
+  }
+
+  return errors;
+}
+
+export function validatePartnerBookingDecision(input: Partial<PartnerBookingDecisionRequest>): string[] {
+  const errors: string[] = [];
+
+  if (!input.decision || !["accept", "request_clarification", "reject_mode"].includes(input.decision)) {
+    errors.push("decision must be accept, request_clarification, or reject_mode");
+  }
+
+  if (
+    (input.decision === "request_clarification" || input.decision === "reject_mode") &&
+    (!input.message || input.message.trim().length < 2)
+  ) {
+    errors.push("message is required");
+  }
+
+  if (input.message !== undefined && input.message.length > 2000) {
+    errors.push("message must be 2000 characters or fewer");
   }
 
   return errors;

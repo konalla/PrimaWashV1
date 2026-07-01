@@ -8,6 +8,7 @@ import type {
   AuthSession,
   BillingSession,
   CommunicationMessage,
+  CommunicationThread,
   CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
@@ -1183,6 +1184,76 @@ describe("Prima Wash API", () => {
     assert.equal(queueItem?.onsiteServiceMode, "partner_location");
     assert.equal(queueItem?.actionHint, "Customer expected; check in when vehicle arrives");
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Authorized revenue"));
+  });
+
+  it("lets partners accept an authorized booking from the operational queue", async () => {
+    const vehicle = await createVehicle("ACCEPT1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await createPaymentIntent(booking.id);
+    await repositories.payments.authorize(payment.id);
+
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/partner-decision`, {
+      method: "POST",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ decision: "accept" }),
+    });
+    const payload = (await response.json()) as ApiResponse<{ booking: Booking }>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.booking.status, "confirmed");
+
+    const auditResponse = await fetch(`${baseUrl}/v1/audit-events?limit=2`, { headers: internalHeaders });
+    const auditPayload = (await auditResponse.json()) as ApiResponse<Array<{ action: string; metadata: Record<string, unknown> }>>;
+
+    assert.equal(auditPayload.data[0]?.action, "booking.partner_decision");
+    assert.equal(auditPayload.data[0]?.metadata.decision, "accept");
+  });
+
+  it("lets partners request clarification from the owner before accepting", async () => {
+    const vehicle = await createVehicle("CLARIFY1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/partner-decision`, {
+      method: "POST",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        decision: "request_clarification",
+        message: "Please confirm basement access and handover contact.",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<{ booking: Booking; thread: CommunicationThread }>;
+    const readResponse = await fetch(`${baseUrl}/v1/communication/threads/${payload.data.thread.id}`, {
+      headers: customerHeaders,
+    });
+    const readPayload = (await readResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.booking.status, "pending_payment");
+    assert.equal(payload.data.thread.type, "partner_to_owner");
+    assert.equal(readResponse.status, 200);
+    assert.equal(readPayload.data.messages.at(-1)?.body, "Please confirm basement access and handover contact.");
+  });
+
+  it("lets partners reject an unsupported service mode and notify the owner", async () => {
+    const vehicle = await createVehicle("REJECT1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await createPaymentIntent(booking.id);
+    await repositories.payments.authorize(payment.id);
+
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/partner-decision`, {
+      method: "POST",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        decision: "reject_mode",
+        message: "Pickup and return is unavailable for this appointment window.",
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<{ booking: Booking; thread: CommunicationThread }>;
+    const voidedPayment = await repositories.payments.get(payment.id);
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.booking.status, "cancelled");
+    assert.equal(payload.data.thread.type, "partner_to_owner");
+    assert.equal(voidedPayment?.status, "voided");
   });
 
   it("lets partner actors create and close availability slots", async () => {
