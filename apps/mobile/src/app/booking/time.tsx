@@ -89,7 +89,7 @@ export default function TimeScreen() {
   }
 
   return (
-    <AppScreen eyebrow="Step 2 of 3" title="Choose a time">
+    <AppScreen eyebrow="Step 3 of 4" title="Choose a time">
       <Text style={styles.intro}>
         {formatServiceMode(serviceMode)} - {draft.partner?.name ?? 'Selected partner'} - {draft.service?.name ?? 'Selected service'} - Times shown in partner local time.
       </Text>

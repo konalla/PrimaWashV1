@@ -759,6 +759,7 @@ export interface CreateBookingRequest {
   readonly primaWashDayId?: string;
   readonly holdId?: string;
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
+  readonly executionNotes?: string;
   readonly serviceCode: ServiceCode;
 }
 

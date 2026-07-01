@@ -294,6 +294,13 @@ export default function BookingDetailScreen() {
             <DetailRow label="Total" value={formatMoney(booking.acceptedPrice)} strong />
           </Surface>
 
+          {booking.executionNotes ? (
+            <Surface>
+              <SectionHeading eyebrow="Booking instructions" title="Operational notes" />
+              <Text style={styles.body}>{booking.executionNotes}</Text>
+            </Surface>
+          ) : null}
+
           <Surface>
             <SectionHeading eyebrow="Payment" title={payment ? paymentTitle(payment) : 'Payment not created'} />
             <Text style={styles.body}>{payment ? paymentBody(payment) : 'No payment intent exists yet for this booking.'}</Text>

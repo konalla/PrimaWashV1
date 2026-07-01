@@ -47,6 +47,7 @@ export default function ReviewScreen() {
               : {}),
         serviceCode: draft.service.code,
         onsiteServiceMode,
+        ...(draft.executionNotes ? { executionNotes: draft.executionNotes } : {}),
       });
       setPendingBooking(booking);
       const existingPayment = pendingPayment ?? await primaApi.paymentForBooking(booking.id);
@@ -62,7 +63,7 @@ export default function ReviewScreen() {
   }
 
   return (
-    <AppScreen eyebrow="Step 3 of 3" title="Review and pay">
+    <AppScreen eyebrow={draft.primaWashDay ? 'Step 3 of 3' : 'Step 4 of 4'} title="Review and pay">
       <Surface accent>
         <SectionHeading eyebrow={draft.primaWashDay ? 'Condo service day' : 'Verified partner'} title={locationName ?? 'Choose a location'} />
         <Text style={styles.rating}>
@@ -93,6 +94,7 @@ export default function ReviewScreen() {
         <SummaryRow label="Appointment" value={draft.slot ? formatAppointment(draft.slot.startsAt) : 'Choose a time'} />
         {draft.hold ? <SummaryRow label="Reserved until" value={formatHoldExpiry(draft.hold.expiresAt)} /> : null}
         {draft.primaWashDay ? <SummaryRow label="Service area" value={draft.primaWashDay.approvedServiceArea} /> : null}
+        {draft.executionNotes ? <SummaryRow label="Instructions" value={firstInstructionLine(draft.executionNotes)} /> : null}
         <View style={styles.divider} />
         <SummaryRow label="Service total" value={draft.service ? formatMoney(draft.service.price) : '$0.00'} strong />
       </Surface>
@@ -186,6 +188,10 @@ function formatServiceMode(mode: BookingOnsiteServiceMode) {
   if (mode === 'pickup_return') return 'Pickup and return';
   if (mode === 'customer_property') return 'At my residence / property';
   return 'Drive to partner location';
+}
+
+function firstInstructionLine(value: string) {
+  return value.split('\n').find((line) => line.includes(':')) ?? 'Added';
 }
 
 function formatVehicleName(vehicle: Vehicle) {

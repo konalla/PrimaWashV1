@@ -2356,6 +2356,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
           ...(input.holdId ? { holdId: input.holdId } : {}),
           ...(input.onsiteServiceMode ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
+          ...(input.executionNotes ? { executionNotes: input.executionNotes.trim() } : {}),
         });
 
         if (consumedHold) {
@@ -2376,6 +2377,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             serviceCode: booking.serviceCode,
             onsiteServiceMode: booking.onsiteServiceMode,
             valetRequested: booking.valetRequested,
+            executionNotes: booking.executionNotes,
             acceptedPrice: booking.acceptedPrice,
           },
         });
@@ -2391,6 +2393,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             serviceCode: booking.serviceCode,
             onsiteServiceMode: booking.onsiteServiceMode,
             valetRequested: booking.valetRequested,
+            executionNotes: booking.executionNotes,
             acceptedPrice: booking.acceptedPrice,
           },
         });

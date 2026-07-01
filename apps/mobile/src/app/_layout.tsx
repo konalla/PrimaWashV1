@@ -57,6 +57,7 @@ function Navigation() {
       <Stack.Protected guard={Boolean(session)}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="booking/service" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="booking/service-details" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/time" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/review" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="booking/checkout" options={{ animation: 'slide_from_right' }} />

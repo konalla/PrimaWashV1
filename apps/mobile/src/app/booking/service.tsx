@@ -57,7 +57,7 @@ export default function ServiceScreen() {
       : [];
 
   return (
-    <AppScreen eyebrow="Step 1 of 3" title="Choose your care">
+    <AppScreen eyebrow="Step 1 of 4" title="Choose your care">
       <Text style={styles.intro}>
         {draft.primaWashDay
           ? `${formatServiceMode(serviceMode)} - ${draft.primaWashDay.propertyName} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
@@ -156,8 +156,8 @@ export default function ServiceScreen() {
       </View>
       <PrimaryButton
         disabled={(!draft.partner && !draft.primaWashDay) || !draft.service || !draft.vehicle || loading || Boolean(error)}
-        label={loading ? 'Loading services...' : isPrimaWashDayBooking ? 'Review condo booking' : 'Choose appointment time'}
-        onPress={() => router.push(isPrimaWashDayBooking ? '/booking/review' : '/booking/time')}
+        label={loading ? 'Loading services...' : isPrimaWashDayBooking ? 'Add condo instructions' : 'Add booking details'}
+        onPress={() => router.push('/booking/service-details')}
       />
     </AppScreen>
   );

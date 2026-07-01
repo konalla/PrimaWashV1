@@ -350,6 +350,7 @@ describe("Prima Wash API", () => {
         availabilitySlotId: "slot_demo_1100",
         serviceCode: "wash_basic",
         onsiteServiceMode: "pickup_return",
+        executionNotes: "Pickup location: Tower lobby\nHandover contact: Nalla",
       }),
     });
     const pickupPayload = (await pickupResponse.json()) as ApiResponse<Booking>;
@@ -373,6 +374,7 @@ describe("Prima Wash API", () => {
     assert.equal(pickupResponse.status, 201);
     assert.equal(pickupPayload.data.onsiteServiceMode, "pickup_return");
     assert.equal(pickupPayload.data.valetRequested, true);
+    assert.equal(pickupPayload.data.executionNotes, "Pickup location: Tower lobby\nHandover contact: Nalla");
     assert.equal(propertyResponse.status, 201);
     assert.equal(propertyPayload.data.onsiteServiceMode, "customer_property");
     assert.equal(propertyPayload.data.valetRequested, false);

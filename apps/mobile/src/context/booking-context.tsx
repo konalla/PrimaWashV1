@@ -33,6 +33,7 @@ interface BookingDraft {
   readonly partner?: PartnerLocation;
   readonly primaWashDay?: PrimaWashDay;
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
+  readonly executionNotes?: string;
 }
 
 interface BookingContextValue {
@@ -44,6 +45,7 @@ interface BookingContextValue {
   setHeldSlot(slot: AvailabilitySearchSlot, hold: BookingHold): void;
   setPrimaWashDay(day: PrimaWashDay): void;
   setOnsiteServiceMode(mode: BookingOnsiteServiceMode): void;
+  setExecutionNotes(notes: string): void;
   setVehicle(vehicle: Vehicle): void;
   setPartner(partner: PartnerLocation): void;
   complete(booking: Booking, payment: PaymentIntent): void;
@@ -92,6 +94,9 @@ export function BookingProvider({ children }: PropsWithChildren) {
   const setOnsiteServiceMode = useCallback((onsiteServiceMode: BookingOnsiteServiceMode) => {
     setDraft((current) => ({ ...current, onsiteServiceMode }));
   }, []);
+  const setExecutionNotes = useCallback((executionNotes: string) => {
+    setDraft((current) => ({ ...current, executionNotes }));
+  }, []);
   const setVehicle = useCallback((vehicle: Vehicle) => {
     setDraft((current) => ({
       ...current,
@@ -124,12 +129,13 @@ export function BookingProvider({ children }: PropsWithChildren) {
       setHeldSlot,
       setPrimaWashDay,
       setOnsiteServiceMode,
+      setExecutionNotes,
       setVehicle,
       setPartner,
       complete,
       reset,
     }),
-    [complete, draft, latestBooking, latestPayment, reset, setHeldSlot, setOnsiteServiceMode, setPartner, setPrimaWashDay, setService, setSlot, setVehicle],
+    [complete, draft, latestBooking, latestPayment, reset, setExecutionNotes, setHeldSlot, setOnsiteServiceMode, setPartner, setPrimaWashDay, setService, setSlot, setVehicle],
   );
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
