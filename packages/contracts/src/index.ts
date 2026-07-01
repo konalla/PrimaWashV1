@@ -314,11 +314,29 @@ export interface PartnerDashboardMetric {
   readonly delta?: string;
 }
 
+export interface PartnerQueueVehicleSummary {
+  readonly plateNumber: string;
+  readonly make?: string;
+  readonly model?: string;
+  readonly nickname?: string;
+}
+
+export interface PartnerQueueLocationSummary {
+  readonly name: string;
+  readonly addressLine1: string;
+  readonly city: string;
+  readonly region: string;
+  readonly countryCode: string;
+  readonly openingHours: string;
+}
+
 export interface PartnerQueueItem {
   readonly bookingId: string;
   readonly primaWashDayId?: string;
   readonly vehicleId: string;
+  readonly vehicle?: PartnerQueueVehicleSummary;
   readonly ownerId: string;
+  readonly partnerLocation?: PartnerQueueLocationSummary;
   readonly serviceCode: ServiceCode;
   readonly status: BookingStatus;
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;

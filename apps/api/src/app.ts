@@ -39,6 +39,7 @@ import type {
   PaymentIntent,
   PaymentMethodSummary,
   PaymentStatus,
+  PartnerLocation,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
   ResidenceType,
@@ -53,6 +54,7 @@ import type {
   UpdateAvailabilitySlotRequest,
   UpdateCapacityTemplateRequest,
   UpdateSchedulingConfigRequest,
+  Vehicle,
 } from "@prima-wash/contracts";
 import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, assertPropertyManagerAccess, requireActor } from "./http/auth.js";
 import { readJsonBody, readRawBody } from "./http/body.js";
@@ -606,8 +608,10 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           .filter((booking) => booking.primaWashDayId)
           .filter((booking) => !primaWashDayId || booking.primaWashDayId === primaWashDayId);
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
+        const vehicleById = await buildVehicleLookup(options.repositories, bookings);
+        const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
         sendJson(response, 200, {
-          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId),
+          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId, vehicleById, partnerById),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -1264,8 +1268,10 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const bookings = await options.repositories.bookings.list();
         const auditEvents = await options.repositories.audit.list(8);
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
+        const vehicleById = await buildVehicleLookup(options.repositories, bookings);
+        const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
         sendJson(response, 200, {
-          data: buildPartnerDashboard(partnerLocationId, bookings, auditEvents, paymentByBookingId),
+          data: buildPartnerDashboard(partnerLocationId, bookings, auditEvents, paymentByBookingId, vehicleById, partnerById),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -2870,6 +2876,8 @@ function buildPartnerDashboard(
   bookings: readonly Booking[],
   auditEvents: PartnerDashboardResponse["auditEvents"],
   paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
+  vehicleById: ReadonlyMap<string, Vehicle>,
+  partnerById: ReadonlyMap<string, PartnerLocation>,
 ): PartnerDashboardResponse {
   const locationBookings = bookings.filter((booking) => booking.partnerLocationId === partnerLocationId);
   const pendingPayment = locationBookings.filter((booking) => {
@@ -2908,12 +2916,16 @@ function buildPartnerDashboard(
     .slice(0, 8)
     .map((booking) => {
       const payment = paymentByBookingId.get(booking.id);
+      const vehicle = vehicleById.get(booking.vehicleId);
+      const partner = partnerById.get(booking.partnerLocationId);
 
       return {
         bookingId: booking.id,
         ...(booking.primaWashDayId ? { primaWashDayId: booking.primaWashDayId } : {}),
         vehicleId: booking.vehicleId,
+        ...(vehicle ? { vehicle: toPartnerQueueVehicleSummary(vehicle) } : {}),
         ownerId: booking.ownerId,
+        ...(partner ? { partnerLocation: toPartnerQueueLocationSummary(partner) } : {}),
         serviceCode: booking.serviceCode,
         status: booking.status,
         ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
@@ -2986,6 +2998,36 @@ async function buildPaymentLookup(
   return new Map(entries.filter((entry): entry is readonly [string, PaymentIntent] => Boolean(entry)));
 }
 
+async function buildVehicleLookup(
+  repositories: Repositories,
+  bookings: readonly Booking[],
+): Promise<ReadonlyMap<string, Vehicle>> {
+  const vehicleIds = Array.from(new Set(bookings.map((booking) => booking.vehicleId)));
+  const entries = await Promise.all(
+    vehicleIds.map(async (vehicleId) => {
+      const vehicle = await repositories.vehicles.get(vehicleId);
+      return vehicle ? ([vehicleId, vehicle] as const) : undefined;
+    }),
+  );
+
+  return new Map(entries.filter((entry): entry is readonly [string, Vehicle] => Boolean(entry)));
+}
+
+async function buildPartnerLocationLookup(
+  repositories: Repositories,
+  bookings: readonly Booking[],
+): Promise<ReadonlyMap<string, PartnerLocation>> {
+  const partnerLocationIds = Array.from(new Set(bookings.map((booking) => booking.partnerLocationId)));
+  const entries = await Promise.all(
+    partnerLocationIds.map(async (partnerLocationId) => {
+      const partner = await repositories.partners.get(partnerLocationId);
+      return partner ? ([partnerLocationId, partner] as const) : undefined;
+    }),
+  );
+
+  return new Map(entries.filter((entry): entry is readonly [string, PartnerLocation] => Boolean(entry)));
+}
+
 async function buildPaymentHistory(
   repositories: Repositories,
   ownerId: string,
@@ -3024,6 +3066,8 @@ async function buildPaymentHistory(
 function buildPrimaWashDayBookingItems(
   bookings: readonly Booking[],
   paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
+  vehicleById: ReadonlyMap<string, Vehicle>,
+  partnerById: ReadonlyMap<string, PartnerLocation>,
 ): readonly PrimaWashDayBookingItem[] {
   return bookings
     .filter((booking): booking is Booking & { readonly primaWashDayId: string } => Boolean(booking.primaWashDayId))
@@ -3031,12 +3075,16 @@ function buildPrimaWashDayBookingItems(
     .sort((a, b) => a.scheduledStartAt.localeCompare(b.scheduledStartAt) || a.createdAt.localeCompare(b.createdAt))
     .map((booking) => {
       const payment = paymentByBookingId.get(booking.id);
+      const vehicle = vehicleById.get(booking.vehicleId);
+      const partner = partnerById.get(booking.partnerLocationId);
 
       return {
         bookingId: booking.id,
         primaWashDayId: booking.primaWashDayId,
         vehicleId: booking.vehicleId,
+        ...(vehicle ? { vehicle: toPartnerQueueVehicleSummary(vehicle) } : {}),
         ownerId: booking.ownerId,
+        ...(partner ? { partnerLocation: toPartnerQueueLocationSummary(partner) } : {}),
         serviceCode: booking.serviceCode,
         status: booking.status,
         ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
@@ -3050,6 +3098,26 @@ function buildPrimaWashDayBookingItems(
         scheduledEndAt: booking.scheduledEndAt,
       };
     });
+}
+
+function toPartnerQueueVehicleSummary(vehicle: Vehicle): NonNullable<PartnerDashboardResponse["queue"][number]["vehicle"]> {
+  return {
+    plateNumber: vehicle.plateNumber,
+    ...(vehicle.make ? { make: vehicle.make } : {}),
+    ...(vehicle.model ? { model: vehicle.model } : {}),
+    ...(vehicle.nickname ? { nickname: vehicle.nickname } : {}),
+  };
+}
+
+function toPartnerQueueLocationSummary(partner: PartnerLocation): NonNullable<PartnerDashboardResponse["queue"][number]["partnerLocation"]> {
+  return {
+    name: partner.name,
+    addressLine1: partner.addressLine1,
+    city: partner.city,
+    region: partner.region,
+    countryCode: partner.countryCode,
+    openingHours: partner.openingHours,
+  };
 }
 
 async function buildPropertyManagementDashboard(

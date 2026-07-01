@@ -1156,6 +1156,11 @@ describe("Prima Wash API", () => {
     assert.ok(payload.data.queue.length >= 1);
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Expected revenue"));
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Payment risk"));
+    assert.equal(queueItem?.vehicle?.plateNumber, "DASH999");
+    assert.equal(queueItem?.vehicle?.make, "Tesla");
+    assert.equal(queueItem?.vehicle?.model, "Model 3");
+    assert.equal(queueItem?.partnerLocation?.name, "Prima Wash Central");
+    assert.equal(queueItem?.partnerLocation?.addressLine1, "100 Central Street");
     assert.equal(queueItem?.actionHint, "Customer has not created a payment hold yet");
   });
 

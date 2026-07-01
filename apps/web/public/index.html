@@ -454,6 +454,112 @@
         background: #edf4f2;
       }
 
+      .work-order-card {
+        display: grid;
+        gap: 12px;
+        border: 1px solid rgba(11, 79, 90, 0.18);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        background: #fff;
+      }
+
+      .work-order-header {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .plate-badge {
+        display: inline-grid;
+        place-items: center;
+        min-width: 88px;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 8px 12px;
+        background: #f4f1eb;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .work-order-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .work-order-line {
+        display: grid;
+        grid-template-columns: 14px 1fr;
+        gap: 10px;
+        align-items: start;
+        color: var(--soft);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .work-order-line::before {
+        width: 8px;
+        height: 8px;
+        margin-top: 6px;
+        border-radius: 99px;
+        background: var(--blue);
+        content: "";
+      }
+
+      .checklist-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .checklist-item {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: start;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        background: #fbfaf6;
+      }
+
+      .checklist-state {
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        color: var(--soft);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .checklist-item.is-done .checklist-state {
+        border-color: rgba(19, 138, 84, 0.28);
+        background: #dff4e8;
+        color: var(--green);
+      }
+
+      .checklist-copy {
+        display: grid;
+        gap: 3px;
+      }
+
+      .checklist-copy strong {
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .checklist-copy span {
+        color: var(--soft);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
       .drawer-title-row,
       .detail-grid,
       .timeline-row {
@@ -2756,15 +2862,17 @@
             : item.status === "completed"
               ? "This booking is complete. No further action is required."
               : "No forward action is currently available.";
+        const vehicleName = formatVehicleName(item.vehicle);
+        const serviceMode = item.onsiteServiceMode || "partner_location";
 
         bookingDetailEl.innerHTML = `
           <div class="drawer-body">
             <section class="drawer-hero">
               <div class="drawer-title-row">
                 <div>
-                  <p class="eyebrow">Ref ${item.bookingId.slice(-8).toUpperCase()}</p>
-                  <h2>${formatService(item.serviceCode)}</h2>
-                  <p class="section-description">${formatRelativeDay(item.scheduledStartAt)} at ${formatTime(item.scheduledStartAt)}</p>
+                  <p class="eyebrow">Work order ${item.bookingId.slice(-8).toUpperCase()}</p>
+                  <h2>${vehicleName}</h2>
+                  <p class="section-description">${formatService(item.serviceCode)} - ${formatRelativeDay(item.scheduledStartAt)} at ${formatTime(item.scheduledStartAt)}</p>
                 </div>
                 <span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
               </div>
@@ -2772,27 +2880,46 @@
               <p class="action-hint">${nextAction}</p>
             </section>
 
-            <section class="detail-grid">
-              <div class="detail-item"><span>Status</span><strong>${formatStatus(item.status)}</strong></div>
-              <div class="detail-item"><span>Payment</span><strong>${formatPaymentStatus(item.paymentStatus)}</strong></div>
-              <div class="detail-item"><span>Amount</span><strong>${item.paymentAmount ? formatMoney(item.paymentAmount) : "No payment intent"}</strong></div>
-              <div class="detail-item"><span>Appointment</span><strong>${formatRelativeDay(item.scheduledStartAt)}, ${formatTime(item.scheduledStartAt)}</strong></div>
-              <div class="detail-item"><span>Owner</span><strong>${item.ownerId}</strong></div>
-              <div class="detail-item"><span>Service mode</span><strong>${formatStatus(item.onsiteServiceMode || "onsite")}</strong></div>
-              <div class="detail-item"><span>Valet</span><strong>${item.valetRequested ? "Requested" : "Not requested"}</strong></div>
-              <div class="detail-item"><span>Technician</span><strong>${formatTechnicianState(item)}</strong></div>
+            <section class="work-order-card">
+              <div class="work-order-header">
+                <div>
+                  <p class="eyebrow">Vehicle</p>
+                  <h3>${vehicleName}</h3>
+                  <p class="section-description">${formatServiceMode(serviceMode)} - ${item.valetRequested ? "Valet/pickup permitted" : "No valet request"}</p>
+                </div>
+                <span class="plate-badge">${escapeHtml(item.vehicle?.plateNumber || item.vehicleId.slice(-8).toUpperCase())}</span>
+              </div>
+              <div class="detail-grid">
+                <div class="detail-item"><span>Service</span><strong>${formatService(item.serviceCode)}</strong></div>
+                <div class="detail-item"><span>Appointment</span><strong>${formatRelativeDay(item.scheduledStartAt)}, ${formatTime(item.scheduledStartAt)}</strong></div>
+                <div class="detail-item"><span>Service mode</span><strong>${formatServiceMode(serviceMode)}</strong></div>
+                <div class="detail-item"><span>Payment</span><strong>${formatPaymentStatus(item.paymentStatus)}${item.paymentAmount ? ` - ${formatMoney(item.paymentAmount)}` : ""}</strong></div>
+              </div>
             </section>
 
+            <section class="detail-grid">
+              <div class="detail-item"><span>Status</span><strong>${formatStatus(item.status)}</strong></div>
+              <div class="detail-item"><span>Location</span><strong>${escapeHtml(item.partnerLocation?.name || "Partner location")}</strong></div>
+              <div class="detail-item"><span>Address</span><strong>${formatPartnerAddress(item.partnerLocation)}</strong></div>
+              <div class="detail-item"><span>Hours</span><strong>${escapeHtml(item.partnerLocation?.openingHours || "Not configured")}</strong></div>
+              <div class="detail-item"><span>Owner</span><strong>${item.ownerId}</strong></div>
+              <div class="detail-item"><span>Vehicle ID</span><strong>${item.vehicleId}</strong></div>
+              <div class="detail-item"><span>Technician</span><strong>${formatTechnicianState(item)}</strong></div>
+              <div class="detail-item"><span>Ref</span><strong>${item.bookingId.slice(-8).toUpperCase()}</strong></div>
+            </section>
+
+            ${renderServiceModeWorkOrder(item)}
             ${renderSiteInstructions(item)}
 
             <section>
               <div class="section-heading compact-heading">
                 <div>
-                  <p class="eyebrow">Onsite execution</p>
-                  <h3>Temporary operation controls</h3>
-                  <p class="section-description">Track how this booking will be handled on the property. This does not delete or rewrite prior messages.</p>
+                  <p class="eyebrow">Execution checklist</p>
+                  <h3>Partner work controls</h3>
+                  <p class="section-description">Record each operational step. This does not delete or rewrite prior messages.</p>
                 </div>
               </div>
+              ${renderWorkOrderChecklist(item)}
               <form class="cluster" id="booking-execution-form">
                 <input type="hidden" name="bookingId" value="${item.bookingId}">
                 <div class="form-grid">
@@ -2867,6 +2994,128 @@
             messagesEl.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
           }
         });
+      }
+
+      function formatVehicleName(vehicle) {
+        if (!vehicle) {
+          return "Vehicle details pending";
+        }
+
+        const makeModel = [vehicle.make, vehicle.model].filter(Boolean).join(" ");
+        return makeModel || vehicle.nickname || "Vehicle details pending";
+      }
+
+      function formatPartnerAddress(location) {
+        if (!location) {
+          return "Address not configured";
+        }
+
+        return [location.addressLine1, location.city, location.region, location.countryCode].filter(Boolean).join(", ");
+      }
+
+      function formatServiceMode(mode) {
+        const labels = {
+          onsite: "On-property service",
+          partner_location: "Customer drives to partner",
+          customer_property: "At customer property",
+          pickup_return: "Pickup, clean away, return",
+        };
+
+        return labels[mode] || formatStatus(mode);
+      }
+
+      function renderServiceModeWorkOrder(item) {
+        const mode = item.onsiteServiceMode || "partner_location";
+        const instructionsByMode = {
+          onsite: [
+            "Operate only inside the approved temporary service area.",
+            "Follow the property water, movement, visitor-lot, and safety rules.",
+            "Check in before starting and check out once the vehicle area is clear.",
+          ],
+          customer_property: [
+            "Confirm exact property access, parking position, and owner handover notes before arrival.",
+            "Use the smallest practical operating footprint and follow any landed/HDB/condo site constraints.",
+            "Escalate through the owner message thread if access or water policy is unclear.",
+          ],
+          partner_location: [
+            "Customer is expected to drive to the partner location.",
+            "Receive the vehicle, verify the plate, and check in before work begins.",
+            "Use the partner operating bay and normal shop procedures.",
+          ],
+          pickup_return: [
+            "Confirm pickup address, handover contact, and return instructions before dispatch.",
+            "Record vehicle receipt before moving the car and checkout only after return/handover.",
+            "Use partner location procedures while the vehicle is cleaned away from the customer property.",
+          ],
+        };
+        const instructions = instructionsByMode[mode] || instructionsByMode.partner_location;
+
+        return `
+          <section class="work-order-card">
+            <div>
+              <p class="eyebrow">Service mode instructions</p>
+              <h3>${formatServiceMode(mode)}</h3>
+              <p class="section-description">${escapeHtml(item.executionNotes || "No partner execution notes saved yet.")}</p>
+            </div>
+            <div class="work-order-list">
+              ${instructions.map((instruction) => `<div class="work-order-line">${escapeHtml(instruction)}</div>`).join("")}
+            </div>
+          </section>
+        `;
+      }
+
+      function renderWorkOrderChecklist(item) {
+        const checkedIn = Boolean(item.technicianCheckedInAt);
+        const checkedOut = Boolean(item.technicianCheckedOutAt);
+        const steps = [
+          {
+            done: item.status !== "pending_payment",
+            label: "Booking accepted",
+            body: "Payment is authorized and partner acceptance is recorded.",
+          },
+          {
+            done: checkedIn || ["checked_in", "in_service", "completed"].includes(item.status),
+            label: item.onsiteServiceMode === "pickup_return" ? "Vehicle received or collected" : "Technician checked in",
+            body: item.onsiteServiceMode === "pickup_return"
+              ? "Vehicle handover has been recorded before movement."
+              : "Technician is present at the operating location.",
+          },
+          {
+            done: ["in_service", "completed"].includes(item.status),
+            label: "Service started",
+            body: "Care work is underway against the selected service package.",
+          },
+          {
+            done: item.status === "completed",
+            label: item.onsiteServiceMode === "pickup_return" ? "Completed and returned" : "Completed and checked out",
+            body: item.onsiteServiceMode === "pickup_return"
+              ? "Vehicle has been returned to the customer and payment can be captured."
+              : "Work is complete, area is clear, and payment can be captured.",
+          },
+          {
+            done: checkedOut || item.status === "completed",
+            label: "Checkout recorded",
+            body: "Final operational checkout timestamp is saved for audit.",
+          },
+        ];
+
+        return `
+          <div class="checklist-grid">
+            ${steps
+              .map(
+                (step) => `
+                  <div class="checklist-item ${step.done ? "is-done" : ""}">
+                    <span class="checklist-state">${step.done ? "&check;" : ""}</span>
+                    <div class="checklist-copy">
+                      <strong>${escapeHtml(step.label)}</strong>
+                      <span>${escapeHtml(step.body)}</span>
+                    </div>
+                  </div>
+                `,
+              )
+              .join("")}
+          </div>
+        `;
       }
 
       function renderDrawerTimeline(status) {
