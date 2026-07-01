@@ -56,7 +56,14 @@ import type {
   UpdateSchedulingConfigRequest,
   Vehicle,
 } from "@prima-wash/contracts";
-import { assertInternal, assertOwnerAccess, assertPartnerOrInternal, assertPropertyManagerAccess, requireActor } from "./http/auth.js";
+import {
+  assertInternal,
+  assertInternalPermission,
+  assertOwnerAccess,
+  assertPartnerOrInternal,
+  assertPropertyManagerAccess,
+  requireActor,
+} from "./http/auth.js";
 import { readJsonBody, readRawBody } from "./http/body.js";
 import { attachRequestLogging, type RequestContext } from "./http/request-log.js";
 import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
@@ -507,7 +514,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/property-leads") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "property_manage");
         const marketId = requestUrl.searchParams.get("marketId") ?? "sg";
         sendJson(response, 200, { data: await options.repositories.properties.listLeads({ marketId }) });
       } catch (error) {
@@ -521,7 +528,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "GET" && operationalProfileMatch) {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "property_manage");
         const propertyId = operationalProfileMatch[1];
 
         if (!propertyId) {
@@ -546,7 +553,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "PATCH" && operationalProfileMatch) {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "property_manage");
         const propertyId = operationalProfileMatch[1];
 
         if (!propertyId) {
@@ -588,7 +595,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "operations_read");
         const propertyId = requestUrl.searchParams.get("propertyId") ?? undefined;
         sendJson(response, 200, {
           data: await options.repositories.condoOperations.listPrimaWashDays(propertyId ? { propertyId } : {}),
@@ -602,7 +609,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-day-bookings") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "operations_read");
         const primaWashDayId = requestUrl.searchParams.get("primaWashDayId") ?? undefined;
         const bookings = (await options.repositories.bookings.list())
           .filter((booking) => booking.primaWashDayId)
@@ -622,7 +629,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "POST" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "operations_write");
         const input = await readJsonBody<CreatePrimaWashDayRequest>(request);
         const errors = validateCreatePrimaWashDay(input);
 
@@ -660,7 +667,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "PATCH" && primaWashDayMatch) {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "operations_write");
         const dayId = primaWashDayMatch[1];
 
         if (!dayId) {
@@ -712,7 +719,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "PATCH" && propertyActivationMatch) {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "property_manage");
         const propertyId = propertyActivationMatch[1];
 
         if (!propertyId) {
@@ -854,6 +861,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const actor = requireActor(request);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
         sendJson(response, 200, { data: await options.repositories.availability.listPartner(partnerLocationId) });
       } catch (error) {
         sendAuthError(response, error);
@@ -996,9 +1004,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const partnerLocationId = input.partnerLocationId ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_write");
         const slot = await options.repositories.availability.create({
           ...input,
-          partnerLocationId: input.partnerLocationId ?? "loc_demo_001",
+          partnerLocationId,
         });
 
         await options.repositories.audit.record({
@@ -1031,6 +1041,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const actor = requireActor(request);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
         sendJson(response, 200, { data: await options.repositories.scheduling.get(partnerLocationId) });
       } catch (error) {
         sendAuthError(response, error);
@@ -1044,6 +1055,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const actor = requireActor(request);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_write");
         const input = await readJsonBody<UpdateSchedulingConfigRequest>(request);
         const errors = validateSchedulingConfig(input);
 
@@ -1083,6 +1095,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const actor = requireActor(request);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
         sendJson(response, 200, { data: await options.repositories.capacityTemplates.list(partnerLocationId) });
       } catch (error) {
         sendAuthError(response, error);
@@ -1103,9 +1116,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const partnerLocationId = input.partnerLocationId ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_write");
         const template = await options.repositories.capacityTemplates.create({
           ...input,
-          partnerLocationId: input.partnerLocationId ?? "loc_demo_001",
+          partnerLocationId,
         });
 
         await options.repositories.audit.record({
@@ -1166,6 +1181,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        await assertPartnerLocationAccess(options.repositories, actor, template.partnerLocationId, "operations_write");
         const slotsToCreate = generateAvailabilitySlotsFromTemplate(template, input.date);
         const slots: PartnerAvailabilitySlot[] = [];
 
@@ -1216,6 +1232,14 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const existingTemplate = await options.repositories.capacityTemplates.get(templateId);
+
+        if (!existingTemplate) {
+          sendError(response, 404, "capacity_template_not_found", "Capacity template does not exist");
+          return;
+        }
+
+        await assertPartnerLocationAccess(options.repositories, actor, existingTemplate.partnerLocationId, "operations_write");
         const template = await options.repositories.capacityTemplates.update(templateId, input);
 
         await options.repositories.audit.record({
@@ -1250,7 +1274,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "GET" && requestUrl.pathname === "/v1/audit-events") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "operations_read");
         const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "50", 10);
         sendJson(response, 200, { data: await options.repositories.audit.list(Math.min(Math.max(limit, 1), 100)) });
       } catch (error) {
@@ -1265,6 +1289,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const actor = requireActor(request);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
+        await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
         const bookings = await options.repositories.bookings.list();
         const auditEvents = await options.repositories.audit.list(8);
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
@@ -1280,10 +1305,29 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/operations-dashboard") {
+      try {
+        const actor = requireActor(request);
+        assertInternalPermission(actor, "operations_read");
+        const bookings = await options.repositories.bookings.list();
+        const auditEvents = await options.repositories.audit.list(8);
+        const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
+        const vehicleById = await buildVehicleLookup(options.repositories, bookings);
+        const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
+        sendJson(response, 200, {
+          data: buildPartnerDashboard(undefined, bookings, auditEvents, paymentByBookingId, vehicleById, partnerById),
+        });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/v1/analytics/mavo") {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "finance_read");
         const month = requestUrl.searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
 
         if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -1629,6 +1673,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           assertOwnerAccess(actor, booking.ownerId);
         } else {
           assertPartnerOrInternal(actor);
+          await assertPartnerBookingAccess(options.repositories, actor, booking, "operations_read");
         }
 
         sendJson(response, 200, { data: booking });
@@ -1872,7 +1917,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "POST" && paymentRefundMatch) {
       try {
         const actor = requireActor(request);
-        assertInternal(actor);
+        assertInternalPermission(actor, "finance_write");
         const paymentIntentId = paymentRefundMatch[1];
 
         if (!paymentIntentId) {
@@ -1935,6 +1980,14 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const existingSlot = await options.repositories.availability.get(slotId);
+
+        if (!existingSlot) {
+          sendError(response, 404, "availability_slot_not_found", "Availability slot does not exist");
+          return;
+        }
+
+        await assertPartnerLocationAccess(options.repositories, actor, existingSlot.partnerLocationId, "operations_write");
         const slot = await options.repositories.availability.update(slotId, input);
 
         await options.repositories.audit.record({
@@ -2082,6 +2135,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
         const now = new Date().toISOString();
         const updatedBooking = await options.repositories.bookings.updateExecution(booking.id, {
           ...(input.onsiteServiceMode !== undefined ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
@@ -2309,6 +2363,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
         if (!canTransitionBookingStatus(booking.status, input.status)) {
           sendError(
             response,
@@ -2687,6 +2742,11 @@ function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown
     return true;
   }
 
+  if (message === "internal_permission_required") {
+    sendError(response, 403, message, "The internal account is missing the required permission");
+    return true;
+  }
+
   if (message === "partner_role_required") {
     sendError(response, 403, message, "Partner or internal role is required");
     return true;
@@ -2694,6 +2754,21 @@ function sendAuthError(response: Parameters<typeof sendError>[0], error: unknown
 
   if (message === "property_manager_role_required") {
     sendError(response, 403, message, "Property manager role is required");
+    return true;
+  }
+
+  if (message === "partner_location_forbidden") {
+    sendError(response, 403, message, "Partner is not allowed to access this location");
+    return true;
+  }
+
+  if (message === "partner_booking_forbidden") {
+    sendError(response, 403, message, "Partner is not allowed to manage this booking");
+    return true;
+  }
+
+  if (message === "partner_location_not_found") {
+    sendError(response, 404, message, "Partner location does not exist");
     return true;
   }
 
@@ -2824,8 +2899,14 @@ async function canAccessCommunicationThread(
   }
 }
 
-async function assertPartnerBookingAccess(repositories: Repositories, actor: Actor, booking: Booking): Promise<void> {
+async function assertPartnerBookingAccess(
+  repositories: Repositories,
+  actor: Actor,
+  booking: Booking,
+  internalPermission: Parameters<typeof assertInternalPermission>[1] = "operations_write",
+): Promise<void> {
   if (actor.role === "internal") {
+    assertInternalPermission(actor, internalPermission);
     return;
   }
 
@@ -2837,6 +2918,28 @@ async function assertPartnerBookingAccess(repositories: Repositories, actor: Act
 
   if (!partner || partner.organizationId !== actor.organizationId) {
     throw new Error("partner_booking_forbidden");
+  }
+}
+
+async function assertPartnerLocationAccess(
+  repositories: Repositories,
+  actor: Actor,
+  partnerLocationId: string,
+  internalPermission: Parameters<typeof assertInternalPermission>[1],
+): Promise<void> {
+  const partner = await repositories.partners.get(partnerLocationId);
+
+  if (!partner) {
+    throw new Error("partner_location_not_found");
+  }
+
+  if (actor.role === "internal") {
+    assertInternalPermission(actor, internalPermission);
+    return;
+  }
+
+  if (actor.role !== "partner" || partner.organizationId !== actor.organizationId) {
+    throw new Error("partner_location_forbidden");
   }
 }
 
@@ -2872,14 +2975,16 @@ function getBearerToken(request: Parameters<typeof requireActor>[0]): string {
 }
 
 function buildPartnerDashboard(
-  partnerLocationId: string,
+  partnerLocationId: string | undefined,
   bookings: readonly Booking[],
   auditEvents: PartnerDashboardResponse["auditEvents"],
   paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
   vehicleById: ReadonlyMap<string, Vehicle>,
   partnerById: ReadonlyMap<string, PartnerLocation>,
 ): PartnerDashboardResponse {
-  const locationBookings = bookings.filter((booking) => booking.partnerLocationId === partnerLocationId);
+  const locationBookings = partnerLocationId
+    ? bookings.filter((booking) => booking.partnerLocationId === partnerLocationId)
+    : bookings;
   const pendingPayment = locationBookings.filter((booking) => {
     const payment = paymentByBookingId.get(booking.id);
     return booking.status === "pending_payment" && payment?.status !== "authorized";
@@ -2940,7 +3045,7 @@ function buildPartnerDashboard(
     });
 
   return {
-    partnerLocationId,
+    partnerLocationId: partnerLocationId ?? "all_locations",
     generatedAt: new Date().toISOString(),
     metrics: [
       {

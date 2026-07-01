@@ -1891,6 +1891,7 @@
       const urlParams = new URLSearchParams(location.search);
       const apiBase = urlParams.get("api") || "http://127.0.0.1:3001";
       const portalMode = urlParams.get("portal") || "admin";
+      const isAdminMode = portalMode === "admin";
       const managementPropertyId = urlParams.get("propertyId") || "prop_sg_marina_one";
       const partnerLocations = {
         loc_demo_001: {
@@ -1928,6 +1929,7 @@
       const partnerLocationSelect = document.querySelector("#partner-location-select");
       const sidebarLocationNameEl = document.querySelector("#sidebar-location-name");
       const businessAvatarEl = document.querySelector(".business-avatar");
+      const condoLeadsSectionEl = document.querySelector("#condo-leads-section");
       const toastEl = document.querySelector("#toast");
       const availabilityDialog = document.querySelector("#availability-dialog");
       const availabilityForm = document.querySelector("#availability-form");
@@ -1991,6 +1993,10 @@
         sidebarEl.classList.toggle("is-open");
       });
 
+      if (!isAdminMode) {
+        condoLeadsSectionEl.hidden = true;
+      }
+
       document.querySelectorAll(".nav-item").forEach((item) => {
         item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
       });
@@ -2003,11 +2009,23 @@
         };
       }
 
+      function adminHeaders(permissions = "super_admin") {
+        return {
+          "x-prima-user-id": "usr_internal_dashboard",
+          "x-prima-role": "internal",
+          "x-prima-permissions": permissions,
+        };
+      }
+
+      function workspaceHeaders(permissions = "super_admin") {
+        return isAdminMode ? adminHeaders(permissions) : partnerHeaders();
+      }
+
       function partnerQuery() {
         return `partnerLocationId=${encodeURIComponent(selectedPartnerLocationId)}`;
       }
 
-      async function requestJson(path, requestHeaders = partnerHeaders()) {
+      async function requestJson(path, requestHeaders = workspaceHeaders()) {
         const response = await fetch(`${apiBase}${path}`, { headers: requestHeaders });
         const payload = await response.json();
 
@@ -2045,8 +2063,7 @@
       }
 
       async function communicationRequestJson(path, init = {}, headers = {
-        "x-prima-user-id": "usr_internal_dashboard",
-        "x-prima-role": "internal",
+        ...adminHeaders("operations_read,operations_write,property_manage"),
       }) {
         const response = await fetch(`${apiBase}${path}`, {
           ...init,
@@ -2066,34 +2083,31 @@
       }
 
       async function loadDashboard() {
-        const [dashboard, availability, templates, mavo, condoLeads, primaWashDays, primaWashDayBookings] = await Promise.all([
-          requestJson(`/v1/partner/dashboard?${partnerQuery()}`),
-          requestJson(`/v1/partner/availability?${partnerQuery()}`),
-          requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`),
-          requestJson(`/v1/analytics/mavo?month=${currentMonth}`, {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
-          }),
-          requestJson(`/v1/internal/property-leads`, {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
-          }),
-          requestJson(`/v1/internal/prima-wash-days`, {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
-          }),
-          requestJson(`/v1/internal/prima-wash-day-bookings`, {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
-          }),
+        const dashboardPath = isAdminMode
+          ? "/v1/internal/operations-dashboard"
+          : `/v1/partner/dashboard?${partnerQuery()}`;
+        const [dashboard, availability, templates] = await Promise.all([
+          requestJson(dashboardPath, isAdminMode ? adminHeaders("operations_read,finance_read") : partnerHeaders()),
+          requestJson(`/v1/partner/availability?${partnerQuery()}`, workspaceHeaders("operations_read")),
+          requestJson(`/v1/partner/capacity-templates?${partnerQuery()}`, workspaceHeaders("operations_read")),
         ]);
+        const [mavo, condoLeads, primaWashDays, primaWashDayBookings] = isAdminMode
+          ? await Promise.all([
+              requestJson(`/v1/analytics/mavo?month=${currentMonth}`, adminHeaders("finance_read")),
+              requestJson(`/v1/internal/property-leads`, adminHeaders("property_manage")),
+              requestJson(`/v1/internal/prima-wash-days`, adminHeaders("operations_read")),
+              requestJson(`/v1/internal/prima-wash-day-bookings`, adminHeaders("operations_read")),
+            ])
+          : [{ monthlyActiveVehicleOwners: 0 }, [], [], []];
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
         condoLeadsCache = condoLeads;
         renderDashboard(dashboard, mavo);
-        renderCondoLeads(condoLeads);
-        renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
+        if (isAdminMode) {
+          renderCondoLeads(condoLeads);
+          renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
+        }
         renderAvailability(availability);
         renderCapacityTemplates(templates);
         if (selectedPrimaWashDayQueueId) {
@@ -2500,10 +2514,10 @@
       function renderDashboard(data, mavo) {
         dashboardCache = { data, mavo };
         const selectedPartner = partnerLocations[selectedPartnerLocationId];
-        locationIdEl.textContent = selectedPartner.name;
-        sidebarLocationNameEl.textContent = selectedPartner.name;
-        businessAvatarEl.textContent = selectedPartner.avatar;
-        document.querySelector(".confidence-item strong").textContent = selectedPartner.hours;
+        locationIdEl.textContent = isAdminMode ? "All operations" : selectedPartner.name;
+        sidebarLocationNameEl.textContent = isAdminMode ? "Prima Wash Admin" : selectedPartner.name;
+        businessAvatarEl.textContent = isAdminMode ? "PW" : selectedPartner.avatar;
+        document.querySelector(".confidence-item strong").textContent = isAdminMode ? "Permission scoped" : selectedPartner.hours;
         generatedAtEl.textContent = new Date(data.generatedAt).toLocaleTimeString();
         const metricByLabel = new Map(data.metrics.map((metric) => [metric.label, metric]));
         const primaryMetrics = [
@@ -2551,7 +2565,7 @@
                       </div>
                       <div>
                         <strong>${formatService(item.serviceCode)}</strong><br />
-                        <span class="muted">Vehicle appointment · Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
+                        <span class="muted">${isAdminMode ? escapeHtml(item.partnerLocation?.name || "Partner location") : "Vehicle appointment"} · Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
                         <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
                         ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
                       </div>
@@ -3371,10 +3385,7 @@
       }
 
       async function openCommunicationDialog(input) {
-        communicationDialogHeaders = input.headers || {
-          "x-prima-user-id": "usr_internal_dashboard",
-          "x-prima-role": "internal",
-        };
+        communicationDialogHeaders = input.headers || adminHeaders("operations_read,operations_write,property_manage");
         communicationForm.reset();
         communicationForm.elements.resourceType.value = input.resourceType;
         communicationForm.elements.resourceId.value = input.resourceId;
@@ -3432,7 +3443,7 @@
         const threads = await communicationRequestJson(
           `/v1/communication/threads?resourceType=booking&resourceId=${encodeURIComponent(bookingId)}`,
           {},
-          partnerHeaders(),
+          workspaceHeaders("operations_read"),
         );
         const thread = threads.find((item) => item.type === "partner_to_owner");
 
@@ -3443,7 +3454,7 @@
         }
 
         form.elements.threadId.value = thread.id;
-        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, partnerHeaders());
+        const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, workspaceHeaders("operations_read"));
         messagesEl.innerHTML =
           payload.messages.length === 0
             ? `<div class="empty">No messages yet.</div>`
@@ -3701,7 +3712,7 @@
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/status`, {
           method: "PATCH",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({ status }),
@@ -3719,7 +3730,7 @@
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/execution`, {
           method: "PATCH",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify(input),
@@ -3737,7 +3748,7 @@
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/partner-decision`, {
           method: "POST",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({ decision, ...(message ? { message } : {}) }),
@@ -3755,8 +3766,7 @@
         const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/activation`, {
           method: "PATCH",
           headers: {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
+            ...adminHeaders("property_manage"),
             "content-type": "application/json",
           },
           body: JSON.stringify(input),
@@ -3774,8 +3784,7 @@
         const response = await fetch(`${apiBase}/v1/internal/prima-wash-days`, {
           method: "POST",
           headers: {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
+            ...adminHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify(input),
@@ -3792,8 +3801,7 @@
       async function fetchOperationalProfile(propertyId) {
         const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/operational-profile`, {
           headers: {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
+            ...adminHeaders("property_manage"),
           },
         });
         const payload = await response.json();
@@ -3813,8 +3821,7 @@
         const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/operational-profile`, {
           method: "PATCH",
           headers: {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
+            ...adminHeaders("property_manage"),
             "content-type": "application/json",
           },
           body: JSON.stringify(input),
@@ -3832,7 +3839,7 @@
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/cancel`, {
           method: "POST",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({ reason: "partner_requested" }),
@@ -3850,8 +3857,7 @@
         const response = await fetch(`${apiBase}/v1/payments/${paymentIntentId}/refund`, {
           method: "POST",
           headers: {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
+            ...adminHeaders("finance_write"),
           },
         });
         const payload = await response.json();
@@ -4304,7 +4310,7 @@
           submitButton.disabled = true;
 
           try {
-            const threadId = await sendCommunicationForm(bookingCommunicationForm, partnerHeaders());
+            const threadId = await sendCommunicationForm(bookingCommunicationForm, workspaceHeaders("operations_write"));
             bookingCommunicationForm.elements.threadId.value = threadId;
             bookingCommunicationForm.elements.body.value = "";
             await loadBookingCommunicationThread(bookingCommunicationForm.elements.resourceId.value);
@@ -4363,7 +4369,7 @@
         const response = await fetch(`${apiBase}/v1/partner/availability/${slotId}`, {
           method: "PATCH",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify(input),
@@ -4381,7 +4387,7 @@
         const response = await fetch(`${apiBase}/v1/partner/availability`, {
           method: "POST",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({
@@ -4407,7 +4413,7 @@
         const response = await fetch(`${apiBase}${path}`, {
           method,
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({
@@ -4435,7 +4441,7 @@
         const response = await fetch(`${apiBase}/v1/partner/capacity-templates/${templateId}/generate`, {
           method: "POST",
           headers: {
-            ...partnerHeaders(),
+            ...workspaceHeaders("operations_write"),
             "content-type": "application/json",
           },
           body: JSON.stringify({ date }),
@@ -4667,10 +4673,7 @@
         submitButton.disabled = true;
 
         try {
-          const headers = communicationDialogHeaders || {
-            "x-prima-user-id": "usr_internal_dashboard",
-            "x-prima-role": "internal",
-          };
+          const headers = communicationDialogHeaders || adminHeaders("operations_write,property_manage");
           const threadId = await sendCommunicationForm(communicationForm, headers);
           communicationForm.elements.threadId.value = threadId;
           communicationForm.elements.body.value = "";

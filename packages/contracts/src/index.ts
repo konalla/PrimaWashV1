@@ -11,10 +11,20 @@ export interface ApiErrorResponse {
 
 export type ActorRole = "customer" | "partner" | "fleet" | "internal" | "property_manager";
 
+export type InternalPermission =
+  | "operations_read"
+  | "operations_write"
+  | "finance_read"
+  | "finance_write"
+  | "partner_manage"
+  | "property_manage"
+  | "super_admin";
+
 export interface Actor {
   readonly userId: string;
   readonly organizationId?: string;
   readonly propertyId?: string;
+  readonly permissions?: readonly InternalPermission[];
   readonly role: ActorRole;
 }
 

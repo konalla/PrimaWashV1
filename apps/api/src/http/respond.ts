@@ -38,7 +38,7 @@ export function applyCorsHeaders(request: IncomingMessage, response: ServerRespo
   response.setHeader("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
   response.setHeader(
     "access-control-allow-headers",
-    "authorization,content-type,x-prima-user-id,x-prima-role,x-prima-organization-id,x-request-id",
+    "authorization,content-type,x-prima-user-id,x-prima-role,x-prima-organization-id,x-prima-property-id,x-prima-permissions,x-request-id",
   );
   response.setHeader("access-control-expose-headers", "x-request-id");
   response.setHeader("vary", "Origin");

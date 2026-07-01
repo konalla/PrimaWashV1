@@ -1006,13 +1006,14 @@ describe("Prima Wash API", () => {
         headers: {
           origin,
           "access-control-request-method": "GET",
-          "access-control-request-headers": "x-prima-user-id,x-prima-role,x-prima-organization-id",
+          "access-control-request-headers": "x-prima-user-id,x-prima-role,x-prima-organization-id,x-prima-property-id,x-prima-permissions",
         },
       });
 
       assert.equal(response.status, 204);
       assert.equal(response.headers.get("access-control-allow-origin"), origin);
       assert.match(response.headers.get("access-control-allow-headers") ?? "", /x-prima-user-id/);
+      assert.match(response.headers.get("access-control-allow-headers") ?? "", /x-prima-permissions/);
     }
   });
 
@@ -1162,6 +1163,32 @@ describe("Prima Wash API", () => {
     assert.equal(queueItem?.partnerLocation?.name, "Prima Wash Central");
     assert.equal(queueItem?.partnerLocation?.addressLine1, "100 Central Street");
     assert.equal(queueItem?.actionHint, "Customer has not created a payment hold yet");
+  });
+
+  it("blocks partners from reading competitor dashboard locations", async () => {
+    const response = await fetch(`${baseUrl}/v1/partner/dashboard?partnerLocationId=loc_harbour_001`, {
+      headers: partnerHeaders,
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "partner_location_forbidden");
+  });
+
+  it("exposes cross-location operations only to internal users with operations permission", async () => {
+    const allowedResponse = await fetch(`${baseUrl}/v1/internal/operations-dashboard`, {
+      headers: { ...internalHeaders, "x-prima-permissions": "operations_read" },
+    });
+    const allowedPayload = (await allowedResponse.json()) as ApiResponse<PartnerDashboardResponse>;
+    const deniedResponse = await fetch(`${baseUrl}/v1/internal/operations-dashboard`, {
+      headers: { ...internalHeaders, "x-prima-permissions": "finance_read" },
+    });
+    const deniedPayload = (await deniedResponse.json()) as ApiErrorResponse;
+
+    assert.equal(allowedResponse.status, 200);
+    assert.equal(allowedPayload.data.partnerLocationId, "all_locations");
+    assert.equal(deniedResponse.status, 403);
+    assert.equal(deniedPayload.code, "internal_permission_required");
   });
 
   it("surfaces authorized payment readiness in the partner dashboard", async () => {

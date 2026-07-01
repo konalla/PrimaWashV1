@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import type { Actor, ActorRole } from "@prima-wash/contracts";
+import type { Actor, ActorRole, InternalPermission } from "@prima-wash/contracts";
 import { actorFromAccessToken } from "../modules/auth/service.js";
 
 export function getActor(request: IncomingMessage): Actor | undefined {
@@ -23,12 +23,14 @@ export function getActor(request: IncomingMessage): Actor | undefined {
   const role = isActorRole(roleHeader) ? roleHeader : "customer";
   const organizationId = getHeaderValue(request, "x-prima-organization-id");
   const propertyId = getHeaderValue(request, "x-prima-property-id");
+  const permissions = role === "internal" ? parseInternalPermissions(getHeaderValue(request, "x-prima-permissions")) : [];
 
   return {
     userId,
     role,
     ...(organizationId ? { organizationId } : {}),
     ...(propertyId ? { propertyId } : {}),
+    ...(permissions.length > 0 ? { permissions } : {}),
   };
 }
 
@@ -70,6 +72,23 @@ export function assertInternal(actor: Actor): void {
   }
 }
 
+export function assertInternalPermission(actor: Actor, permission: InternalPermission): void {
+  assertInternal(actor);
+
+  if (!hasInternalPermission(actor, permission)) {
+    throw new Error("internal_permission_required");
+  }
+}
+
+export function hasInternalPermission(actor: Actor, permission: InternalPermission): boolean {
+  if (actor.role !== "internal") {
+    return false;
+  }
+
+  const permissions = actor.permissions ?? [];
+  return permissions.includes("super_admin") || permissions.includes(permission);
+}
+
 export function assertPartnerOrInternal(actor: Actor): void {
   if (actor.role !== "partner" && actor.role !== "internal") {
     throw new Error("partner_role_required");
@@ -102,4 +121,29 @@ function getHeaderValue(request: IncomingMessage, name: string): string | undefi
 
 function isActorRole(value: string | undefined): value is ActorRole {
   return value === "customer" || value === "partner" || value === "fleet" || value === "internal" || value === "property_manager";
+}
+
+function parseInternalPermissions(value: string | undefined): readonly InternalPermission[] {
+  if (!value) {
+    return ["super_admin"];
+  }
+
+  const permissions = value
+    .split(",")
+    .map((permission) => permission.trim())
+    .filter(isInternalPermission);
+
+  return permissions.length > 0 ? permissions : ["super_admin"];
+}
+
+function isInternalPermission(value: string): value is InternalPermission {
+  return (
+    value === "operations_read" ||
+    value === "operations_write" ||
+    value === "finance_read" ||
+    value === "finance_write" ||
+    value === "partner_manage" ||
+    value === "property_manage" ||
+    value === "super_admin"
+  );
 }
