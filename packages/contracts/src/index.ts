@@ -402,7 +402,7 @@ export type BookingStatus =
   | "completed"
   | "cancelled";
 
-export type BookingOnsiteServiceMode = "onsite" | "pickup_return";
+export type BookingOnsiteServiceMode = "onsite" | "partner_location" | "customer_property" | "pickup_return";
 
 export interface UpdateBookingExecutionRequest {
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;

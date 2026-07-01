@@ -1,4 +1,4 @@
-import type { AvailabilitySlot, Booking, PaymentIntent, Vehicle } from '@prima-wash/contracts';
+import type { AvailabilitySlot, Booking, BookingOnsiteServiceMode, PaymentIntent, Vehicle } from '@prima-wash/contracts';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -19,7 +19,7 @@ export default function ReviewScreen() {
   const [pendingPayment, setPendingPayment] = useState<PaymentIntent>();
   const [error, setError] = useState<string>();
   const locationName = draft.primaWashDay?.propertyName ?? draft.partner?.name;
-  const onsiteServiceMode = draft.primaWashDay ? 'onsite' : draft.onsiteServiceMode ?? 'onsite';
+  const onsiteServiceMode: BookingOnsiteServiceMode = draft.primaWashDay ? 'customer_property' : draft.onsiteServiceMode ?? 'partner_location';
   const canSubmit = Boolean(draft.service && draft.slot && draft.vehicle && (draft.partner || draft.primaWashDay));
 
   async function confirmBooking() {
@@ -106,9 +106,17 @@ export default function ReviewScreen() {
       ) : null}
       {draft.primaWashDay ? (
         <Surface>
-          <SectionHeading eyebrow="Condo operations" title="Temporary on-site service" />
+          <SectionHeading eyebrow="Property operations" title="Temporary approved service" />
           <Text style={styles.payment}>
             Prima Wash will coordinate this booking inside the approved condo operating window and service area.
+          </Text>
+        </Surface>
+      ) : null}
+      {onsiteServiceMode === 'customer_property' && !draft.primaWashDay ? (
+        <Surface>
+          <SectionHeading eyebrow="Property service" title="Service at your saved address" />
+          <Text style={styles.payment}>
+            The partner will use your residence and access notes where mobile coverage is available. Drive-to-partner remains a separate booking option.
           </Text>
         </Surface>
       ) : null}
@@ -174,8 +182,10 @@ function formatHoldExpiry(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatServiceMode(mode: 'onsite' | 'pickup_return') {
-  return mode === 'pickup_return' ? 'Pickup and return' : 'Drive to carer / on-site';
+function formatServiceMode(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup and return';
+  if (mode === 'customer_property') return 'At my residence / property';
+  return 'Drive to partner location';
 }
 
 function formatVehicleName(vehicle: Vehicle) {

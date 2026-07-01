@@ -340,23 +340,44 @@ describe("Prima Wash API", () => {
     assert.deepEqual(paymentProviderOperations.slice(createOperationCount), ["create"]);
   });
 
-  it("persists customer-selected pickup and return mode when creating a booking", async () => {
-    const vehicle = await createVehicle("PICKUP1");
-    const response = await fetch(`${baseUrl}/v1/bookings`, {
+  it("persists customer-selected service modes when creating a booking", async () => {
+    const pickupVehicle = await createVehicle("PICKUP1");
+    const pickupResponse = await fetch(`${baseUrl}/v1/bookings`, {
       method: "POST",
       headers: customerHeaders,
       body: JSON.stringify({
-        vehicleId: vehicle.id,
+        vehicleId: pickupVehicle.id,
         availabilitySlotId: "slot_demo_1100",
         serviceCode: "wash_basic",
         onsiteServiceMode: "pickup_return",
       }),
     });
-    const payload = (await response.json()) as ApiResponse<Booking>;
+    const pickupPayload = (await pickupResponse.json()) as ApiResponse<Booking>;
 
-    assert.equal(response.status, 201);
-    assert.equal(payload.data.onsiteServiceMode, "pickup_return");
-    assert.equal(payload.data.valetRequested, true);
+    const propertyVehicle = await createVehicle("HOME123");
+    const propertyResponse = await fetch(`${baseUrl}/v1/bookings`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({
+        vehicleId: propertyVehicle.id,
+        availabilitySlotId: "slot_demo_1100",
+        serviceCode: "wash_basic",
+        onsiteServiceMode: "customer_property",
+      }),
+    });
+    const propertyPayload = (await propertyResponse.json()) as ApiResponse<Booking>;
+
+    const driveVehicle = await createVehicle("DRIVE123");
+    const driveBooking = await createBooking(driveVehicle.id, "wash_basic");
+
+    assert.equal(pickupResponse.status, 201);
+    assert.equal(pickupPayload.data.onsiteServiceMode, "pickup_return");
+    assert.equal(pickupPayload.data.valetRequested, true);
+    assert.equal(propertyResponse.status, 201);
+    assert.equal(propertyPayload.data.onsiteServiceMode, "customer_property");
+    assert.equal(propertyPayload.data.valetRequested, false);
+    assert.equal(driveBooking.onsiteServiceMode, "partner_location");
+    assert.equal(driveBooking.valetRequested, false);
   });
 
   it("lists condos and registers interest for an existing condo", async () => {
@@ -877,7 +898,8 @@ describe("Prima Wash API", () => {
     assert.ok(item?.paymentIntentId);
     assert.equal(item?.paymentStatus, "authorized");
     assert.equal(item?.status, "confirmed");
-    assert.equal(item?.actionHint, "Customer expected; check in when vehicle arrives");
+    assert.equal(item?.onsiteServiceMode, "customer_property");
+    assert.equal(item?.actionHint, "Property service requested; confirm access and service area");
   });
 
   it("lets partner actors update onsite execution details for a booking", async () => {
@@ -1135,8 +1157,14 @@ describe("Prima Wash API", () => {
   });
 
   it("surfaces authorized payment readiness in the partner dashboard", async () => {
+    const slot = await createAvailabilitySlot({
+      startsAt: new Date(Date.UTC(2026, 6, 1, 6, 0, 0)).toISOString(),
+      endsAt: new Date(Date.UTC(2026, 6, 1, 7, 0, 0)).toISOString(),
+      capacity: 1,
+      serviceCodes: ["wash_basic"],
+    });
     const vehicle = await createVehicle("DASHREADY");
-    const booking = await createBooking(vehicle.id, "wash_basic");
+    const booking = await createBooking(vehicle.id, "wash_basic", slot.id);
     await authorizeBookingPayment(booking.id);
 
     const response = await fetch(`${baseUrl}/v1/partner/dashboard`, {
@@ -1150,6 +1178,7 @@ describe("Prima Wash API", () => {
     assert.equal(queueItem?.paymentStatus, "authorized");
     assert.deepEqual(queueItem?.paymentAmount, { amountMinor: 2500, currency: "USD" });
     assert.equal(queueItem?.status, "confirmed");
+    assert.equal(queueItem?.onsiteServiceMode, "partner_location");
     assert.equal(queueItem?.actionHint, "Customer expected; check in when vehicle arrives");
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Authorized revenue"));
   });

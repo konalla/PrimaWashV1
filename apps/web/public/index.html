@@ -2787,7 +2787,8 @@
                   <label>
                     Service mode
                     <select name="onsiteServiceMode">
-                      <option value="onsite" ${(item.onsiteServiceMode || "onsite") === "onsite" ? "selected" : ""}>Onsite at approved area</option>
+                      <option value="partner_location" ${(item.onsiteServiceMode || "partner_location") === "partner_location" || item.onsiteServiceMode === "onsite" ? "selected" : ""}>Customer drives to partner</option>
+                      <option value="customer_property" ${item.onsiteServiceMode === "customer_property" ? "selected" : ""}>At customer property</option>
                       <option value="pickup_return" ${item.onsiteServiceMode === "pickup_return" ? "selected" : ""}>Pickup, clean away, return</option>
                     </select>
                   </label>

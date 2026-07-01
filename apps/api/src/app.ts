@@ -2936,6 +2936,14 @@ function getPartnerActionHint(booking: Booking, payment?: PaymentIntent): string
   }
 
   if (booking.status === "confirmed") {
+    if (booking.onsiteServiceMode === "pickup_return") {
+      return "Pickup and return requested; coordinate vehicle handover";
+    }
+
+    if (booking.onsiteServiceMode === "customer_property") {
+      return "Property service requested; confirm access and service area";
+    }
+
     return "Customer expected; check in when vehicle arrives";
   }
 

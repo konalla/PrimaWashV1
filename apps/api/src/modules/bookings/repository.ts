@@ -505,8 +505,8 @@ export function validateCreateBooking(input: Partial<CreateBookingRequest>): str
     errors.push("primaWashDayId must be valid");
   }
 
-  if (input.onsiteServiceMode !== undefined && !["onsite", "pickup_return"].includes(input.onsiteServiceMode)) {
-    errors.push("onsiteServiceMode must be onsite or pickup_return");
+  if (input.onsiteServiceMode !== undefined && !isValidBookingServiceMode(input.onsiteServiceMode)) {
+    errors.push("onsiteServiceMode must be partner_location, customer_property, onsite, or pickup_return");
   }
 
   if (!input.serviceCode) {
@@ -553,10 +553,8 @@ export function validateUpdateBookingStatus(input: { readonly status?: string })
 
 export function validateUpdateBookingExecution(input: Partial<UpdateBookingExecutionRequest>): string[] {
   const errors: string[] = [];
-  const validModes: readonly BookingOnsiteServiceMode[] = ["onsite", "pickup_return"];
-
-  if (input.onsiteServiceMode !== undefined && !validModes.includes(input.onsiteServiceMode)) {
-    errors.push("onsiteServiceMode must be onsite or pickup_return");
+  if (input.onsiteServiceMode !== undefined && !isValidBookingServiceMode(input.onsiteServiceMode)) {
+    errors.push("onsiteServiceMode must be partner_location, customer_property, onsite, or pickup_return");
   }
 
   if (input.valetRequested !== undefined && typeof input.valetRequested !== "boolean") {
@@ -576,6 +574,10 @@ export function validateUpdateBookingExecution(input: Partial<UpdateBookingExecu
   }
 
   return errors;
+}
+
+function isValidBookingServiceMode(value: string): value is BookingOnsiteServiceMode {
+  return ["onsite", "partner_location", "customer_property", "pickup_return"].includes(value);
 }
 
 interface BuildBookingInput {
@@ -636,6 +638,7 @@ function buildBooking(input: BuildBookingInput): Booking {
   const scheduledEndAt = new Date(
     new Date(input.scheduledStartAt).getTime() + input.durationMinutes * 60_000,
   ).toISOString();
+  const onsiteServiceMode = input.onsiteServiceMode ?? (input.primaWashDayId ? "customer_property" : "partner_location");
 
   return {
     id: `book_${crypto.randomUUID()}`,
@@ -645,8 +648,8 @@ function buildBooking(input: BuildBookingInput): Booking {
     ...(input.primaWashDayId ? { primaWashDayId: input.primaWashDayId } : {}),
     serviceCode: input.serviceCode,
     status: "pending_payment",
-    ...(input.onsiteServiceMode ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
-    valetRequested: input.onsiteServiceMode === "pickup_return",
+    onsiteServiceMode,
+    valetRequested: onsiteServiceMode === "pickup_return",
     scheduledStartAt: input.scheduledStartAt,
     scheduledEndAt,
     acceptedPrice: input.acceptedPrice,

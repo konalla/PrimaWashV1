@@ -75,7 +75,7 @@ export function BookingProvider({ children }: PropsWithChildren) {
       partner: undefined,
       primaWashDay: day,
       hold: undefined,
-      onsiteServiceMode: 'onsite',
+      onsiteServiceMode: 'customer_property',
       slot: {
         primaWashDayId: day.id,
         partnerLocationId: day.partnerLocationId,

@@ -1,4 +1,4 @@
-import type { Booking, CommunicationMessage, CommunicationThread, PartnerLocation, PaymentIntent, Vehicle } from '@prima-wash/contracts';
+import type { Booking, BookingOnsiteServiceMode, CommunicationMessage, CommunicationThread, PartnerLocation, PaymentIntent, Vehicle } from '@prima-wash/contracts';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -288,8 +288,9 @@ export default function BookingDetailScreen() {
             <SectionHeading eyebrow="Appointment" title={formatService(booking.serviceCode)} />
             <DetailRow label="When" value={formatAppointment(booking.scheduledStartAt)} />
             <DetailRow label="Vehicle" value={formatVehicle(vehicle)} />
+            <DetailRow label="Care mode" value={formatServiceMode(booking.onsiteServiceMode)} />
             <DetailRow label="Partner" value={partner?.name ?? booking.partnerLocationId} />
-            <DetailRow label="Address" value={partner ? `${partner.addressLine1}, ${partner.city}` : 'Loading partner address'} />
+            <DetailRow label={addressLabel(booking.onsiteServiceMode)} value={partner ? `${partner.addressLine1}, ${partner.city}` : 'Loading partner address'} />
             <DetailRow label="Total" value={formatMoney(booking.acceptedPrice)} strong />
           </Surface>
 
@@ -522,6 +523,17 @@ function formatVehicle(vehicle?: Vehicle) {
   return `${makeModel || vehicle.nickname || 'Vehicle'} · ${vehicle.plateNumber}`;
 }
 
+function formatServiceMode(mode?: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup and return';
+  if (mode === 'customer_property') return 'At my residence / property';
+  return 'Drive to partner location';
+}
+
+function addressLabel(mode?: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup partner';
+  if (mode === 'customer_property') return 'Service coordinator';
+  return 'Partner address';
+}
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   eyebrow: { flex: 1, color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },

@@ -1,4 +1,4 @@
-import type { ServiceOffering, Vehicle } from '@prima-wash/contracts';
+import type { BookingOnsiteServiceMode, ServiceOffering, Vehicle } from '@prima-wash/contracts';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -25,6 +25,7 @@ export default function ServiceScreen() {
   const hasSelectedVehicle = Boolean(draft.vehicle);
   const isPrimaWashDayBooking = Boolean(draft.primaWashDay);
   const selectedVehicle = draft.vehicle;
+  const serviceMode: BookingOnsiteServiceMode = draft.primaWashDay ? 'customer_property' : draft.onsiteServiceMode ?? 'partner_location';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,9 +60,9 @@ export default function ServiceScreen() {
     <AppScreen eyebrow="Step 1 of 3" title="Choose your care">
       <Text style={styles.intro}>
         {draft.primaWashDay
-          ? `${draft.primaWashDay.propertyName} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
+          ? `${formatServiceMode(serviceMode)} - ${draft.primaWashDay.propertyName} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
           : draft.partner
-            ? `${draft.partner.name} - ${draft.partner.rating.toFixed(1)} stars - ${draft.partner.distanceKm.toFixed(1)} km`
+            ? `${formatServiceMode(serviceMode)} - ${draft.partner.name} - ${draft.partner.rating.toFixed(1)} stars - ${draft.partner.distanceKm.toFixed(1)} km`
             : 'Choose a verified partner before selecting your care.'}
       </Text>
       {!draft.partner && !draft.primaWashDay ? (
@@ -164,6 +165,12 @@ export default function ServiceScreen() {
 
 function formatVehicleName(vehicle: Vehicle) {
   return `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || vehicle.nickname || 'Vehicle';
+}
+
+function formatServiceMode(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup and return';
+  if (mode === 'customer_property') return 'At my residence';
+  return 'Drive to partner';
 }
 
 const styles = StyleSheet.create({

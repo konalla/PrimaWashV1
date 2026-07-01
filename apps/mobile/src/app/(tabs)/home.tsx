@@ -170,7 +170,7 @@ export default function HomeScreen() {
             <Text style={styles.actionBody}>Use your condo's approved temporary service window.</Text>
           </Pressable>
         ) : null}
-        <Pressable onPress={() => openCareMode('onsite')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+        <Pressable onPress={() => openCareMode('partner_location')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
           <Text style={styles.actionIcon}>Drive</Text>
           <Text style={styles.actionTitle}>Drive to nearby carer</Text>
           <Text style={styles.actionBody}>Compare trusted services and live times near you.</Text>
@@ -181,7 +181,7 @@ export default function HomeScreen() {
           <Text style={styles.actionBody}>Have a partner collect your car, complete care, and bring it back.</Text>
         </Pressable>
         {profile?.residentialProfile?.residenceType === 'landed' ? (
-          <Pressable onPress={() => openCareMode('onsite')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+          <Pressable onPress={() => openCareMode('customer_property')} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
             <Text style={styles.actionIcon}>Home</Text>
             <Text style={styles.actionTitle}>At-home service</Text>
             <Text style={styles.actionBody}>Use saved access notes when mobile detailing coverage is available.</Text>
@@ -215,7 +215,7 @@ export default function HomeScreen() {
 
       <PrimaryButton
         label="Choose care option"
-        onPress={() => openCareMode('onsite')}
+        onPress={() => openCareMode('partner_location')}
       />
     </AppScreen>
   );

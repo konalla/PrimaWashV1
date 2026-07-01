@@ -1,4 +1,4 @@
-import type { AvailabilitySearchSlot } from '@prima-wash/contracts';
+import type { AvailabilitySearchSlot, BookingOnsiteServiceMode } from '@prima-wash/contracts';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -23,6 +23,7 @@ export default function TimeScreen() {
   const partnerId = draft.partner?.id;
   const serviceCode = draft.service?.code;
   const vehicleId = draft.vehicle?.id;
+  const serviceMode = draft.onsiteServiceMode ?? 'partner_location';
   const activeHoldForSelectedDate =
     draft.hold?.status === 'active' && toIsoDate(new Date(draft.hold.startsAt)) === selectedDate ? draft.hold : undefined;
 
@@ -90,7 +91,7 @@ export default function TimeScreen() {
   return (
     <AppScreen eyebrow="Step 2 of 3" title="Choose a time">
       <Text style={styles.intro}>
-        {draft.partner?.name ?? 'Selected partner'} · {draft.service?.name ?? 'Selected service'} · Times shown in partner local time.
+        {formatServiceMode(serviceMode)} - {draft.partner?.name ?? 'Selected partner'} - {draft.service?.name ?? 'Selected service'} - Times shown in partner local time.
       </Text>
 
       <View style={styles.dateRail}>
@@ -192,6 +193,12 @@ function toIsoDate(date: Date) {
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatServiceMode(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup and return';
+  if (mode === 'customer_property') return 'At my residence';
+  return 'Drive to partner';
 }
 
 const styles = StyleSheet.create({

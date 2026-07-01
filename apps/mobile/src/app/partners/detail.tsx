@@ -1,4 +1,4 @@
-import type { PartnerLocation } from '@prima-wash/contracts';
+import type { BookingOnsiteServiceMode, PartnerLocation } from '@prima-wash/contracts';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -27,6 +27,7 @@ export default function PartnerDetailScreen() {
     return decodedValue;
   }, [draft.partner?.id, params.partnerId]);
   const cachedPartner = draft.partner?.id === partnerId ? draft.partner : undefined;
+  const serviceMode = draft.onsiteServiceMode ?? 'partner_location';
   const [partner, setPartnerData] = useState<PartnerLocation | undefined>(cachedPartner);
   const [loading, setLoading] = useState(!cachedPartner);
   const [error, setError] = useState<string>();
@@ -121,6 +122,10 @@ export default function PartnerDetailScreen() {
         <Text style={styles.description}>{partner.shortDescription}</Text>
       </Surface>
       <Surface>
+        <SectionHeading eyebrow="Selected care mode" title={formatServiceMode(serviceMode)} />
+        <Text style={styles.body}>{serviceModeDescription(serviceMode)}</Text>
+      </Surface>
+      <Surface>
         <SectionHeading eyebrow="Location" title={partner.addressLine1} />
         <Text style={styles.body}>{partner.city}, {partner.region}</Text>
         <View style={styles.map}>
@@ -144,9 +149,25 @@ export default function PartnerDetailScreen() {
           <Text style={styles.body}>Upfront pricing · Prima Care Guarantee · Live appointment times</Text>
         </Surface>
       ))}
-      <PrimaryButton label={`Choose ${partner.name}`} onPress={choosePartner} />
+      <PrimaryButton label={`Continue with ${formatServiceMode(serviceMode).toLowerCase()}`} onPress={choosePartner} />
     </AppScreen>
   );
+}
+
+function formatServiceMode(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup and return';
+  if (mode === 'customer_property') return 'At my residence';
+  return 'Drive to partner';
+}
+
+function serviceModeDescription(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') {
+    return 'The partner handles pickup, service, and return coordination.';
+  }
+  if (mode === 'customer_property') {
+    return 'The partner comes to your saved residence or approved property area when coverage permits.';
+  }
+  return 'You drive to this partner location for your appointment.';
 }
 
 function PartnerSkeleton() {
