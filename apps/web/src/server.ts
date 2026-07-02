@@ -21,10 +21,16 @@ const server = createServer(async (request, response) => {
 
   try {
     const file = await readFile(path.join(publicDirectory, safeFileName));
-    response.writeHead(200, { "content-type": contentTypeFor(safeFileName) });
+    response.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": contentTypeFor(safeFileName),
+    });
     response.end(file);
   } catch {
-    response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+    response.writeHead(404, {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=utf-8",
+    });
     response.end(await readFile(path.join(publicDirectory, "index.html"), "utf8"));
   }
 });
