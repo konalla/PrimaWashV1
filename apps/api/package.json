@@ -9,6 +9,7 @@
     "check": "tsc --noEmit",
     "build": "tsc",
     "migrate": "tsx src/db/migrate.ts",
+    "db:smoke": "tsx src/db/smoke-test.ts",
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {

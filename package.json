@@ -12,6 +12,7 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "npm run migrate --workspace @prima-wash/api",
+    "db:smoke": "npm run db:smoke --workspace @prima-wash/api",
     "dev:api": "npm run dev --workspace @prima-wash/api",
     "dev:mobile": "npm run start --workspace @prima-wash/mobile",
     "dev:mobile:web": "npm run web --workspace @prima-wash/mobile",

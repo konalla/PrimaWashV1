@@ -16,6 +16,7 @@ Prima Wash is a vehicle-care booking and operations platform. The first release 
 npm install
 npm run db:up
 npm run db:migrate
+npm run db:smoke
 npm run check
 npm run dev:api
 npm run dev:web
@@ -39,9 +40,10 @@ Open `http://127.0.0.1:3000/` for the partner/business dashboard. It defaults to
 ```bash
 npm run db:up
 npm run db:migrate
+npm run db:smoke
 ```
 
-Compose starts PostgreSQL on `127.0.0.1:5432` and stores data in the `postgres-data` Docker volume. `npm run db:migrate` applies the SQL migrations from `apps/api/db/migrations`.
+Compose starts PostgreSQL on `127.0.0.1:5432` and stores data in the `postgres-data` Docker volume. `npm run db:migrate` applies the SQL migrations from `apps/api/db/migrations`. `npm run db:smoke` verifies the connection, migration state, seed data, and a transactional write/read cycle for newer persistence fields.
 
 Docker Desktop must be running on Windows.
 
@@ -57,6 +59,7 @@ When new migrations are added, run:
 
 ```bash
 npm run db:migrate
+npm run db:smoke
 ```
 
 Verify the stack with:
