@@ -14,6 +14,8 @@ Prima Wash is a vehicle-care booking and operations platform. The first release 
 
 ```bash
 npm install
+npm run db:up
+npm run db:migrate
 npm run check
 npm run dev:api
 npm run dev:web
@@ -32,39 +34,44 @@ The legacy customer HTML at `http://127.0.0.1:3001/` remains a lightweight API r
 
 Open `http://127.0.0.1:3000/` for the partner/business dashboard. It defaults to the Compose API at `http://127.0.0.1:3001`. If your API is on a different port, pass it as `?api=http://127.0.0.1:3101`. The API allows local dashboard CORS from `http://127.0.0.1:3000` and `http://localhost:3000`.
 
-## Docker compose
+## Local PostgreSQL
 
 ```bash
-docker compose up --build
+npm run db:up
+npm run db:migrate
 ```
 
-Compose starts PostgreSQL, runs migrations, starts the API on `3001`, and starts the web dashboard on `3000`.
+Compose starts PostgreSQL on `127.0.0.1:5432` and stores data in the `postgres-data` Docker volume. `npm run db:migrate` applies the SQL migrations from `apps/api/db/migrations`.
 
-Docker Desktop must be running for compose builds on Windows.
+Docker Desktop must be running on Windows.
 
-The Compose API uses PostgreSQL and persists data in the `postgres-data` Docker volume. Normal shutdown preserves that data:
+Normal shutdown preserves local database data:
 
 ```bash
-docker compose down
+npm run db:down
 ```
 
 Do not add `--volumes` unless you intentionally want to erase the local database.
 
-When new migrations are added, rebuild the migration image before running it:
+When new migrations are added, run:
 
 ```bash
-docker compose build migrate
-docker compose run --rm migrate
+npm run db:migrate
 ```
 
 Verify the stack with:
 
 ```bash
 docker compose ps
-curl http://127.0.0.1:3001/health
 ```
 
-By default, `npm run dev:api` uses in-memory persistence. To run the local TypeScript API against PostgreSQL while leaving the Compose web/API ports free:
+By default, `npm run dev:api` now uses PostgreSQL. If `DATABASE_URL` is not set, the local default is:
+
+```bash
+postgres://postgres:postgres@127.0.0.1:5432/prima_wash
+```
+
+To run the local TypeScript API against PostgreSQL while leaving another API port free:
 
 ```bash
 $env:PORT="3101"
@@ -75,6 +82,13 @@ npm run dev:api
 ```
 
 The API will then be available at `http://127.0.0.1:3101`. Set `EXPO_PUBLIC_API_URL` to that address before starting Expo if the mobile app should use this process.
+
+Memory persistence is reserved for tests and deliberate local experiments. To opt into it manually:
+
+```bash
+$env:PERSISTENCE_MODE="memory"
+npm run dev:api
+```
 
 The initial API is intentionally dependency-light. It exposes the first booking vertical slice:
 
@@ -94,4 +108,4 @@ The initial API is intentionally dependency-light. It exposes the first booking 
 
 ## Current status
 
-Phase 0 foundation with MVP domain contracts, PostgreSQL schema migrations, in-memory and Postgres API adapters, an Expo customer application, bearer authentication, persistent customer profiles, multi-vehicle garage management, verified partner discovery, partner-specific availability, payment authorization/capture/void flow, partner availability controls, and the partner dashboard. Production OTP delivery, refresh-token rotation, payment provider, tax, payout, dispute, and marketplace-settlement decisions remain open before production processing.
+Phase 0 foundation with MVP domain contracts, PostgreSQL schema migrations, Postgres-backed local API persistence, in-memory test adapters, an Expo customer application, bearer authentication, persistent customer profiles, multi-vehicle garage management, verified partner discovery, partner-specific availability, payment authorization/capture/void flow, partner availability controls, and the partner dashboard. Production OTP delivery, refresh-token rotation, payment provider, tax, payout, dispute, and marketplace-settlement decisions remain open before production processing.

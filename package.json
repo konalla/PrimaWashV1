@@ -9,6 +9,8 @@
   "scripts": {
     "build": "npm run build --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/api && npm run build --workspace @prima-wash/web",
     "check": "npm run check --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/contracts && npm run check --workspace @prima-wash/api && npm run check --workspace @prima-wash/web && npm run check --workspace @prima-wash/mobile",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
     "db:migrate": "npm run migrate --workspace @prima-wash/api",
     "dev:api": "npm run dev --workspace @prima-wash/api",
     "dev:mobile": "npm run start --workspace @prima-wash/mobile",

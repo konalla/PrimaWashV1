@@ -2,10 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL ?? "postgres://postgres:postgres@127.0.0.1:5432/prima_wash";
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required to run migrations");
+if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required to run production migrations");
 }
 
 const pool = new pg.Pool({ connectionString: databaseUrl });

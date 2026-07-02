@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-prima_wash}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prima_wash}"]
       interval: 5s
@@ -33,6 +33,7 @@ services:
       dockerfile: Dockerfile.api
     environment:
       PORT: 3001
+      PERSISTENCE_MODE: postgres
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prima_wash}
       AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-prima-wash-local-compose-secret-change-me}
       ALLOW_DEV_HEADER_AUTH: "true"
