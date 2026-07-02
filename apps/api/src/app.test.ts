@@ -229,6 +229,23 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.partnerLocationId, "all_locations");
   });
 
+  it("enforces limited internal bearer session permissions", async () => {
+    const session = await createCustomerSession("ops.read@primawash.local");
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/operations-dashboard`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const propertyLeadsResponse = await fetch(`${baseUrl}/v1/internal/property-leads`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const propertyLeadsPayload = (await propertyLeadsResponse.json()) as ApiErrorResponse;
+
+    assert.equal(session.user.id, "usr_internal_ops_read_001");
+    assert.equal(session.user.role, "internal");
+    assert.equal(operationsResponse.status, 200);
+    assert.equal(propertyLeadsResponse.status, 403);
+    assert.equal(propertyLeadsPayload.code, "internal_permission_required");
+  });
+
   it("creates partner bearer sessions scoped by persisted membership", async () => {
     const session = await createCustomerSession("partner.demo@primawash.local");
     const ownDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {

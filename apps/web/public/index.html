@@ -1936,22 +1936,27 @@
         super_admin: {
           label: "Super admin",
           permissions: "super_admin",
+          identifier: "internal.demo@primawash.local",
         },
         ops_read: {
           label: "Ops read-only",
           permissions: "operations_read,finance_read",
+          identifier: "ops.read@primawash.local",
         },
         ops_write: {
           label: "Ops coordinator",
           permissions: "operations_read,operations_write,finance_read",
+          identifier: "ops.coordinator@primawash.local",
         },
         finance: {
           label: "Finance",
           permissions: "operations_read,finance_read,finance_write",
+          identifier: "finance@primawash.local",
         },
         property: {
           label: "Property manager",
           permissions: "operations_read,property_manage",
+          identifier: "property.ops@primawash.local",
         },
       };
       let selectedAdminPermissionProfile = urlParams.get("permissions") || "super_admin";
@@ -1964,18 +1969,21 @@
           organizationId: "org_partner_001",
           hours: "08:00–19:00",
           avatar: "PW",
+          identifier: "partner.demo@primawash.local",
         },
         loc_harbour_001: {
           name: "Harbour Auto Spa",
           organizationId: "org_partner_002",
           hours: "07:30–20:00",
           avatar: "HA",
+          identifier: "partner.harbour@primawash.local",
         },
         loc_orchard_001: {
           name: "Orchard Detail Lab",
           organizationId: "org_partner_003",
           hours: "09:00–18:30",
           avatar: "OD",
+          identifier: "partner.orchard@primawash.local",
         },
       };
 
@@ -2028,6 +2036,9 @@
       let selectedBookingId = null;
       let communicationDialogHeaders = null;
       let capacityTemplates = [];
+      const authSessions = new Map();
+      let workspaceSession = null;
+      let managementSession = null;
       let selectedPartnerLocationId =
         urlParams.get("partnerLocationId") || partnerLocationSelect.value;
       if (!partnerLocations[selectedPartnerLocationId]) {
@@ -2089,16 +2100,78 @@
         item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
       });
 
-      function partnerHeaders() {
+      async function requestAuthSession(identifier) {
+        if (authSessions.has(identifier)) {
+          return authSessions.get(identifier);
+        }
+
+        const requestResponse = await fetch(`${apiBase}/v1/auth/code/request`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ identifier }),
+        });
+        const requestPayload = await requestResponse.json();
+
+        if (!requestResponse.ok) {
+          throw new Error(requestPayload.message || "Sign-in code could not be requested");
+        }
+
+        const verifyResponse = await fetch(`${apiBase}/v1/auth/code/verify`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            challengeId: requestPayload.data.challengeId,
+            code: requestPayload.data.devCode || "123456",
+          }),
+        });
+        const verifyPayload = await verifyResponse.json();
+
+        if (!verifyResponse.ok) {
+          throw new Error(verifyPayload.message || "Sign in failed");
+        }
+
+        authSessions.set(identifier, verifyPayload.data);
+        return verifyPayload.data;
+      }
+
+      function activeWorkspaceIdentifier() {
+        return isAdminMode ? activeAdminProfile().identifier : partnerLocations[selectedPartnerLocationId].identifier;
+      }
+
+      async function ensureWorkspaceSession() {
+        workspaceSession = await requestAuthSession(activeWorkspaceIdentifier());
+        return workspaceSession;
+      }
+
+      async function ensureManagementSession() {
+        managementSession = await requestAuthSession("manager.marina@primawash.local");
+        return managementSession;
+      }
+
+      function bearerHeaders(session) {
+        if (!session?.accessToken) {
+          throw new Error("Sign in is still loading. Try again in a moment.");
+        }
+
         return {
-          "x-prima-user-id": "partner_demo_001",
-          "x-prima-role": "partner",
-          "x-prima-organization-id": partnerLocations[selectedPartnerLocationId].organizationId,
+          authorization: `Bearer ${session.accessToken}`,
         };
+      }
+
+      function partnerHeaders() {
+        return bearerHeaders(workspaceSession);
       }
 
       function activeAdminProfile() {
         return adminPermissionProfiles[selectedAdminPermissionProfile] || adminPermissionProfiles.super_admin;
+      }
+
+      function adminHeaders() {
+        return bearerHeaders(workspaceSession);
+      }
+
+      function managementHeaders() {
+        return bearerHeaders(managementSession);
       }
 
       function activeAdminPermissions() {
@@ -2118,14 +2191,6 @@
         return `<button class="action is-disabled" type="button" disabled title="${permission} permission required">${label}</button>`;
       }
 
-      function adminHeaders() {
-        return {
-          "x-prima-user-id": "usr_internal_dashboard",
-          "x-prima-role": "internal",
-          "x-prima-permissions": activeAdminPermissions(),
-        };
-      }
-
       function workspaceHeaders(permissions = "super_admin") {
         return isAdminMode ? adminHeaders(permissions) : partnerHeaders();
       }
@@ -2143,14 +2208,6 @@
         }
 
         return payload.data;
-      }
-
-      function managementHeaders() {
-        return {
-          "x-prima-user-id": "mgr_marina_001",
-          "x-prima-role": "property_manager",
-          "x-prima-property-id": managementPropertyId,
-        };
       }
 
       async function managementRequestJson(path, init = {}) {
@@ -2192,6 +2249,7 @@
       }
 
       async function loadDashboard() {
+        await ensureWorkspaceSession();
         const dashboardPath = isAdminMode
           ? "/v1/internal/operations-dashboard"
           : `/v1/partner/dashboard?${partnerQuery()}`;
@@ -2233,6 +2291,7 @@
       }
 
       async function loadManagementPortal() {
+        await ensureManagementSession();
         const dashboard = await managementRequestJson(
           `/v1/management/property-dashboard?propertyId=${encodeURIComponent(managementPropertyId)}`,
         );

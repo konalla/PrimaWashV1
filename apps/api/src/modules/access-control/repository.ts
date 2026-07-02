@@ -28,6 +28,30 @@ const seededMemberships: readonly AccessMembership[] = [
     permissions: ["super_admin"],
   },
   {
+    userId: "usr_internal_ops_read_001",
+    role: "internal",
+    organizationId: "org_platform_001",
+    permissions: ["operations_read", "finance_read"],
+  },
+  {
+    userId: "usr_internal_ops_write_001",
+    role: "internal",
+    organizationId: "org_platform_001",
+    permissions: ["operations_read", "operations_write", "finance_read"],
+  },
+  {
+    userId: "usr_internal_finance_001",
+    role: "internal",
+    organizationId: "org_platform_001",
+    permissions: ["operations_read", "finance_read", "finance_write"],
+  },
+  {
+    userId: "usr_internal_property_001",
+    role: "internal",
+    organizationId: "org_platform_001",
+    permissions: ["operations_read", "property_manage"],
+  },
+  {
     userId: "partner_demo_001",
     role: "partner",
     organizationId: "org_partner_001",
@@ -61,6 +85,26 @@ const seededUsers: readonly AccessUser[] = [
     id: "usr_internal_001",
     email: "internal.demo@primawash.local",
     fullName: "Prima Wash Admin",
+  },
+  {
+    id: "usr_internal_ops_read_001",
+    email: "ops.read@primawash.local",
+    fullName: "Prima Wash Ops Read",
+  },
+  {
+    id: "usr_internal_ops_write_001",
+    email: "ops.coordinator@primawash.local",
+    fullName: "Prima Wash Ops Coordinator",
+  },
+  {
+    id: "usr_internal_finance_001",
+    email: "finance@primawash.local",
+    fullName: "Prima Wash Finance",
+  },
+  {
+    id: "usr_internal_property_001",
+    email: "property.ops@primawash.local",
+    fullName: "Prima Wash Property Ops",
   },
   {
     id: "partner_demo_001",

@@ -358,6 +358,7 @@ describe("Postgres repository parity", () => {
 
   it("resolves login identities from persisted users and memberships", async () => {
     const internalLogin = await accessControl.resolveLogin("internal.demo@primawash.local");
+    const opsReadLogin = await accessControl.resolveLogin("ops.read@primawash.local");
     const partnerLogin = await accessControl.resolveLogin("partner.demo@primawash.local");
     const propertyManagerLogin = await accessControl.resolveLogin("manager.marina@primawash.local");
     const customerFallback = await accessControl.resolveLogin("not-seeded@example.com");
@@ -365,6 +366,8 @@ describe("Postgres repository parity", () => {
     assert.equal(internalLogin?.user.id, "usr_internal_001");
     assert.equal(internalLogin?.user.role, "internal");
     assert.deepEqual(internalLogin?.actor.permissions, ["super_admin"]);
+    assert.equal(opsReadLogin?.user.id, "usr_internal_ops_read_001");
+    assert.deepEqual(opsReadLogin?.actor.permissions, ["operations_read", "finance_read"]);
     assert.equal(partnerLogin?.user.role, "partner");
     assert.equal(partnerLogin?.actor.organizationId, "org_partner_001");
     assert.equal(propertyManagerLogin?.user.role, "property_manager");
