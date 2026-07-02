@@ -4,6 +4,8 @@ import type { Booking } from "@prima-wash/contracts";
 import { createDatabasePool, type DatabasePool } from "./pool.js";
 import { PostgresAvailabilityRepository } from "../modules/availability/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
+import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
+import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
 import { PostgresPaymentRepository } from "../modules/payments/repository.js";
 import { PostgresVehicleRepository } from "../modules/vehicles/repository.js";
 
@@ -13,6 +15,8 @@ describe("Postgres repository parity", () => {
   let pool: DatabasePool;
   let availability: PostgresAvailabilityRepository;
   let bookings: PostgresBookingRepository;
+  let communications: PostgresCommunicationRepository;
+  let condoOperations: PostgresCondoOperationsRepository;
   let payments: PostgresPaymentRepository;
   let vehicles: PostgresVehicleRepository;
 
@@ -21,6 +25,8 @@ describe("Postgres repository parity", () => {
     await pool.query("select 1");
     availability = new PostgresAvailabilityRepository(pool);
     bookings = new PostgresBookingRepository(pool);
+    communications = new PostgresCommunicationRepository(pool);
+    condoOperations = new PostgresCondoOperationsRepository(pool);
     payments = new PostgresPaymentRepository(pool);
     vehicles = new PostgresVehicleRepository(pool);
   });
@@ -171,16 +177,168 @@ describe("Postgres repository parity", () => {
       await cleanup(pool, created);
     }
   });
+
+  it("preserves communication thread history when existing threads are reused", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const created: CleanupIds = {};
+    const actor = {
+      userId: "usr_internal_001",
+      role: "internal" as const,
+      permissions: ["super_admin"] as const,
+    };
+
+    try {
+      const thread = await communications.create({
+        type: "prima_to_property",
+        resourceType: "property",
+        resourceId: `prop_comm_${suffix}`,
+        subject: "Initial property operations thread",
+        actor,
+        initialMessage: "First immutable note for office management.",
+      });
+      created.threadId = thread.id;
+
+      const reusedThread = await communications.create({
+        type: "prima_to_property",
+        resourceType: "property",
+        resourceId: `prop_comm_${suffix}`,
+        subject: "Updated subject without deleting history",
+        actor,
+        initialMessage: "Second note appended when thread is reused.",
+      });
+
+      assert.equal(reusedThread.id, thread.id);
+
+      const partnerMessage = await communications.addMessage({
+        threadId: thread.id,
+        actor: {
+          userId: "partner_demo_001",
+          organizationId: "org_partner_001",
+          role: "partner",
+        },
+        body: "Partner response is appended, not replacing prior messages.",
+      });
+
+      assert.equal(partnerMessage.threadId, thread.id);
+
+      const messages = await communications.getMessages(thread.id);
+      assert.deepEqual(
+        messages.map((message) => message.body),
+        [
+          "First immutable note for office management.",
+          "Second note appended when thread is reused.",
+          "Partner response is appended, not replacing prior messages.",
+        ],
+      );
+
+      const listed = await communications.list({ resourceType: "property", resourceId: `prop_comm_${suffix}` });
+      assert.equal(listed.length, 1);
+      assert.equal(listed[0]?.id, thread.id);
+    } finally {
+      await cleanup(pool, created);
+    }
+  });
+
+  it("persists condo operational profiles and multiple Prima Wash Days for one property", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const propertyId = `prop_smoke_${suffix}`;
+    const created: CleanupIds = { propertyId, primaWashDayIds: [] };
+
+    try {
+      await createTemporaryProperty(pool, propertyId, `Smoke Condo ${suffix}`);
+
+      const profile = await condoOperations.upsertOperationalProfile(propertyId, {
+        approvedServiceAreas: ["B1 visitor bay 12", "Loading bay after 7pm"],
+        operatingInstructions: "Check in with security before setting cones.",
+        waterPolicy: "rinseless_required",
+        vehicleMovementPolicy: "pickup_return_allowed",
+        onsiteServiceAllowed: true,
+        pickupReturnAllowed: true,
+        simultaneousVehicleCapacity: 4,
+        availableServiceCodes: ["wash_basic", "wash_premium", "detail_interior"],
+        safetyRequirements: "Keep pedestrian walkway clear.",
+      });
+
+      assert.equal(profile.propertyId, propertyId);
+      assert.deepEqual(profile.approvedServiceAreas, ["B1 visitor bay 12", "Loading bay after 7pm"]);
+      assert.equal(profile.waterPolicy, "rinseless_required");
+      assert.equal(profile.vehicleMovementPolicy, "pickup_return_allowed");
+      assert.equal(profile.pickupReturnAllowed, true);
+      assert.equal(profile.simultaneousVehicleCapacity, 4);
+
+      const updatedProfile = await condoOperations.upsertOperationalProfile(propertyId, {
+        simultaneousVehicleCapacity: 6,
+        waterPolicy: "water_access_available",
+      });
+
+      assert.deepEqual(updatedProfile.approvedServiceAreas, ["B1 visitor bay 12", "Loading bay after 7pm"]);
+      assert.equal(updatedProfile.simultaneousVehicleCapacity, 6);
+      assert.equal(updatedProfile.waterPolicy, "water_access_available");
+
+      const firstDay = await condoOperations.createPrimaWashDay({
+        propertyId,
+        partnerLocationId: "loc_demo_001",
+        approvedServiceArea: "B1 visitor bay 12",
+        startsAt: "2026-07-08T01:00:00.000Z",
+        endsAt: "2026-07-08T05:00:00.000Z",
+        capacity: 10,
+        serviceCodes: ["wash_basic", "wash_premium"],
+        status: "planned",
+        operatingNotes: "Rinseless setup only.",
+      });
+      created.primaWashDayIds?.push(firstDay.id);
+
+      const secondDay = await condoOperations.createPrimaWashDay({
+        propertyId,
+        partnerLocationId: "loc_demo_001",
+        approvedServiceArea: "Loading bay after 7pm",
+        startsAt: "2026-07-09T11:00:00.000Z",
+        endsAt: "2026-07-09T14:00:00.000Z",
+        capacity: 8,
+        serviceCodes: ["detail_interior"],
+        status: "planned",
+        operatingNotes: "Interior jobs only.",
+      });
+      created.primaWashDayIds?.push(secondDay.id);
+
+      const updatedDay = await condoOperations.updatePrimaWashDay(firstDay.id, {
+        capacity: 12,
+        status: "approved",
+        serviceCodes: ["wash_basic", "wash_premium", "detail_interior"],
+      });
+
+      assert.equal(updatedDay.capacity, 12);
+      assert.equal(updatedDay.status, "approved");
+      assert.deepEqual(updatedDay.serviceCodes, ["wash_basic", "wash_premium", "detail_interior"]);
+
+      const days = await condoOperations.listPrimaWashDays({ propertyId });
+      assert.equal(days.length, 2);
+      assert.deepEqual(
+        days.map((day) => day.id).sort(),
+        [firstDay.id, secondDay.id].sort(),
+      );
+      assert.ok(days.every((day) => day.propertyName === `Smoke Condo ${suffix}`));
+    } finally {
+      await cleanup(pool, created);
+    }
+  });
 });
 
 interface CleanupIds {
   bookingId?: string;
   paymentId?: string;
+  primaWashDayIds?: string[];
+  propertyId?: string;
   slotId?: string;
+  threadId?: string;
   vehicleId?: string;
 }
 
 async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
+  if (ids.threadId) {
+    await pool.query("delete from communication_threads where id = $1", [ids.threadId]);
+  }
+
   if (ids.paymentId) {
     await pool.query("delete from payment_intents where id = $1", [ids.paymentId]);
   }
@@ -196,6 +354,25 @@ async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
   if (ids.vehicleId) {
     await pool.query("delete from vehicles where id = $1", [ids.vehicleId]);
   }
+
+  for (const dayId of ids.primaWashDayIds ?? []) {
+    await pool.query("delete from prima_wash_days where id = $1", [dayId]);
+  }
+
+  if (ids.propertyId) {
+    await pool.query("delete from condo_operational_profiles where property_id = $1", [ids.propertyId]);
+    await pool.query("delete from properties where id = $1", [ids.propertyId]);
+  }
+}
+
+async function createTemporaryProperty(pool: DatabasePool, propertyId: string, name: string): Promise<void> {
+  await pool.query(
+    `insert into properties (
+       id, market_id, residence_type, name, address_line_1, city, region, country_code, activation_status
+     )
+     values ($1, 'sg', 'multi_unit_private', $2, '1 Smoke Test Drive', 'Singapore', 'Central Region', 'SG', 'interest_gathering')`,
+    [propertyId, name],
+  );
 }
 
 function assertPrimaWashDayBooking(booking: Booking | undefined): asserts booking is Booking {
