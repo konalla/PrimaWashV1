@@ -17,6 +17,7 @@ npm install
 npm run db:up
 npm run db:migrate
 npm run db:smoke
+npm run test:postgres
 npm run check
 npm run dev:api
 npm run dev:web
@@ -41,9 +42,10 @@ Open `http://127.0.0.1:3000/` for the partner/business dashboard. It defaults to
 npm run db:up
 npm run db:migrate
 npm run db:smoke
+npm run test:postgres
 ```
 
-Compose starts PostgreSQL on `127.0.0.1:5432` and stores data in the `postgres-data` Docker volume. `npm run db:migrate` applies the SQL migrations from `apps/api/db/migrations`. `npm run db:smoke` verifies the connection, migration state, seed data, and a transactional write/read cycle for newer persistence fields.
+Compose starts PostgreSQL on `127.0.0.1:5432` and stores data in the `postgres-data` Docker volume. `npm run db:migrate` applies the SQL migrations from `apps/api/db/migrations`. `npm run db:smoke` verifies the connection, migration state, seed data, and a transactional write/read cycle for newer persistence fields. `npm run test:postgres` runs focused repository integration tests against the local database.
 
 Docker Desktop must be running on Windows.
 

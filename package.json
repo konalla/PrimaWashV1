@@ -17,7 +17,8 @@
     "dev:mobile": "npm run start --workspace @prima-wash/mobile",
     "dev:mobile:web": "npm run web --workspace @prima-wash/mobile",
     "dev:web": "npm run dev --workspace @prima-wash/web",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:postgres": "npm run test:postgres --workspace @prima-wash/api"
   },
   "engines": {
     "node": ">=22"
