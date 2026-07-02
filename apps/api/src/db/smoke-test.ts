@@ -45,6 +45,7 @@ try {
   await assertSeedCount("properties", 3);
   await assertSeedCount("condo_operational_profiles", 1);
   await assertSeedCount("prima_wash_days", 1);
+  await assertSeedCount("access_memberships", 5);
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -54,7 +55,10 @@ try {
   await assertColumnExists("payment_intents", "provider_reference");
   await assertColumnExists("payment_intents", "client_secret");
   await assertColumnExists("bookings", "prima_wash_day_id");
+  await assertColumnExists("access_memberships", "permissions");
+  await assertColumnExists("access_memberships", "property_id");
 
+  await assertAccessMemberships();
   await assertTransactionalWriteRead();
 
   console.log(
@@ -96,6 +100,39 @@ async function assertColumnExists(tableName: string, columnName: string): Promis
   }
 
   checks.push({ name: `column_${tableName}_${columnName}` });
+}
+
+async function assertAccessMemberships(): Promise<void> {
+  const result = await pool.query<{
+    partner_organization_id: string | null;
+    manager_property_id: string | null;
+    internal_permissions: readonly string[] | null;
+  }>(
+    `select
+       (select organization_id from access_memberships where user_id = 'partner_demo_001' and active = true limit 1)
+         as partner_organization_id,
+       (select property_id from access_memberships where user_id = 'mgr_marina_001' and active = true limit 1)
+         as manager_property_id,
+       (select permissions from access_memberships where user_id = 'usr_internal_001' and active = true limit 1)
+         as internal_permissions`,
+  );
+
+  const row = result.rows[0];
+  if (
+    row?.partner_organization_id !== "org_partner_001" ||
+    row.manager_property_id !== "prop_sg_marina_one" ||
+    !row.internal_permissions?.includes("super_admin")
+  ) {
+    throw new Error("access_membership_seed_invalid");
+  }
+
+  checks.push({
+    name: "access_memberships_seeded",
+    details: {
+      partnerOrganizationId: row.partner_organization_id,
+      managerPropertyId: row.manager_property_id,
+    },
+  });
 }
 
 async function assertTransactionalWriteRead(): Promise<void> {

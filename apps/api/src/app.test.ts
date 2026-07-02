@@ -1175,6 +1175,33 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "partner_location_forbidden");
   });
 
+  it("hydrates partner scope from stored membership instead of trusting spoofed headers", async () => {
+    const response = await fetch(`${baseUrl}/v1/partner/dashboard?partnerLocationId=loc_harbour_001`, {
+      headers: {
+        ...partnerHeaders,
+        "x-prima-organization-id": "org_partner_002",
+      },
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "partner_location_forbidden");
+  });
+
+  it("rejects partner actors without an active membership", async () => {
+    const response = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: {
+        "x-prima-user-id": "partner_unknown_001",
+        "x-prima-role": "partner",
+        "x-prima-organization-id": "org_partner_001",
+      },
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.code, "authentication_required");
+  });
+
   it("exposes cross-location operations only to internal users with operations permission", async () => {
     const allowedResponse = await fetch(`${baseUrl}/v1/internal/operations-dashboard`, {
       headers: { ...internalHeaders, "x-prima-permissions": "operations_read" },

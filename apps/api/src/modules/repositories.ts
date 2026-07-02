@@ -70,6 +70,11 @@ import {
   PostgresCommunicationRepository,
   type CommunicationRepository,
 } from "./communications/repository.js";
+import {
+  InMemoryAccessControlRepository,
+  PostgresAccessControlRepository,
+  type AccessControlRepository,
+} from "./access-control/repository.js";
 
 export interface Repositories {
   readonly availability: AvailabilityRepository;
@@ -87,6 +92,7 @@ export interface Repositories {
   readonly capacityTemplates: CapacityTemplateRepository;
   readonly scheduling: SchedulingConfigRepository;
   readonly communications: CommunicationRepository;
+  readonly accessControl: AccessControlRepository;
   readonly databasePool?: DatabasePool;
 }
 
@@ -111,6 +117,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       capacityTemplates: new InMemoryCapacityTemplateRepository(),
       scheduling: new InMemorySchedulingConfigRepository(),
       communications: new InMemoryCommunicationRepository(),
+      accessControl: new InMemoryAccessControlRepository(),
     };
   }
 
@@ -133,6 +140,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     capacityTemplates: new PostgresCapacityTemplateRepository(databasePool),
     scheduling: new PostgresSchedulingConfigRepository(databasePool),
     communications: new PostgresCommunicationRepository(databasePool),
+    accessControl: new PostgresAccessControlRepository(databasePool),
     databasePool,
   };
 }

@@ -3,6 +3,7 @@ import { after, before, describe, it } from "node:test";
 import type { Booking } from "@prima-wash/contracts";
 import { createDatabasePool, type DatabasePool } from "./pool.js";
 import { PostgresAvailabilityRepository } from "../modules/availability/repository.js";
+import { PostgresAccessControlRepository } from "../modules/access-control/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
@@ -14,6 +15,7 @@ const databaseUrl = process.env.DATABASE_URL ?? "postgres://postgres:postgres@12
 describe("Postgres repository parity", () => {
   let pool: DatabasePool;
   let availability: PostgresAvailabilityRepository;
+  let accessControl: PostgresAccessControlRepository;
   let bookings: PostgresBookingRepository;
   let communications: PostgresCommunicationRepository;
   let condoOperations: PostgresCondoOperationsRepository;
@@ -24,6 +26,7 @@ describe("Postgres repository parity", () => {
     pool = createDatabasePool(databaseUrl);
     await pool.query("select 1");
     availability = new PostgresAvailabilityRepository(pool);
+    accessControl = new PostgresAccessControlRepository(pool);
     bookings = new PostgresBookingRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
     condoOperations = new PostgresCondoOperationsRepository(pool);
@@ -321,6 +324,36 @@ describe("Postgres repository parity", () => {
     } finally {
       await cleanup(pool, created);
     }
+  });
+
+  it("resolves actors from persisted access memberships", async () => {
+    const partnerActor = await accessControl.resolveActor({
+      userId: "partner_demo_001",
+      role: "partner",
+      organizationId: "org_partner_999",
+    });
+    const internalActor = await accessControl.resolveActor({
+      userId: "usr_internal_001",
+      role: "internal",
+    });
+    const propertyManagerActor = await accessControl.resolveActor({
+      userId: "mgr_marina_001",
+      role: "property_manager",
+      propertyId: "prop_sg_reflections",
+    });
+    const unknownPartner = await accessControl.resolveActor({
+      userId: `partner_unknown_${crypto.randomUUID().slice(0, 8)}`,
+      role: "partner",
+      organizationId: "org_partner_001",
+    });
+
+    assert.equal(partnerActor?.role, "partner");
+    assert.equal(partnerActor?.organizationId, "org_partner_001");
+    assert.equal(internalActor?.role, "internal");
+    assert.deepEqual(internalActor?.permissions, ["super_admin"]);
+    assert.equal(propertyManagerActor?.role, "property_manager");
+    assert.equal(propertyManagerActor?.propertyId, "prop_sg_marina_one");
+    assert.equal(unknownPartner, undefined);
   });
 });
 

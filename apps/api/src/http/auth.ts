@@ -1,12 +1,45 @@
 import type { IncomingMessage } from "node:http";
 import type { Actor, ActorRole, InternalPermission } from "@prima-wash/contracts";
+import type { AccessControlRepository } from "../modules/access-control/repository.js";
 import { actorFromAccessToken } from "../modules/auth/service.js";
 
 export function getActor(request: IncomingMessage): Actor | undefined {
+  return getActorCandidate(request)?.actor;
+}
+
+export async function requireActor(
+  request: IncomingMessage,
+  accessControl?: AccessControlRepository,
+): Promise<Actor> {
+  const candidate = getActorCandidate(request);
+
+  if (!candidate) {
+    throw new Error("authentication_required");
+  }
+
+  if (!accessControl || candidate.explicitInternalPermissions) {
+    return candidate.actor;
+  }
+
+  const actor = await accessControl.resolveActor(candidate.actor);
+
+  if (!actor) {
+    throw new Error("authentication_required");
+  }
+
+  return actor;
+}
+
+function getActorCandidate(
+  request: IncomingMessage,
+): { readonly actor: Actor; readonly explicitInternalPermissions: boolean } | undefined {
   const authorization = getHeaderValue(request, "authorization");
 
   if (authorization?.startsWith("Bearer ")) {
-    return actorFromAccessToken(authorization.slice("Bearer ".length), getAuthSecret());
+    return {
+      actor: actorFromAccessToken(authorization.slice("Bearer ".length), getAuthSecret()),
+      explicitInternalPermissions: false,
+    };
   }
 
   if (!isDevelopmentHeaderAuthAllowed()) {
@@ -23,14 +56,18 @@ export function getActor(request: IncomingMessage): Actor | undefined {
   const role = isActorRole(roleHeader) ? roleHeader : "customer";
   const organizationId = getHeaderValue(request, "x-prima-organization-id");
   const propertyId = getHeaderValue(request, "x-prima-property-id");
-  const permissions = role === "internal" ? parseInternalPermissions(getHeaderValue(request, "x-prima-permissions")) : [];
+  const permissionHeader = getHeaderValue(request, "x-prima-permissions");
+  const permissions = role === "internal" ? parseInternalPermissions(permissionHeader) : [];
 
   return {
-    userId,
-    role,
-    ...(organizationId ? { organizationId } : {}),
-    ...(propertyId ? { propertyId } : {}),
-    ...(permissions.length > 0 ? { permissions } : {}),
+    actor: {
+      userId,
+      role,
+      ...(organizationId ? { organizationId } : {}),
+      ...(propertyId ? { propertyId } : {}),
+      ...(permissions.length > 0 ? { permissions } : {}),
+    },
+    explicitInternalPermissions: role === "internal" && Boolean(permissionHeader),
   };
 }
 
@@ -44,16 +81,6 @@ function isDevelopmentHeaderAuthAllowed(): boolean {
   }
 
   return process.env.NODE_ENV !== "production";
-}
-
-export function requireActor(request: IncomingMessage): Actor {
-  const actor = getActor(request);
-
-  if (!actor) {
-    throw new Error("authentication_required");
-  }
-
-  return actor;
 }
 
 export function assertOwnerAccess(actor: Actor, ownerId: string): void {
@@ -125,7 +152,7 @@ function isActorRole(value: string | undefined): value is ActorRole {
 
 function parseInternalPermissions(value: string | undefined): readonly InternalPermission[] {
   if (!value) {
-    return ["super_admin"];
+    return [];
   }
 
   const permissions = value
@@ -133,7 +160,7 @@ function parseInternalPermissions(value: string | undefined): readonly InternalP
     .map((permission) => permission.trim())
     .filter(isInternalPermission);
 
-  return permissions.length > 0 ? permissions : ["super_admin"];
+  return permissions;
 }
 
 function isInternalPermission(value: string): value is InternalPermission {

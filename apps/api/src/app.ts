@@ -226,7 +226,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/profile") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const profile = await options.repositories.profiles.get(actor.userId);
         if (!profile) {
           sendError(response, 404, "profile_not_found", "Customer profile does not exist");
@@ -241,7 +241,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && requestUrl.pathname === "/v1/profile") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<UpdateCustomerProfileRequest>(request);
         const errors = validateProfileUpdate(input);
         if (errors.length > 0) {
@@ -259,7 +259,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/billing/session") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertOwnerAccess(actor, actor.userId);
         const profile = await options.repositories.profiles.get(actor.userId);
 
@@ -310,7 +310,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/billing/payment-methods") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertOwnerAccess(actor, actor.userId);
         const profile = await options.repositories.profiles.get(actor.userId);
 
@@ -348,7 +348,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/property-interests") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreatePropertyInterestRequest>(request);
         const errors = validateCreatePropertyInterest(input);
 
@@ -421,7 +421,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && propertyPrimaWashDaysMatch) {
       try {
-        requireActor(request);
+        await requireActor(request, options.repositories.accessControl);
         const propertyId = propertyPrimaWashDaysMatch[1];
 
         if (!propertyId) {
@@ -444,7 +444,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/management/property-dashboard") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const propertyId = requestUrl.searchParams.get("propertyId") ?? actor.propertyId;
 
         if (!propertyId) {
@@ -471,7 +471,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && managementOperationalProfileMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const propertyId = managementOperationalProfileMatch[1];
 
         if (!propertyId) {
@@ -513,7 +513,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/property-leads") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "property_manage");
         const marketId = requestUrl.searchParams.get("marketId") ?? "sg";
         sendJson(response, 200, { data: await options.repositories.properties.listLeads({ marketId }) });
@@ -527,7 +527,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && operationalProfileMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "property_manage");
         const propertyId = operationalProfileMatch[1];
 
@@ -552,7 +552,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && operationalProfileMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "property_manage");
         const propertyId = operationalProfileMatch[1];
 
@@ -594,7 +594,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_read");
         const propertyId = requestUrl.searchParams.get("propertyId") ?? undefined;
         sendJson(response, 200, {
@@ -608,7 +608,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/prima-wash-day-bookings") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_read");
         const primaWashDayId = requestUrl.searchParams.get("primaWashDayId") ?? undefined;
         const bookings = (await options.repositories.bookings.list())
@@ -628,7 +628,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/internal/prima-wash-days") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_write");
         const input = await readJsonBody<CreatePrimaWashDayRequest>(request);
         const errors = validateCreatePrimaWashDay(input);
@@ -666,7 +666,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && primaWashDayMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_write");
         const dayId = primaWashDayMatch[1];
 
@@ -718,7 +718,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && propertyActivationMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "property_manage");
         const propertyId = propertyActivationMatch[1];
 
@@ -858,7 +858,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/partner/availability") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
         await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
@@ -872,7 +872,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/booking-holds") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreateBookingHoldRequest>(request);
         const errors = validateCreateBookingHold(input);
 
@@ -965,7 +965,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "DELETE" && bookingHoldMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const holdId = bookingHoldMatch[1];
 
         if (!holdId) {
@@ -994,7 +994,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/partner/availability") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const input = await readJsonBody<CreateAvailabilitySlotRequest>(request);
         const errors = validateCreateAvailabilitySlot(input);
@@ -1038,7 +1038,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/partner/scheduling/config") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
         await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
@@ -1052,7 +1052,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && requestUrl.pathname === "/v1/partner/scheduling/config") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
         await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_write");
@@ -1092,7 +1092,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/partner/capacity-templates") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
         await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
@@ -1106,7 +1106,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/partner/capacity-templates") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const input = await readJsonBody<CreateCapacityTemplateRequest>(request);
         const errors = validateCreateCapacityTemplate(input);
@@ -1157,7 +1157,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && capacityTemplateGenerateMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const templateId = capacityTemplateGenerateMatch[1];
 
@@ -1215,7 +1215,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && capacityTemplateMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const templateId = capacityTemplateMatch[1];
 
@@ -1273,7 +1273,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/audit-events") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_read");
         const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "50", 10);
         sendJson(response, 200, { data: await options.repositories.audit.list(Math.min(Math.max(limit, 1), 100)) });
@@ -1286,7 +1286,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/partner/dashboard") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const partnerLocationId = requestUrl.searchParams.get("partnerLocationId") ?? "loc_demo_001";
         await assertPartnerLocationAccess(options.repositories, actor, partnerLocationId, "operations_read");
@@ -1307,7 +1307,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/internal/operations-dashboard") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "operations_read");
         const bookings = await options.repositories.bookings.list();
         const auditEvents = await options.repositories.audit.list(8);
@@ -1326,7 +1326,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/analytics/mavo") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "finance_read");
         const month = requestUrl.searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
 
@@ -1345,7 +1345,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/communication/threads") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const resourceType = normalizeCommunicationResourceType(requestUrl.searchParams.get("resourceType"));
         const resourceId = requestUrl.searchParams.get("resourceId") ?? undefined;
 
@@ -1374,7 +1374,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/communication/threads") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreateCommunicationThreadRequest>(request);
         const errors = validateCreateCommunicationThread({ ...input, actor });
 
@@ -1416,7 +1416,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && communicationThreadMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const threadId = communicationThreadMatch[1];
 
         if (!threadId) {
@@ -1445,7 +1445,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && communicationMessagesMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const threadId = communicationMessagesMatch[1];
 
         if (!threadId) {
@@ -1500,7 +1500,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/vehicles") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
         assertOwnerAccess(actor, ownerId);
         sendJson(response, 200, { data: await options.repositories.vehicles.list(ownerId) });
@@ -1513,7 +1513,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/vehicles") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreateVehicleRequest>(request);
         const errors = validateCreateVehicle(input);
 
@@ -1574,7 +1574,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && vehicleMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const vehicleId = vehicleMatch[1];
         if (!vehicleId) throw new Error("vehicle_not_found");
         const existing = await options.repositories.vehicles.get(vehicleId);
@@ -1614,7 +1614,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "DELETE" && vehicleMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const vehicleId = vehicleMatch[1];
         if (!vehicleId) throw new Error("vehicle_not_found");
         const existing = await options.repositories.vehicles.get(vehicleId);
@@ -1639,7 +1639,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/bookings") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
         assertOwnerAccess(actor, ownerId);
         sendJson(response, 200, { data: await options.repositories.bookings.list(ownerId) });
@@ -1654,7 +1654,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && bookingDetailMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const bookingId = bookingDetailMatch[1];
 
         if (!bookingId) {
@@ -1686,7 +1686,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/service-records") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
         assertOwnerAccess(actor, ownerId);
         sendJson(response, 200, { data: await options.repositories.serviceRecords.list(ownerId) });
@@ -1699,7 +1699,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/payments/history") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const ownerId = requestUrl.searchParams.get("ownerId") ?? actor.userId;
         assertOwnerAccess(actor, ownerId);
         sendJson(response, 200, { data: await buildPaymentHistory(options.repositories, ownerId) });
@@ -1712,7 +1712,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/payments") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const bookingId = requestUrl.searchParams.get("bookingId");
 
         if (!bookingId) {
@@ -1744,7 +1744,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/payments/intents") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreatePaymentIntentRequest>(request);
         const errors = validateCreatePaymentIntent(input);
 
@@ -1813,7 +1813,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && paymentAuthorizeMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const paymentIntentId = paymentAuthorizeMatch[1];
 
         if (!paymentIntentId) {
@@ -1875,7 +1875,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && paymentCaptureMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const paymentIntentId = paymentCaptureMatch[1];
 
@@ -1916,7 +1916,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && paymentRefundMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertInternalPermission(actor, "finance_write");
         const paymentIntentId = paymentRefundMatch[1];
 
@@ -1963,7 +1963,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && availabilityUpdateMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const slotId = availabilityUpdateMatch[1];
 
@@ -2023,7 +2023,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && bookingCancelMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const bookingId = bookingCancelMatch[1];
 
         if (!bookingId) {
@@ -2111,7 +2111,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && bookingExecutionMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const bookingId = bookingExecutionMatch[1];
 
@@ -2172,7 +2172,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && bookingPartnerDecisionMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const bookingId = bookingPartnerDecisionMatch[1];
 
@@ -2339,7 +2339,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "PATCH" && bookingStatusMatch) {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         assertPartnerOrInternal(actor);
         const bookingId = bookingStatusMatch[1];
 
@@ -2479,7 +2479,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     if (request.method === "POST" && requestUrl.pathname === "/v1/bookings") {
       try {
-        const actor = requireActor(request);
+        const actor = await requireActor(request, options.repositories.accessControl);
         const input = await readJsonBody<CreateBookingRequest>(request);
         const errors = validateCreateBooking(input);
 
