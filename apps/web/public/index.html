@@ -1227,6 +1227,19 @@
         padding: 0 14px;
       }
 
+      .mode-pill {
+        min-height: 42px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(11, 79, 90, 0.24);
+        border-radius: 999px;
+        background: #e7efed;
+        color: var(--green-2);
+        font-size: 12px;
+        font-weight: 950;
+        padding: 0 14px;
+      }
+
       .icon-button,
       .mobile-menu {
         display: grid;
@@ -1598,7 +1611,7 @@
       <header class="topbar">
         <button class="mobile-menu" type="button" aria-label="Toggle navigation">☰</button>
         <div class="location-selector">
-          <span class="location-kicker">Current location</span>
+          <span class="location-kicker" id="workspace-kicker">Current location</span>
           <select id="partner-location-select" aria-label="Current partner location">
             <option value="loc_demo_001">Prima Wash Central</option>
             <option value="loc_harbour_001">Harbour Auto Spa</option>
@@ -1606,6 +1619,7 @@
           </select>
         </div>
         <div class="topbar-actions">
+          <span class="mode-pill" id="portal-mode-pill">Admin mode</span>
           <select id="admin-permission-select" class="permission-select" aria-label="Internal permission profile">
             <option value="super_admin">Super admin</option>
             <option value="ops_read">Ops read-only</option>
@@ -1979,6 +1993,8 @@
       const locationIdEl = document.querySelector("#location-id");
       const partnerLocationSelect = document.querySelector("#partner-location-select");
       const adminPermissionSelect = document.querySelector("#admin-permission-select");
+      const workspaceKickerEl = document.querySelector("#workspace-kicker");
+      const portalModePillEl = document.querySelector("#portal-mode-pill");
       const sidebarLocationNameEl = document.querySelector("#sidebar-location-name");
       const businessAvatarEl = document.querySelector(".business-avatar");
       const condoLeadsSectionEl = document.querySelector("#condo-leads-section");
@@ -2043,6 +2059,8 @@
 
       adminPermissionSelect.value = selectedAdminPermissionProfile;
       adminPermissionSelect.hidden = !isAdminMode;
+      workspaceKickerEl.textContent = isAdminMode ? "Capacity location" : "Current location";
+      portalModePillEl.textContent = isAdminMode ? "Internal admin" : "Partner portal";
 
       mobileMenuButton.addEventListener("click", () => {
         sidebarEl.classList.toggle("is-open");
