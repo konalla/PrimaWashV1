@@ -370,6 +370,11 @@
         opacity: 0.5;
       }
 
+      button.action.is-disabled {
+        cursor: not-allowed;
+        opacity: 0.56;
+      }
+
       button.action.danger {
         border-color: var(--line);
         background: transparent;
@@ -1209,6 +1214,19 @@
         gap: 10px;
       }
 
+      .permission-select {
+        min-height: 42px;
+        max-width: 190px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 900;
+        padding: 0 14px;
+      }
+
       .icon-button,
       .mobile-menu {
         display: grid;
@@ -1588,6 +1606,13 @@
           </select>
         </div>
         <div class="topbar-actions">
+          <select id="admin-permission-select" class="permission-select" aria-label="Internal permission profile">
+            <option value="super_admin">Super admin</option>
+            <option value="ops_read">Ops read-only</option>
+            <option value="ops_write">Ops coordinator</option>
+            <option value="finance">Finance</option>
+            <option value="property">Property manager</option>
+          </select>
           <button class="icon-button" type="button" aria-label="Notifications">●</button>
           <span class="pill"><span class="dot"></span> Live</span>
         </div>
@@ -1893,6 +1918,32 @@
       const portalMode = urlParams.get("portal") || "admin";
       const isAdminMode = portalMode === "admin";
       const managementPropertyId = urlParams.get("propertyId") || "prop_sg_marina_one";
+      const adminPermissionProfiles = {
+        super_admin: {
+          label: "Super admin",
+          permissions: "super_admin",
+        },
+        ops_read: {
+          label: "Ops read-only",
+          permissions: "operations_read,finance_read",
+        },
+        ops_write: {
+          label: "Ops coordinator",
+          permissions: "operations_read,operations_write,finance_read",
+        },
+        finance: {
+          label: "Finance",
+          permissions: "operations_read,finance_read,finance_write",
+        },
+        property: {
+          label: "Property manager",
+          permissions: "operations_read,property_manage",
+        },
+      };
+      let selectedAdminPermissionProfile = urlParams.get("permissions") || "super_admin";
+      if (!adminPermissionProfiles[selectedAdminPermissionProfile]) {
+        selectedAdminPermissionProfile = "super_admin";
+      }
       const partnerLocations = {
         loc_demo_001: {
           name: "Prima Wash Central",
@@ -1927,6 +1978,7 @@
       const generatedAtEl = document.querySelector("#generated-at");
       const locationIdEl = document.querySelector("#location-id");
       const partnerLocationSelect = document.querySelector("#partner-location-select");
+      const adminPermissionSelect = document.querySelector("#admin-permission-select");
       const sidebarLocationNameEl = document.querySelector("#sidebar-location-name");
       const businessAvatarEl = document.querySelector(".business-avatar");
       const condoLeadsSectionEl = document.querySelector("#condo-leads-section");
@@ -1989,6 +2041,9 @@
         "rejected",
       ];
 
+      adminPermissionSelect.value = selectedAdminPermissionProfile;
+      adminPermissionSelect.hidden = !isAdminMode;
+
       mobileMenuButton.addEventListener("click", () => {
         sidebarEl.classList.toggle("is-open");
       });
@@ -1996,6 +2051,21 @@
       if (!isAdminMode) {
         condoLeadsSectionEl.hidden = true;
       }
+
+      adminPermissionSelect.addEventListener("change", async () => {
+        selectedAdminPermissionProfile = adminPermissionSelect.value;
+        const url = new URL(window.location.href);
+        url.searchParams.set("portal", "admin");
+        url.searchParams.set("permissions", selectedAdminPermissionProfile);
+        window.history.replaceState({}, "", url);
+
+        try {
+          await loadDashboard();
+          showToast(`Internal profile: ${activeAdminProfile().label}`);
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      });
 
       document.querySelectorAll(".nav-item").forEach((item) => {
         item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
@@ -2009,11 +2079,32 @@
         };
       }
 
-      function adminHeaders(permissions = "super_admin") {
+      function activeAdminProfile() {
+        return adminPermissionProfiles[selectedAdminPermissionProfile] || adminPermissionProfiles.super_admin;
+      }
+
+      function activeAdminPermissions() {
+        return activeAdminProfile().permissions;
+      }
+
+      function hasAdminPermission(permission) {
+        const permissions = activeAdminPermissions().split(",").map((item) => item.trim());
+        return permissions.includes("super_admin") || permissions.includes(permission);
+      }
+
+      function canUseAdmin(permission) {
+        return !isAdminMode || hasAdminPermission(permission);
+      }
+
+      function permissionBlockedButton(label, permission) {
+        return `<button class="action is-disabled" type="button" disabled title="${permission} permission required">${label}</button>`;
+      }
+
+      function adminHeaders() {
         return {
           "x-prima-user-id": "usr_internal_dashboard",
           "x-prima-role": "internal",
-          "x-prima-permissions": permissions,
+          "x-prima-permissions": activeAdminPermissions(),
         };
       }
 
@@ -2093,8 +2184,12 @@
         ]);
         const [mavo, condoLeads, primaWashDays, primaWashDayBookings] = isAdminMode
           ? await Promise.all([
-              requestJson(`/v1/analytics/mavo?month=${currentMonth}`, adminHeaders("finance_read")),
-              requestJson(`/v1/internal/property-leads`, adminHeaders("property_manage")),
+              hasAdminPermission("finance_read")
+                ? requestJson(`/v1/analytics/mavo?month=${currentMonth}`, adminHeaders("finance_read"))
+                : Promise.resolve({ monthlyActiveVehicleOwners: "Restricted" }),
+              hasAdminPermission("property_manage")
+                ? requestJson(`/v1/internal/property-leads`, adminHeaders("property_manage"))
+                : Promise.resolve([]),
               requestJson(`/v1/internal/prima-wash-days`, adminHeaders("operations_read")),
               requestJson(`/v1/internal/prima-wash-day-bookings`, adminHeaders("operations_read")),
             ])
@@ -2105,8 +2200,12 @@
         condoLeadsCache = condoLeads;
         renderDashboard(dashboard, mavo);
         if (isAdminMode) {
-          renderCondoLeads(condoLeads);
-          renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
+          if (hasAdminPermission("property_manage")) {
+            renderCondoLeads(condoLeads);
+            renderPrimaWashDays(primaWashDays, condoLeads, primaWashDayBookings);
+          } else {
+            renderCondoPermissionBlocked();
+          }
         }
         renderAvailability(availability);
         renderCapacityTemplates(templates);
@@ -2464,7 +2563,36 @@
                 .join("");
       }
 
+      function renderCondoPermissionBlocked() {
+        condoLeadMetricsEl.innerHTML = [
+          ["Resident signals", "Restricted"],
+          ["Condos tracked", "Restricted"],
+          ["Contacted / active", "Restricted"],
+        ]
+          .map(([label, value]) => `<article class="lead-summary"><span>${label}</span><strong>${value}</strong></article>`)
+          .join("");
+
+        condoLeadsEl.innerHTML = `
+          <div class="empty">
+            Property management permission is required to view condo leads, management contacts, and outreach notes.
+          </div>
+        `;
+        washDayPropertySelect.innerHTML = "";
+        washDayForm.querySelectorAll("input, select, button").forEach((field) => {
+          field.disabled = true;
+        });
+        primaWashDaysEl.innerHTML = `
+          <div class="empty">
+            Prima Wash Day setup is locked for this internal profile.
+          </div>
+        `;
+      }
+
       function renderPrimaWashDays(days, leads, bookings) {
+        const canWriteOps = canUseAdmin("operations_write");
+        washDayForm.querySelectorAll("input, select, button").forEach((field) => {
+          field.disabled = !canWriteOps;
+        });
         washDayPropertySelect.innerHTML = leads
           .map((lead) => `<option value="${lead.id}">${escapeHtml(lead.name)}</option>`)
           .join("");
@@ -2514,10 +2642,11 @@
       function renderDashboard(data, mavo) {
         dashboardCache = { data, mavo };
         const selectedPartner = partnerLocations[selectedPartnerLocationId];
+        applyAdminPermissionUi();
         locationIdEl.textContent = isAdminMode ? "All operations" : selectedPartner.name;
         sidebarLocationNameEl.textContent = isAdminMode ? "Prima Wash Admin" : selectedPartner.name;
         businessAvatarEl.textContent = isAdminMode ? "PW" : selectedPartner.avatar;
-        document.querySelector(".confidence-item strong").textContent = isAdminMode ? "Permission scoped" : selectedPartner.hours;
+        document.querySelector(".confidence-item strong").textContent = isAdminMode ? activeAdminProfile().label : selectedPartner.hours;
         generatedAtEl.textContent = new Date(data.generatedAt).toLocaleTimeString();
         const metricByLabel = new Map(data.metrics.map((metric) => [metric.label, metric]));
         const primaryMetrics = [
@@ -2604,6 +2733,17 @@
                   `,
                 )
                 .join("");
+      }
+
+      function applyAdminPermissionUi() {
+        const createSlotButton = document.querySelector("[data-create-slot]");
+        if (!createSlotButton) {
+          return;
+        }
+
+        const canWriteOps = canUseAdmin("operations_write");
+        createSlotButton.disabled = !canWriteOps;
+        createSlotButton.title = canWriteOps ? "" : "operations_write permission required";
       }
 
       function renderPrimaWashDayQueue(dayId) {
@@ -2890,6 +3030,10 @@
       }
 
       function renderActionButton(item) {
+        if (!canUseAdmin("operations_write")) {
+          return permissionBlockedButton("Ops write required", "operations_write");
+        }
+
         const next = nextStatusByStatus[item.status];
         const cancelButton = cancellableStatuses.has(item.status)
           ? `<button class="action danger" data-cancel-booking-id="${item.bookingId}">Cancel</button>`
@@ -2951,6 +3095,7 @@
               : "No forward action is currently available.";
         const vehicleName = formatVehicleName(item.vehicle);
         const serviceMode = item.onsiteServiceMode || "partner_location";
+        const executionDisabled = canUseAdmin("operations_write") ? "" : "disabled";
 
         bookingDetailEl.innerHTML = `
           <div class="drawer-body">
@@ -3012,7 +3157,7 @@
                 <div class="form-grid">
                   <label>
                     Service mode
-                    <select name="onsiteServiceMode">
+                    <select name="onsiteServiceMode" ${executionDisabled}>
                       <option value="partner_location" ${(item.onsiteServiceMode || "partner_location") === "partner_location" || item.onsiteServiceMode === "onsite" ? "selected" : ""}>Customer drives to partner</option>
                       <option value="customer_property" ${item.onsiteServiceMode === "customer_property" ? "selected" : ""}>At customer property</option>
                       <option value="pickup_return" ${item.onsiteServiceMode === "pickup_return" ? "selected" : ""}>Pickup, clean away, return</option>
@@ -3020,7 +3165,7 @@
                   </label>
                   <label>
                     Valet mode
-                    <select name="valetRequested">
+                    <select name="valetRequested" ${executionDisabled}>
                       <option value="false" ${!item.valetRequested ? "selected" : ""}>Not requested</option>
                       <option value="true" ${item.valetRequested ? "selected" : ""}>Requested / permitted</option>
                     </select>
@@ -3028,12 +3173,12 @@
                 </div>
                 <div class="field">
                   <label for="booking-execution-notes">Execution notes</label>
-                  <textarea id="booking-execution-notes" name="executionNotes" placeholder="Parking bay, owner access notes, temporary wash area constraints">${escapeHtml(item.executionNotes || "")}</textarea>
+                  <textarea id="booking-execution-notes" name="executionNotes" placeholder="Parking bay, owner access notes, temporary wash area constraints" ${executionDisabled}>${escapeHtml(item.executionNotes || "")}</textarea>
                 </div>
                 <div class="dialog-actions">
-                  <button class="action" type="button" data-technician-check-in="${item.bookingId}" ${item.technicianCheckedInAt ? "disabled" : ""}>Technician check-in</button>
-                  <button class="action" type="button" data-technician-check-out="${item.bookingId}" ${item.technicianCheckedOutAt ? "disabled" : ""}>Technician check-out</button>
-                  <button class="action primary" type="submit">Save execution</button>
+                  <button class="action" type="button" data-technician-check-in="${item.bookingId}" ${executionDisabled || item.technicianCheckedInAt ? "disabled" : ""}>Technician check-in</button>
+                  <button class="action" type="button" data-technician-check-out="${item.bookingId}" ${executionDisabled || item.technicianCheckedOutAt ? "disabled" : ""}>Technician check-out</button>
+                  <button class="action primary" type="submit" ${executionDisabled}>Save execution</button>
                 </div>
               </form>
             </section>
@@ -3062,9 +3207,9 @@
                 </div>
                 <div class="field">
                   <label for="booking-message-body">New message</label>
-                  <textarea id="booking-message-body" name="body" placeholder="Write a message for the vehicle owner"></textarea>
+                  <textarea id="booking-message-body" name="body" placeholder="Write a message for the vehicle owner" ${executionDisabled}></textarea>
                 </div>
-                <button class="action primary" type="submit">Send message</button>
+                <button class="action primary" type="submit" ${executionDisabled}>Send message</button>
               </form>
             </section>
 
@@ -3282,12 +3427,16 @@
       function renderDrawerActions(item) {
         const next = nextStatusByStatus[item.status];
         const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
+        const canWriteOps = canUseAdmin("operations_write");
+        const canRefund = canUseAdmin("finance_write");
         const refundButton =
           item.paymentIntentId && item.paymentStatus === "captured"
-            ? `<button class="action danger" type="button" data-refund-payment-id="${item.paymentIntentId}">Refund payment</button>`
+            ? canRefund
+              ? `<button class="action danger" type="button" data-refund-payment-id="${item.paymentIntentId}">Refund payment</button>`
+              : permissionBlockedButton("Finance write required", "finance_write")
             : "";
         const nextButton =
-          next && !paymentBlocked
+          next && !paymentBlocked && canWriteOps
             ? next.status === "confirmed"
               ? `<button class="action primary-command" type="button" data-drawer-partner-decision="accept">Accept booking</button>`
               : `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
@@ -3295,12 +3444,16 @@
         const blockedButton =
           next && paymentBlocked
             ? `<button class="action" type="button" disabled>Payment authorization required</button>`
+            : next && !canWriteOps
+              ? permissionBlockedButton("Ops write required", "operations_write")
             : "";
         const cancelButton = cancellableStatuses.has(item.status)
-          ? `<button class="action danger" type="button" data-drawer-cancel>Cancel booking</button>`
+          ? canWriteOps
+            ? `<button class="action danger" type="button" data-drawer-cancel>Cancel booking</button>`
+            : ""
           : "";
         const decisionButtons =
-          item.status === "pending_payment"
+          item.status === "pending_payment" && canWriteOps
             ? `<button class="action" type="button" data-drawer-partner-decision="request_clarification">Request clarification</button><button class="action danger" type="button" data-drawer-partner-decision="reject_mode">Cannot service this mode</button>`
             : "";
 
