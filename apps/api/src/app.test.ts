@@ -216,6 +216,53 @@ describe("Prima Wash API", () => {
     assert.equal(vehiclesResponse.status, 200);
   });
 
+  it("creates internal bearer sessions from persisted access memberships", async () => {
+    const session = await createCustomerSession("internal.demo@primawash.local");
+    const response = await fetch(`${baseUrl}/v1/internal/operations-dashboard`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const payload = (await response.json()) as ApiResponse<PartnerDashboardResponse>;
+
+    assert.equal(session.user.id, "usr_internal_001");
+    assert.equal(session.user.role, "internal");
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.partnerLocationId, "all_locations");
+  });
+
+  it("creates partner bearer sessions scoped by persisted membership", async () => {
+    const session = await createCustomerSession("partner.demo@primawash.local");
+    const ownDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const competitorDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard?partnerLocationId=loc_harbour_001`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const competitorPayload = (await competitorDashboardResponse.json()) as ApiErrorResponse;
+
+    assert.equal(session.user.id, "partner_demo_001");
+    assert.equal(session.user.role, "partner");
+    assert.equal(ownDashboardResponse.status, 200);
+    assert.equal(competitorDashboardResponse.status, 403);
+    assert.equal(competitorPayload.code, "partner_location_forbidden");
+  });
+
+  it("creates property manager bearer sessions scoped by persisted membership", async () => {
+    const session = await createCustomerSession("manager.marina@primawash.local");
+    const ownDashboardResponse = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_marina_one`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const otherDashboardResponse = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_reflections`, {
+      headers: { authorization: `Bearer ${session.accessToken}` },
+    });
+    const otherPayload = (await otherDashboardResponse.json()) as ApiErrorResponse;
+
+    assert.equal(session.user.id, "mgr_marina_001");
+    assert.equal(session.user.role, "property_manager");
+    assert.equal(ownDashboardResponse.status, 200);
+    assert.equal(otherDashboardResponse.status, 403);
+    assert.equal(otherPayload.code, "forbidden_property_scope");
+  });
+
   it("rejects an incorrect verification code", async () => {
     const requestResponse = await fetch(`${baseUrl}/v1/auth/code/request`, {
       method: "POST",

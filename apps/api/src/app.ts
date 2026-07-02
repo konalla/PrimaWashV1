@@ -210,12 +210,18 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "POST" && requestUrl.pathname === "/v1/auth/code/verify") {
       try {
         const input = await readJsonBody<VerifyAuthCodeRequest>(request);
-        const session = authService.verifyCode(input.challengeId, input.code);
-        await options.repositories.profiles.upsertIdentity(
-          session.user.id,
-          session.user.identifier,
-          session.user.displayName ?? "Vehicle owner",
-        );
+        const session = await authService.verifyCode(input.challengeId, input.code, async (identifier) => {
+          const loginIdentity = await options.repositories.accessControl.resolveLogin(identifier);
+          return loginIdentity?.user;
+        });
+
+        if (session.user.role === "customer") {
+          await options.repositories.profiles.upsertIdentity(
+            session.user.id,
+            session.user.identifier,
+            session.user.displayName ?? "Vehicle owner",
+          );
+        }
         sendJson(response, 200, { data: session });
       } catch (error) {
         sendAuthVerificationError(response, error);

@@ -1,6 +1,7 @@
 import { createHmac, createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
   Actor,
+  ActorRole,
   AuthSession,
   AuthUser,
   RequestAuthCodeResponse,
@@ -15,7 +16,7 @@ interface AuthChallenge {
 
 interface SessionPayload {
   readonly sub: string;
-  readonly role: "customer";
+  readonly role: ActorRole;
   readonly identifier: string;
   readonly exp: number;
   readonly iat: number;
@@ -53,7 +54,11 @@ export class AuthService {
     };
   }
 
-  verifyCode(challengeId: string, code: string): AuthSession {
+  async verifyCode(
+    challengeId: string,
+    code: string,
+    resolveUser?: (identifier: string) => Promise<AuthUser | undefined>,
+  ): Promise<AuthSession> {
     const challenge = this.#challenges.get(challengeId);
 
     if (!challenge || challenge.expiresAt <= Date.now()) {
@@ -75,13 +80,7 @@ export class AuthService {
     this.#challenges.delete(challengeId);
     const issuedAt = Math.floor(Date.now() / 1000);
     const expiresAt = issuedAt + 24 * 60 * 60;
-    const user: AuthUser = {
-      id: userIdForIdentifier(challenge.identifier),
-      role: "customer",
-      identifier: challenge.identifier,
-      displayName: displayNameForIdentifier(challenge.identifier),
-      onboardingComplete: true,
-    };
+    const user = (await resolveUser?.(challenge.identifier)) ?? customerUserForIdentifier(challenge.identifier);
     const payload: SessionPayload = {
       sub: user.id,
       role: user.role,
@@ -153,7 +152,7 @@ function verifyToken(token: string, secret: string): SessionPayload {
 
   if (
     typeof payload.sub !== "string" ||
-    payload.role !== "customer" ||
+    !isActorRole(payload.role) ||
     typeof payload.identifier !== "string" ||
     typeof payload.exp !== "number" ||
     payload.exp <= Math.floor(Date.now() / 1000)
@@ -164,6 +163,16 @@ function verifyToken(token: string, secret: string): SessionPayload {
   return payload;
 }
 
+function customerUserForIdentifier(identifier: string): AuthUser {
+  return {
+    id: userIdForIdentifier(identifier),
+    role: "customer",
+    identifier,
+    displayName: displayNameForIdentifier(identifier),
+    onboardingComplete: true,
+  };
+}
+
 function normalizeIdentifier(identifier: string): string {
   const trimmed = identifier.trim().toLowerCase();
   return trimmed.includes("@") ? trimmed : trimmed.replace(/[^\d+]/g, "");
@@ -171,6 +180,16 @@ function normalizeIdentifier(identifier: string): string {
 
 function isValidIdentifier(identifier: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) || /^\+?\d{8,15}$/.test(identifier);
+}
+
+function isActorRole(value: unknown): value is ActorRole {
+  return (
+    value === "customer" ||
+    value === "partner" ||
+    value === "fleet" ||
+    value === "internal" ||
+    value === "property_manager"
+  );
 }
 
 function maskIdentifier(identifier: string): string {

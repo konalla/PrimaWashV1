@@ -30,7 +30,7 @@ export interface Actor {
 
 export interface AuthUser {
   readonly id: string;
-  readonly role: "customer";
+  readonly role: ActorRole;
   readonly identifier: string;
   readonly displayName?: string;
   readonly onboardingComplete: boolean;
