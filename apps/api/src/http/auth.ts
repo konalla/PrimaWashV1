@@ -1,17 +1,19 @@
 import type { IncomingMessage } from "node:http";
 import type { Actor, ActorRole, InternalPermission } from "@prima-wash/contracts";
 import type { AccessControlRepository } from "../modules/access-control/repository.js";
-import { actorFromAccessToken } from "../modules/auth/service.js";
+import type { AuthRepository } from "../modules/auth/repository.js";
+import { sessionPayloadFromAccessToken } from "../modules/auth/service.js";
 
-export function getActor(request: IncomingMessage): Actor | undefined {
-  return getActorCandidate(request)?.actor;
+export async function getActor(request: IncomingMessage, authRepository?: AuthRepository): Promise<Actor | undefined> {
+  return (await getActorCandidate(request, authRepository))?.actor;
 }
 
 export async function requireActor(
   request: IncomingMessage,
   accessControl?: AccessControlRepository,
+  authRepository?: AuthRepository,
 ): Promise<Actor> {
-  const candidate = getActorCandidate(request);
+  const candidate = await getActorCandidate(request, authRepository);
 
   if (!candidate) {
     throw new Error("authentication_required");
@@ -30,14 +32,32 @@ export async function requireActor(
   return actor;
 }
 
-function getActorCandidate(
+async function getActorCandidate(
   request: IncomingMessage,
-): { readonly actor: Actor; readonly explicitInternalPermissions: boolean } | undefined {
+  authRepository?: AuthRepository,
+): Promise<{ readonly actor: Actor; readonly explicitInternalPermissions: boolean } | undefined> {
   const authorization = getHeaderValue(request, "authorization");
 
   if (authorization?.startsWith("Bearer ")) {
+    const payload = sessionPayloadFromAccessToken(authorization.slice("Bearer ".length), getAuthSecret());
+
+    if (authRepository) {
+      const session = await authRepository.getSession(payload.sid);
+
+      if (
+        !session ||
+        session.revokedAt ||
+        session.userId !== payload.sub ||
+        session.role !== payload.role ||
+        session.identifier !== payload.identifier ||
+        new Date(session.expiresAt).getTime() <= Date.now()
+      ) {
+        throw new Error("authentication_required");
+      }
+    }
+
     return {
-      actor: actorFromAccessToken(authorization.slice("Bearer ".length), getAuthSecret()),
+      actor: { userId: payload.sub, role: payload.role },
       explicitInternalPermissions: false,
     };
   }

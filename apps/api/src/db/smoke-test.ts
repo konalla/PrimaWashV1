@@ -46,6 +46,8 @@ try {
   await assertSeedCount("condo_operational_profiles", 1);
   await assertSeedCount("prima_wash_days", 1);
   await assertSeedCount("access_memberships", 5);
+  await assertTableExists("auth_challenges");
+  await assertTableExists("auth_sessions");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -57,6 +59,9 @@ try {
   await assertColumnExists("bookings", "prima_wash_day_id");
   await assertColumnExists("access_memberships", "permissions");
   await assertColumnExists("access_memberships", "property_id");
+  await assertColumnExists("auth_challenges", "code_hash");
+  await assertColumnExists("auth_challenges", "attempts");
+  await assertColumnExists("auth_sessions", "revoked_at");
 
   await assertAccessMemberships();
   await assertTransactionalWriteRead();
@@ -81,6 +86,24 @@ async function assertSeedCount(tableName: string, minimum: number): Promise<void
   }
 
   checks.push({ name: `seed_${tableName}`, details: { count } });
+}
+
+async function assertTableExists(tableName: string): Promise<void> {
+  const result = await pool.query<{ exists: boolean }>(
+    `select exists (
+      select 1
+      from information_schema.tables
+      where table_schema = 'public'
+        and table_name = $1
+    )`,
+    [tableName],
+  );
+
+  if (!result.rows[0]?.exists) {
+    throw new Error(`table_missing: ${tableName}`);
+  }
+
+  checks.push({ name: `table_${tableName}` });
 }
 
 async function assertColumnExists(tableName: string, columnName: string): Promise<void> {

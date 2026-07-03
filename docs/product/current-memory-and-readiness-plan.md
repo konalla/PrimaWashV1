@@ -13,6 +13,19 @@ Latest Phase 0 verification on 2026-07-03:
 - `npm run db:smoke` passed with 26 applied migrations.
 - `npm run test:postgres` passed with 6 Postgres repository integration tests.
 
+Latest Phase 1 auth verification on 2026-07-03:
+
+- Added `0027_auth_challenges_and_sessions.sql`.
+- Auth challenges are persisted with hashed codes, attempt counts, and expiry.
+- Auth sessions are persisted with expiry and `revoked_at`.
+- `/v1/auth/logout` now revokes the current bearer session.
+- Protected bearer-token routes now reject revoked or missing persisted sessions.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 82 API tests.
+- `npm run db:migrate` applied `0027_auth_challenges_and_sessions.sql`.
+- `npm run db:smoke` passed with 27 applied migrations.
+- `npm run test:postgres` passed with 7 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -98,9 +111,9 @@ Web portal currently includes:
 
 Auth and identity:
 
-- Auth challenges are still in memory, so code verification is not production durable.
-- Logout is stateless and does not revoke a server-side session.
-- No refresh-token rotation or persistent session table.
+- Auth challenges are now persisted in Postgres-backed environments.
+- Logout now revokes a persisted server-side session.
+- No refresh-token rotation or renewal model yet.
 - No email/SMS OTP delivery provider is connected.
 - No rate limiting, abuse prevention, MFA, staff invite flow, or production identity provider.
 - Development header auth still exists for local/dev and must be disabled in production.
@@ -161,11 +174,11 @@ Exit criteria:
 
 Goal: replace temporary auth behavior with a production-grade identity foundation.
 
-- Persist auth challenges in Postgres.
-- Add auth attempt rate limiting and challenge expiry cleanup.
+- Persist auth challenges in Postgres. Completed 2026-07-03.
+- Persist revocable auth sessions and make logout revoke the current session. Completed 2026-07-03.
+- Add auth attempt rate limiting and challenge/session expiry cleanup.
 - Add email/SMS delivery abstraction, then connect a real provider.
-- Add persistent sessions or refresh-token rotation.
-- Implement real logout/session revocation.
+- Add refresh-token rotation or another secure session renewal model.
 - Create staff, partner, and property-manager invite flows.
 - Disable dev header auth in non-local environments.
 - Add admin user management for roles and internal permissions.

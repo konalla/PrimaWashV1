@@ -9,7 +9,7 @@ The API now supports the customer booking loop, partner operations, property/con
 - `GET /v1/auth/session`
 - `POST /v1/auth/logout`
 
-Mobile and web requests use `Authorization: Bearer <access-token>`. The local verifier returns development code `123456` when configured for development. Production still requires persisted auth challenges, external email/SMS delivery, refresh-token rotation or another revocable session model, and rate limiting.
+Mobile and web requests use `Authorization: Bearer <access-token>`. The local verifier returns development code `123456` when configured for development. Auth challenges and sessions are persisted in Postgres-backed environments, and logout revokes the current session. Production still requires external email/SMS delivery, refresh-token rotation or another renewal model, and rate limiting.
 
 Development actor headers exist for local testing only. They are rejected automatically when `NODE_ENV=production` and must not be used by staging or production clients.
 

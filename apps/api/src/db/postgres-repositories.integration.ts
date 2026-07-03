@@ -4,6 +4,7 @@ import type { Booking } from "@prima-wash/contracts";
 import { createDatabasePool, type DatabasePool } from "./pool.js";
 import { PostgresAvailabilityRepository } from "../modules/availability/repository.js";
 import { PostgresAccessControlRepository } from "../modules/access-control/repository.js";
+import { PostgresAuthRepository } from "../modules/auth/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
@@ -16,6 +17,7 @@ describe("Postgres repository parity", () => {
   let pool: DatabasePool;
   let availability: PostgresAvailabilityRepository;
   let accessControl: PostgresAccessControlRepository;
+  let auth: PostgresAuthRepository;
   let bookings: PostgresBookingRepository;
   let communications: PostgresCommunicationRepository;
   let condoOperations: PostgresCondoOperationsRepository;
@@ -27,6 +29,7 @@ describe("Postgres repository parity", () => {
     await pool.query("select 1");
     availability = new PostgresAvailabilityRepository(pool);
     accessControl = new PostgresAccessControlRepository(pool);
+    auth = new PostgresAuthRepository(pool);
     bookings = new PostgresBookingRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
     condoOperations = new PostgresCondoOperationsRepository(pool);
@@ -373,6 +376,35 @@ describe("Postgres repository parity", () => {
     assert.equal(propertyManagerLogin?.user.role, "property_manager");
     assert.equal(propertyManagerLogin?.actor.propertyId, "prop_sg_marina_one");
     assert.equal(customerFallback, undefined);
+  });
+
+  it("persists auth challenges, attempts, sessions, and revocation", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const challenge = await auth.createChallenge({
+      identifier: `auth-${suffix}@example.com`,
+      codeHash: `hash_${suffix}`,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const attempted = await auth.incrementChallengeAttempts(challenge.id);
+    const session = await auth.createSession({
+      userId: `usr_auth_${suffix}`,
+      role: "customer",
+      identifier: `auth-${suffix}@example.com`,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const loadedSession = await auth.getSession(session.id);
+    const revoked = await auth.revokeSession(session.id);
+
+    try {
+      assert.equal((await auth.getChallenge(challenge.id))?.codeHash, `hash_${suffix}`);
+      assert.equal(attempted?.attempts, 1);
+      assert.equal(loadedSession?.userId, `usr_auth_${suffix}`);
+      assert.equal(revoked?.revokedAt !== undefined, true);
+    } finally {
+      await auth.deleteChallenge(challenge.id);
+      await pool.query("delete from auth_sessions where id = $1", [session.id]);
+    }
   });
 });
 

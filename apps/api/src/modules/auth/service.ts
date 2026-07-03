@@ -1,4 +1,4 @@
-import { createHmac, createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import type {
   Actor,
   ActorRole,
@@ -6,49 +6,41 @@ import type {
   AuthUser,
   RequestAuthCodeResponse,
 } from "@prima-wash/contracts";
+import { InMemoryAuthRepository, type AuthRepository, type AuthSessionRecord } from "./repository.js";
 
-interface AuthChallenge {
-  readonly identifier: string;
-  readonly code: string;
-  readonly expiresAt: number;
-  attempts: number;
-}
-
-interface SessionPayload {
+export interface SessionPayload {
   readonly sub: string;
   readonly role: ActorRole;
   readonly identifier: string;
+  readonly sid: string;
   readonly exp: number;
   readonly iat: number;
 }
 
 export class AuthService {
-  readonly #challenges = new Map<string, AuthChallenge>();
-
   constructor(
     private readonly secret: string,
     private readonly developmentCode = "123456",
+    private readonly repository: AuthRepository = new InMemoryAuthRepository(),
   ) {}
 
-  requestCode(rawIdentifier: string): RequestAuthCodeResponse {
+  async requestCode(rawIdentifier: string): Promise<RequestAuthCodeResponse> {
     const identifier = normalizeIdentifier(rawIdentifier);
 
     if (!isValidIdentifier(identifier)) {
       throw new Error("invalid_auth_identifier");
     }
 
-    const challengeId = randomUUID();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
-    this.#challenges.set(challengeId, {
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const challenge = await this.repository.createChallenge({
       identifier,
-      code: this.developmentCode,
+      codeHash: codeHash(this.developmentCode, this.secret),
       expiresAt,
-      attempts: 0,
     });
 
     return {
-      challengeId,
-      expiresAt: new Date(expiresAt).toISOString(),
+      challengeId: challenge.id,
+      expiresAt,
       deliveryHint: maskIdentifier(identifier),
       ...(shouldExposeDevelopmentCode() ? { devCode: this.developmentCode } : {}),
     };
@@ -59,32 +51,44 @@ export class AuthService {
     code: string,
     resolveUser?: (identifier: string) => Promise<AuthUser | undefined>,
   ): Promise<AuthSession> {
-    const challenge = this.#challenges.get(challengeId);
+    const challenge = await this.repository.getChallenge(challengeId);
 
-    if (!challenge || challenge.expiresAt <= Date.now()) {
-      this.#challenges.delete(challengeId);
+    if (!challenge || new Date(challenge.expiresAt).getTime() <= Date.now()) {
+      await this.repository.deleteChallenge(challengeId);
       throw new Error("auth_challenge_expired");
     }
 
-    challenge.attempts += 1;
+    const attemptedChallenge = await this.repository.incrementChallengeAttempts(challengeId);
 
-    if (challenge.attempts > 5) {
-      this.#challenges.delete(challengeId);
+    if (!attemptedChallenge) {
+      throw new Error("auth_challenge_expired");
+    }
+
+    if (attemptedChallenge.attempts > 5) {
+      await this.repository.deleteChallenge(challengeId);
       throw new Error("auth_challenge_locked");
     }
 
-    if (!safeEqual(challenge.code, code.trim())) {
+    if (!safeEqual(attemptedChallenge.codeHash, codeHash(code.trim(), this.secret))) {
       throw new Error("invalid_auth_code");
     }
 
-    this.#challenges.delete(challengeId);
+    await this.repository.deleteChallenge(challengeId);
     const issuedAt = Math.floor(Date.now() / 1000);
     const expiresAt = issuedAt + 24 * 60 * 60;
     const user = (await resolveUser?.(challenge.identifier)) ?? customerUserForIdentifier(challenge.identifier);
+    const session = await this.repository.createSession({
+      userId: user.id,
+      role: user.role,
+      identifier: user.identifier,
+      issuedAt: new Date(issuedAt * 1000).toISOString(),
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+    });
     const payload: SessionPayload = {
       sub: user.id,
       role: user.role,
       identifier: user.identifier,
+      sid: session.id,
       iat: issuedAt,
       exp: expiresAt,
     };
@@ -96,11 +100,12 @@ export class AuthService {
     };
   }
 
-  readSession(token: string): AuthSession {
+  async readSession(token: string): Promise<AuthSession> {
     const payload = verifyToken(token, this.secret);
+    const session = await this.assertActiveSession(payload);
     const user: AuthUser = {
       id: payload.sub,
-      role: "customer",
+      role: payload.role,
       identifier: payload.identifier,
       displayName: displayNameForIdentifier(payload.identifier),
       onboardingComplete: true,
@@ -108,9 +113,37 @@ export class AuthService {
 
     return {
       accessToken: token,
-      expiresAt: new Date(payload.exp * 1000).toISOString(),
+      expiresAt: session.expiresAt,
       user,
     };
+  }
+
+  async actorFromToken(token: string): Promise<Actor> {
+    const payload = verifyToken(token, this.secret);
+    await this.assertActiveSession(payload);
+    return { userId: payload.sub, role: payload.role };
+  }
+
+  async revokeToken(token: string): Promise<void> {
+    const payload = verifyToken(token, this.secret);
+    await this.repository.revokeSession(payload.sid);
+  }
+
+  async assertActiveSession(payload: SessionPayload): Promise<AuthSessionRecord> {
+    const session = await this.repository.getSession(payload.sid);
+
+    if (
+      !session ||
+      session.revokedAt ||
+      session.userId !== payload.sub ||
+      session.role !== payload.role ||
+      session.identifier !== payload.identifier ||
+      new Date(session.expiresAt).getTime() <= Date.now()
+    ) {
+      throw new Error("invalid_access_token");
+    }
+
+    return session;
   }
 }
 
@@ -121,6 +154,10 @@ function shouldExposeDevelopmentCode(): boolean {
 export function actorFromAccessToken(token: string, secret: string): Actor {
   const payload = verifyToken(token, secret);
   return { userId: payload.sub, role: payload.role };
+}
+
+export function sessionPayloadFromAccessToken(token: string, secret: string): SessionPayload {
+  return verifyToken(token, secret);
 }
 
 function signPayload(payload: SessionPayload, secret: string): string {
@@ -154,6 +191,7 @@ function verifyToken(token: string, secret: string): SessionPayload {
     typeof payload.sub !== "string" ||
     !isActorRole(payload.role) ||
     typeof payload.identifier !== "string" ||
+    typeof payload.sid !== "string" ||
     typeof payload.exp !== "number" ||
     payload.exp <= Math.floor(Date.now() / 1000)
   ) {
@@ -212,6 +250,10 @@ function displayNameForIdentifier(identifier: string): string {
 
   const candidate = identifier.includes("@") ? identifier.split("@")[0] : undefined;
   return candidate ? candidate.charAt(0).toUpperCase() + candidate.slice(1) : "Vehicle owner";
+}
+
+function codeHash(code: string, secret: string): string {
+  return createHmac("sha256", secret).update(code).digest("base64url");
 }
 
 function safeEqual(left: string, right: string): boolean {

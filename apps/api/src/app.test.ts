@@ -298,6 +298,78 @@ describe("Prima Wash API", () => {
     assert.equal(verifyPayload.code, "invalid_auth_code");
   });
 
+  it("locks a persisted verification challenge after repeated failed attempts", async () => {
+    const requestResponse = await fetch(`${baseUrl}/v1/auth/code/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identifier: "+12025550124" }),
+    });
+    const requestPayload = (await requestResponse.json()) as ApiResponse<{ challengeId: string }>;
+    let finalPayload: ApiErrorResponse | undefined;
+    let finalStatus = 0;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const verifyResponse = await fetch(`${baseUrl}/v1/auth/code/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ challengeId: requestPayload.data.challengeId, code: "000000" }),
+      });
+      finalStatus = verifyResponse.status;
+      finalPayload = (await verifyResponse.json()) as ApiErrorResponse;
+    }
+
+    assert.equal(finalStatus, 429);
+    assert.equal(finalPayload?.code, "auth_challenge_locked");
+  });
+
+  it("consumes verification challenges after successful session creation", async () => {
+    const requestResponse = await fetch(`${baseUrl}/v1/auth/code/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identifier: "consume@example.com" }),
+    });
+    const requestPayload = (await requestResponse.json()) as ApiResponse<{ challengeId: string; devCode: string }>;
+    const firstVerifyResponse = await fetch(`${baseUrl}/v1/auth/code/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ challengeId: requestPayload.data.challengeId, code: requestPayload.data.devCode }),
+    });
+    const secondVerifyResponse = await fetch(`${baseUrl}/v1/auth/code/verify`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ challengeId: requestPayload.data.challengeId, code: requestPayload.data.devCode }),
+    });
+    const secondPayload = (await secondVerifyResponse.json()) as ApiErrorResponse;
+
+    assert.equal(firstVerifyResponse.status, 200);
+    assert.equal(secondVerifyResponse.status, 410);
+    assert.equal(secondPayload.code, "auth_challenge_expired");
+  });
+
+  it("revokes bearer sessions on logout", async () => {
+    const session = await createCustomerSession("logout@example.com");
+    const beforeLogoutResponse = await fetch(`${baseUrl}/v1/vehicles`, {
+      headers: authHeaders(session),
+    });
+    const logoutResponse = await fetch(`${baseUrl}/v1/auth/logout`, {
+      method: "POST",
+      headers: authHeaders(session),
+    });
+    const afterLogoutResponse = await fetch(`${baseUrl}/v1/vehicles`, {
+      headers: authHeaders(session),
+    });
+    const sessionResponse = await fetch(`${baseUrl}/v1/auth/session`, {
+      headers: authHeaders(session),
+    });
+    const afterLogoutPayload = (await afterLogoutResponse.json()) as ApiErrorResponse;
+
+    assert.equal(beforeLogoutResponse.status, 200);
+    assert.equal(logoutResponse.status, 200);
+    assert.equal(afterLogoutResponse.status, 401);
+    assert.equal(afterLogoutPayload.code, "authentication_required");
+    assert.equal(sessionResponse.status, 401);
+  });
+
   it("persists an authenticated customer profile", async () => {
     const session = await createCustomerSession("profile@example.com");
     const updateResponse = await fetch(`${baseUrl}/v1/profile`, {
