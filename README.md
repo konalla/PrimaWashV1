@@ -10,6 +10,10 @@ Prima Wash is a vehicle-care booking and operations platform. The first release 
 - `packages/contracts` — shared domain and API contracts
 - `docs` — product, architecture, security, and delivery decisions
 
+## Current memory
+
+The current operating source of truth is [`docs/product/current-memory-and-readiness-plan.md`](docs/product/current-memory-and-readiness-plan.md). It captures what has been built, what must not be forgotten, launch-readiness gaps, and the revised phased roadmap.
+
 ## Local development
 
 ```bash
