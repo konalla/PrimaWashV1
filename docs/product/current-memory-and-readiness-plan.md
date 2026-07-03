@@ -23,8 +23,10 @@ Latest Phase 1 auth verification on 2026-07-03:
 - Added `0028_auth_rate_limits.sql`.
 - Verification-code requests are rate limited by normalized identifier and request source.
 - Expired auth challenges, expired sessions, old revoked sessions, and old auth rate-limit events can be pruned with `npm run auth:cleanup --workspace @prima-wash/api`.
+- Added an auth-code delivery provider boundary with local development delivery and webhook delivery for production integration.
+- Production config now rejects exposed development codes and rejects local auth-code delivery.
 - `npm run check` passed.
-- `npm run test --workspace @prima-wash/api` passed with 83 API tests.
+- `npm run test --workspace @prima-wash/api` passed with 90 API tests.
 - `npm run db:migrate` applied `0028_auth_rate_limits.sql`.
 - `npm run db:smoke` passed with 28 applied migrations.
 - `npm run test:postgres` passed with 8 Postgres repository integration tests.
@@ -79,6 +81,7 @@ Backend foundations now include:
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
 - Verification-code request throttling and auth cleanup script.
+- Auth-code delivery provider abstraction with local and webhook modes.
 - Signed bearer access tokens.
 - Access memberships for partner, internal, and property-manager scoping.
 - Internal permissions including operations, finance, property, partner, and super-admin permissions.
@@ -120,7 +123,7 @@ Auth and identity:
 - Auth challenges are now persisted in Postgres-backed environments.
 - Logout now revokes a persisted server-side session.
 - No refresh-token rotation or renewal model yet.
-- No email/SMS OTP delivery provider is connected.
+- No direct email/SMS vendor adapter is connected yet. A webhook delivery boundary exists for production integration.
 - Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
 - No MFA, staff invite flow, or production identity provider.
 - Development header auth still exists for local/dev and must be disabled in production.
@@ -184,8 +187,9 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 - Persist auth challenges in Postgres. Completed 2026-07-03.
 - Persist revocable auth sessions and make logout revoke the current session. Completed 2026-07-03.
 - Add auth attempt rate limiting and challenge/session expiry cleanup. Completed for verification-code requests and cleanup script on 2026-07-03.
+- Add auth-code delivery abstraction and production safety gates. Completed 2026-07-03 with local and webhook provider modes.
 - Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
-- Add email/SMS delivery abstraction, then connect a real provider.
+- Connect a real email/SMS provider behind the delivery boundary.
 - Add refresh-token rotation or another secure session renewal model.
 - Create staff, partner, and property-manager invite flows.
 - Disable dev header auth in non-local environments.

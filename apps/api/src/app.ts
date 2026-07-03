@@ -70,6 +70,10 @@ import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http
 import { findServiceOffering, serviceCatalog } from "./modules/availability/catalog.js";
 import { AuthService } from "./modules/auth/service.js";
 import {
+  createAuthCodeDeliveryProvider,
+  type AuthCodeDeliveryProvider,
+} from "./modules/auth/delivery.js";
+import {
   validateCreateAvailabilitySlot,
   validateUpdateAvailabilitySlot,
   type CreateAvailabilitySlotInput,
@@ -116,6 +120,7 @@ export interface CreateApiServerOptions {
   readonly publicDirectory?: string;
   readonly enableRequestLogging?: boolean;
   readonly authSessionSecret?: string;
+  readonly authCodeDeliveryProvider?: AuthCodeDeliveryProvider;
   readonly stripeWebhookSecret?: string;
 }
 
@@ -123,11 +128,14 @@ export function createApiServer(options: CreateApiServerOptions): Server {
   const publicDirectory = options.publicDirectory ?? path.resolve("apps/api/public");
   const enableRequestLogging = options.enableRequestLogging ?? true;
   const paymentProvider = options.paymentProvider ?? createPaymentProvider();
+  const authCodeDeliveryProvider =
+    options.authCodeDeliveryProvider ??
+    createAuthCodeDeliveryProvider("local", { exposeDevelopmentCode: process.env.SHOW_DEV_AUTH_CODE === "true" });
   const authService = new AuthService(
     options.authSessionSecret ??
       process.env.AUTH_SESSION_SECRET ??
       "prima-wash-development-secret-change-before-production",
-    "123456",
+    authCodeDeliveryProvider,
     options.repositories.auth,
   );
 
@@ -205,6 +213,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         if (message === "auth_rate_limited") {
           sendError(response, 429, message, "Too many verification code requests. Please wait and try again");
+          return;
+        }
+
+        if (message === "auth_code_delivery_failed") {
+          sendError(response, 503, message, "Verification code delivery is temporarily unavailable");
           return;
         }
 

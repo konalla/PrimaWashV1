@@ -9,7 +9,7 @@ The API now supports the customer booking loop, partner operations, property/con
 - `GET /v1/auth/session`
 - `POST /v1/auth/logout`
 
-Mobile and web requests use `Authorization: Bearer <access-token>`. The local verifier returns development code `123456` when configured for development. Auth challenges and sessions are persisted in Postgres-backed environments, and logout revokes the current session. Verification-code requests are rate limited per normalized identifier and request source. Production still requires external email/SMS delivery, refresh-token rotation or another renewal model, and broader abuse controls beyond code-request throttling.
+Mobile and web requests use `Authorization: Bearer <access-token>`. The local auth-code delivery provider can return development code `123456` when configured for development. Auth challenges and sessions are persisted in Postgres-backed environments, and logout revokes the current session. Verification-code requests are rate limited per normalized identifier and request source. Production config rejects exposed development codes and local auth-code delivery. Production still requires connecting the selected email/SMS provider behind the delivery boundary, refresh-token rotation or another renewal model, and broader abuse controls beyond code-request throttling.
 
 Development actor headers exist for local testing only. They are rejected automatically when `NODE_ENV=production` and must not be used by staging or production clients.
 
@@ -177,3 +177,8 @@ Local development defaults to Postgres unless `PERSISTENCE_MODE=memory` is delib
 Auth maintenance:
 
 - `npm run auth:cleanup --workspace @prima-wash/api` prunes expired auth challenges, expired sessions, old revoked sessions, and retained auth rate-limit events.
+
+Auth-code delivery modes:
+
+- `local`: development-only provider that uses the configured development code.
+- `webhook`: posts generated six-digit codes to the configured delivery service URL for email/SMS integration.

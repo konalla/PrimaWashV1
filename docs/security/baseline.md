@@ -4,12 +4,13 @@
 - Native session tokens are stored with Expo SecureStore.
 - Verification challenges are persisted, expire after ten minutes, and lock after five failed attempts.
 - Verification-code requests are rate limited per normalized identifier and request source.
+- Auth-code delivery is routed through a provider boundary. Local development delivery is blocked by config in production.
 - Session records are persisted and logout revokes the current bearer session.
 - Development identity headers are rejected automatically when `NODE_ENV=production`.
 - Production requires `AUTH_SESSION_SECRET` to contain at least 32 characters.
 - Server-side access memberships resolve partner, property-manager, and internal scopes.
 - Internal users are permissioned by capability, including operations, finance, property, partner, and super-admin permissions.
-- Production OTP delivery, refresh rotation or equivalent session renewal, broader abuse controls, and MFA for privileged roles remain required before launch.
+- Production email/SMS vendor connection, refresh rotation or equivalent session renewal, broader abuse controls, and MFA for privileged roles remain required before launch.
 - Server-side role, organization, property, and partner-location authorization with deny-by-default behavior
 - Provider-hosted card collection; encryption in transit and at rest
 - Managed secrets and documented personal-data retention/deletion
@@ -25,8 +26,9 @@ Current implementation:
 - Development actor headers remain available only for local/dev paths and are rejected automatically in production.
 - Auth challenges and auth sessions are persisted in Postgres when the API runs with Postgres repositories.
 - Verification-code request rate limits are persisted in Postgres when the API runs with Postgres repositories.
+- Auth-code delivery supports local development and webhook provider modes. Production config rejects `SHOW_DEV_AUTH_CODE=true` and `AUTH_CODE_DELIVERY_PROVIDER=local`.
 - `npm run auth:cleanup --workspace @prima-wash/api` prunes expired auth challenges, expired sessions, old revoked sessions, and old auth rate-limit events.
-- Production still needs delivery provider integration, broader authentication abuse controls, and privileged-role MFA.
+- Production still needs the selected email/SMS vendor wired behind the webhook delivery boundary, broader authentication abuse controls, and privileged-role MFA.
 - Customer actors can only access their own owner scope; cross-owner reads/writes return 403.
 - Partner actors are hydrated from persisted access memberships and scoped to their partner location.
 - Property-manager actors are hydrated from persisted access memberships and scoped to their property.

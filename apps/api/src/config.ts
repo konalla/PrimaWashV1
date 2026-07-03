@@ -5,6 +5,10 @@ export interface ApiConfig {
   readonly persistenceMode: PersistenceMode;
   readonly databaseUrl?: string;
   readonly authSessionSecret: string;
+  readonly authCodeDeliveryProvider: "local" | "webhook";
+  readonly authCodeDeliveryWebhookUrl?: string;
+  readonly authCodeDeliveryWebhookSecret?: string;
+  readonly showDevAuthCode: boolean;
   readonly paymentProvider: string;
   readonly stripeSecretKey?: string;
   readonly stripeWebhookSecret?: string;
@@ -36,10 +40,33 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     throw new Error("AUTH_SESSION_SECRET must contain at least 32 characters in production");
   }
 
+  const authCodeDeliveryProvider = parseAuthCodeDeliveryProvider(environment);
+  const showDevAuthCode = environment.SHOW_DEV_AUTH_CODE === "true";
+
+  if (environment.NODE_ENV === "production" && showDevAuthCode) {
+    throw new Error("SHOW_DEV_AUTH_CODE must be disabled in production");
+  }
+
+  if (environment.NODE_ENV === "production" && authCodeDeliveryProvider === "local") {
+    throw new Error("AUTH_CODE_DELIVERY_PROVIDER must not be 'local' in production");
+  }
+
+  if (authCodeDeliveryProvider === "webhook" && !environment.AUTH_CODE_DELIVERY_WEBHOOK_URL) {
+    throw new Error("AUTH_CODE_DELIVERY_WEBHOOK_URL is required when AUTH_CODE_DELIVERY_PROVIDER=webhook");
+  }
+
   return {
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     persistenceMode,
     authSessionSecret,
+    authCodeDeliveryProvider,
+    showDevAuthCode,
+    ...(environment.AUTH_CODE_DELIVERY_WEBHOOK_URL
+      ? { authCodeDeliveryWebhookUrl: environment.AUTH_CODE_DELIVERY_WEBHOOK_URL }
+      : {}),
+    ...(environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET
+      ? { authCodeDeliveryWebhookSecret: environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET }
+      : {}),
     paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
@@ -55,4 +82,14 @@ function parsePersistenceMode(environment: NodeJS.ProcessEnv): PersistenceMode {
   }
 
   throw new Error("PERSISTENCE_MODE must be either 'memory' or 'postgres'");
+}
+
+function parseAuthCodeDeliveryProvider(environment: NodeJS.ProcessEnv): "local" | "webhook" {
+  const value = environment.AUTH_CODE_DELIVERY_PROVIDER ?? "local";
+
+  if (value === "local" || value === "webhook") {
+    return value;
+  }
+
+  throw new Error("AUTH_CODE_DELIVERY_PROVIDER must be either 'local' or 'webhook'");
 }

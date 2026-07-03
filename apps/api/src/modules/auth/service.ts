@@ -6,6 +6,10 @@ import type {
   AuthUser,
   RequestAuthCodeResponse,
 } from "@prima-wash/contracts";
+import {
+  createAuthCodeDeliveryProvider,
+  type AuthCodeDeliveryProvider,
+} from "./delivery.js";
 import { InMemoryAuthRepository, type AuthRepository, type AuthSessionRecord } from "./repository.js";
 
 export interface SessionPayload {
@@ -23,7 +27,9 @@ export class AuthService {
 
   constructor(
     private readonly secret: string,
-    private readonly developmentCode = "123456",
+    private readonly deliveryProvider: AuthCodeDeliveryProvider = createAuthCodeDeliveryProvider("local", {
+      exposeDevelopmentCode: process.env.SHOW_DEV_AUTH_CODE === "true",
+    }),
     private readonly repository: AuthRepository = new InMemoryAuthRepository(),
   ) {}
 
@@ -48,17 +54,23 @@ export class AuthService {
     }
 
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const deliveryHint = maskIdentifier(identifier);
+    const delivery = await this.deliveryProvider.deliver({
+      identifier,
+      deliveryHint,
+      expiresAt,
+    });
     const challenge = await this.repository.createChallenge({
       identifier,
-      codeHash: codeHash(this.developmentCode, this.secret),
+      codeHash: codeHash(delivery.code, this.secret),
       expiresAt,
     });
 
     return {
       challengeId: challenge.id,
       expiresAt,
-      deliveryHint: maskIdentifier(identifier),
-      ...(shouldExposeDevelopmentCode() ? { devCode: this.developmentCode } : {}),
+      deliveryHint,
+      ...(delivery.devCode ? { devCode: delivery.devCode } : {}),
     };
   }
 
@@ -161,10 +173,6 @@ export class AuthService {
 
     return session;
   }
-}
-
-function shouldExposeDevelopmentCode(): boolean {
-  return process.env.SHOW_DEV_AUTH_CODE === "true";
 }
 
 export function actorFromAccessToken(token: string, secret: string): Actor {
