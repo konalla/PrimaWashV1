@@ -48,6 +48,7 @@ try {
   await assertSeedCount("access_memberships", 5);
   await assertTableExists("auth_challenges");
   await assertTableExists("auth_sessions");
+  await assertTableExists("auth_rate_limit_events");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -62,6 +63,8 @@ try {
   await assertColumnExists("auth_challenges", "code_hash");
   await assertColumnExists("auth_challenges", "attempts");
   await assertColumnExists("auth_sessions", "revoked_at");
+  await assertColumnExists("auth_rate_limit_events", "source");
+  await assertColumnExists("auth_rate_limit_events", "event_type");
 
   await assertAccessMemberships();
   await assertTransactionalWriteRead();

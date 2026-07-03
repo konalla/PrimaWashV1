@@ -18,17 +18,33 @@ export interface SessionPayload {
 }
 
 export class AuthService {
+  static readonly codeRequestLimit = 5;
+  static readonly codeRequestWindowMs = 15 * 60 * 1000;
+
   constructor(
     private readonly secret: string,
     private readonly developmentCode = "123456",
     private readonly repository: AuthRepository = new InMemoryAuthRepository(),
   ) {}
 
-  async requestCode(rawIdentifier: string): Promise<RequestAuthCodeResponse> {
+  async requestCode(rawIdentifier: string, source = "unknown"): Promise<RequestAuthCodeResponse> {
     const identifier = normalizeIdentifier(rawIdentifier);
 
     if (!isValidIdentifier(identifier)) {
       throw new Error("invalid_auth_identifier");
+    }
+
+    const now = Date.now();
+    const rateLimit = await this.repository.recordCodeRequest({
+      identifier,
+      source: normalizeSource(source),
+      occurredAt: new Date(now).toISOString(),
+      windowStartsAt: new Date(now - AuthService.codeRequestWindowMs).toISOString(),
+      maxAttempts: AuthService.codeRequestLimit,
+    });
+
+    if (!rateLimit.allowed) {
+      throw new Error("auth_rate_limited");
     }
 
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -214,6 +230,10 @@ function customerUserForIdentifier(identifier: string): AuthUser {
 function normalizeIdentifier(identifier: string): string {
   const trimmed = identifier.trim().toLowerCase();
   return trimmed.includes("@") ? trimmed : trimmed.replace(/[^\d+]/g, "");
+}
+
+function normalizeSource(source: string): string {
+  return source.trim().slice(0, 128) || "unknown";
 }
 
 function isValidIdentifier(identifier: string): boolean {

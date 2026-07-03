@@ -298,6 +298,27 @@ describe("Prima Wash API", () => {
     assert.equal(verifyPayload.code, "invalid_auth_code");
   });
 
+  it("rate limits repeated verification code requests by identifier and source", async () => {
+    let finalStatus = 0;
+    let finalPayload: ApiErrorResponse | ApiResponse<{ challengeId: string }> | undefined;
+
+    for (let index = 0; index < 6; index += 1) {
+      const response = await fetch(`${baseUrl}/v1/auth/code/request`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "203.0.113.10",
+        },
+        body: JSON.stringify({ identifier: "rate-limit@example.com" }),
+      });
+      finalStatus = response.status;
+      finalPayload = (await response.json()) as ApiErrorResponse | ApiResponse<{ challengeId: string }>;
+    }
+
+    assert.equal(finalStatus, 429);
+    assert.equal((finalPayload as ApiErrorResponse).code, "auth_rate_limited");
+  });
+
   it("locks a persisted verification challenge after repeated failed attempts", async () => {
     const requestResponse = await fetch(`${baseUrl}/v1/auth/code/request`, {
       method: "POST",

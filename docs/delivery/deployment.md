@@ -30,6 +30,8 @@ Environment contract:
 - `POSTGRES_PASSWORD`: compose database password.
 - `POSTGRES_DB`: compose database name.
 - `AUTH_SESSION_SECRET`: signing secret for bearer sessions. Required in production and must contain at least 32 characters.
+- `AUTH_RATE_LIMIT_RETENTION_HOURS`: retention window for auth rate-limit events pruned by the cleanup job. Default `24`.
+- `AUTH_REVOKED_SESSION_RETENTION_DAYS`: retention window for revoked auth sessions pruned by the cleanup job. Default `30`.
 - `ALLOW_DEV_HEADER_AUTH`: allows trusted development actor headers when set to `true`. Must be absent or `false` outside local development.
 - `SHOW_DEV_AUTH_CODE`: exposes the local verification code in auth responses when set to `true`. Must be absent or `false` outside local development.
 - `PAYMENT_PROVIDER`: `local` for development or `stripe` for Stripe-backed payment operations.
@@ -39,7 +41,8 @@ Environment contract:
 Staging requirements before external users:
 
 - Use bearer sessions only; disable demo development actor headers.
-- Persist auth challenges and revocable sessions, or connect the selected production identity/OTP provider.
+- Persist auth challenges, revocable sessions, and auth rate-limit events, or connect the selected production identity/OTP provider.
+- Schedule `npm run auth:cleanup --workspace @prima-wash/api` or equivalent infrastructure job.
 - Move Postgres credentials to managed secrets.
 - Move payment and auth secrets to managed secrets.
 - Restrict CORS to deployed web origins only.

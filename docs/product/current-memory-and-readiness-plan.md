@@ -20,11 +20,15 @@ Latest Phase 1 auth verification on 2026-07-03:
 - Auth sessions are persisted with expiry and `revoked_at`.
 - `/v1/auth/logout` now revokes the current bearer session.
 - Protected bearer-token routes now reject revoked or missing persisted sessions.
+- Added `0028_auth_rate_limits.sql`.
+- Verification-code requests are rate limited by normalized identifier and request source.
+- Expired auth challenges, expired sessions, old revoked sessions, and old auth rate-limit events can be pruned with `npm run auth:cleanup --workspace @prima-wash/api`.
 - `npm run check` passed.
-- `npm run test --workspace @prima-wash/api` passed with 82 API tests.
-- `npm run db:migrate` applied `0027_auth_challenges_and_sessions.sql`.
-- `npm run db:smoke` passed with 27 applied migrations.
-- `npm run test:postgres` passed with 7 Postgres repository integration tests.
+- `npm run test --workspace @prima-wash/api` passed with 83 API tests.
+- `npm run db:migrate` applied `0028_auth_rate_limits.sql`.
+- `npm run db:smoke` passed with 28 applied migrations.
+- `npm run test:postgres` passed with 8 Postgres repository integration tests.
+- `npm run auth:cleanup --workspace @prima-wash/api` passed.
 
 ## Product Direction
 
@@ -73,6 +77,8 @@ Backend foundations now include:
 - Postgres migrations through `0026_internal_permission_users.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
+- Persisted verification challenges and revocable auth sessions.
+- Verification-code request throttling and auth cleanup script.
 - Signed bearer access tokens.
 - Access memberships for partner, internal, and property-manager scoping.
 - Internal permissions including operations, finance, property, partner, and super-admin permissions.
@@ -115,7 +121,8 @@ Auth and identity:
 - Logout now revokes a persisted server-side session.
 - No refresh-token rotation or renewal model yet.
 - No email/SMS OTP delivery provider is connected.
-- No rate limiting, abuse prevention, MFA, staff invite flow, or production identity provider.
+- Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
+- No MFA, staff invite flow, or production identity provider.
 - Development header auth still exists for local/dev and must be disabled in production.
 
 Payments and finance:
@@ -176,7 +183,8 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 
 - Persist auth challenges in Postgres. Completed 2026-07-03.
 - Persist revocable auth sessions and make logout revoke the current session. Completed 2026-07-03.
-- Add auth attempt rate limiting and challenge/session expiry cleanup.
+- Add auth attempt rate limiting and challenge/session expiry cleanup. Completed for verification-code requests and cleanup script on 2026-07-03.
+- Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
 - Add email/SMS delivery abstraction, then connect a real provider.
 - Add refresh-token rotation or another secure session renewal model.
 - Create staff, partner, and property-manager invite flows.

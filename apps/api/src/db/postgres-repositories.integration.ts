@@ -406,6 +406,68 @@ describe("Postgres repository parity", () => {
       await pool.query("delete from auth_sessions where id = $1", [session.id]);
     }
   });
+
+  it("tracks auth request limits and cleans expired auth records safely", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const identifier = `limit-${suffix}@example.com`;
+    let latestLimitResult;
+
+    for (let index = 0; index < 6; index += 1) {
+      latestLimitResult = await auth.recordCodeRequest({
+        identifier,
+        source: "198.51.100.20",
+        occurredAt: new Date().toISOString(),
+        windowStartsAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        maxAttempts: 5,
+      });
+    }
+
+    const expiredChallenge = await auth.createChallenge({
+      identifier: `expired-${suffix}@example.com`,
+      codeHash: `expired_hash_${suffix}`,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const validChallenge = await auth.createChallenge({
+      identifier: `valid-${suffix}@example.com`,
+      codeHash: `valid_hash_${suffix}`,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const expiredSession = await auth.createSession({
+      userId: `usr_expired_${suffix}`,
+      role: "customer",
+      identifier: `expired-${suffix}@example.com`,
+      issuedAt: new Date(Date.now() - 120_000).toISOString(),
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const validSession = await auth.createSession({
+      userId: `usr_valid_${suffix}`,
+      role: "customer",
+      identifier: `valid-${suffix}@example.com`,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const cleanup = await auth.cleanupExpired({
+      now: new Date().toISOString(),
+      rateLimitEventsBefore: new Date(Date.now() + 1_000).toISOString(),
+      revokedSessionsBefore: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    try {
+      assert.equal(latestLimitResult?.allowed, false);
+      assert.equal(latestLimitResult?.count, 6);
+      assert.equal(cleanup.deletedChallenges >= 1, true);
+      assert.equal(cleanup.deletedRateLimitEvents >= 6, true);
+      assert.equal(cleanup.deletedSessions >= 1, true);
+      assert.equal(await auth.getChallenge(expiredChallenge.id), undefined);
+      assert.equal((await auth.getChallenge(validChallenge.id))?.id, validChallenge.id);
+      assert.equal(await auth.getSession(expiredSession.id), undefined);
+      assert.equal((await auth.getSession(validSession.id))?.id, validSession.id);
+    } finally {
+      await auth.deleteChallenge(validChallenge.id);
+      await pool.query("delete from auth_sessions where id = $1", [validSession.id]);
+      await pool.query("delete from auth_rate_limit_events where identifier = $1", [identifier]);
+    }
+  });
 });
 
 interface CleanupIds {

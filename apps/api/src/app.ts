@@ -194,12 +194,17 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     if (request.method === "POST" && requestUrl.pathname === "/v1/auth/code/request") {
       try {
         const input = await readJsonBody<RequestAuthCodeRequest>(request);
-        sendJson(response, 201, { data: await authService.requestCode(input.identifier) });
+        sendJson(response, 201, { data: await authService.requestCode(input.identifier, requestSource(request)) });
       } catch (error) {
         const message = error instanceof Error ? error.message : "invalid_request";
 
         if (message === "invalid_auth_identifier") {
           sendError(response, 400, message, "Enter a valid email address or international phone number");
+          return;
+        }
+
+        if (message === "auth_rate_limited") {
+          sendError(response, 429, message, "Too many verification code requests. Please wait and try again");
           return;
         }
 
@@ -2986,6 +2991,17 @@ function getBearerToken(request: Parameters<typeof requireActor>[0]): string {
   }
 
   return authorization.slice("Bearer ".length);
+}
+
+function requestSource(request: Parameters<typeof requireActor>[0]): string {
+  const forwardedFor = request.headers["x-forwarded-for"];
+  const forwardedSource = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+
+  if (forwardedSource) {
+    return forwardedSource.split(",")[0]?.trim() || "unknown";
+  }
+
+  return request.socket.remoteAddress ?? "unknown";
 }
 
 function buildPartnerDashboard(
