@@ -4,6 +4,15 @@ Last updated: 2026-07-03
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
+Latest Phase 0 verification on 2026-07-03:
+
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 79 API tests.
+- `npm run db:up` started the local Postgres container successfully.
+- `npm run db:migrate` applied `0026_internal_permission_users.sql`.
+- `npm run db:smoke` passed with 26 applied migrations.
+- `npm run test:postgres` passed with 6 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -113,12 +122,12 @@ Product and UX:
 - The customer app has real API flows but still needs production polish, clearer state handling, stronger empty/error states, and route-level QA.
 - The web portal is still a single static surface rather than a finished role-specific product shell.
 - Internal admin, partner, property-management, and customer experiences need separate navigation, permissions, and verification paths.
-- Some docs are stale and still mention earlier dev-header/in-memory assumptions.
+- Some older product docs may still need periodic review, but the active API, security, delivery, and current-memory docs now reflect the bearer-session, access-membership, Postgres-default baseline.
 
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration was created but still needs to be applied and smoke-tested locally when Docker/Postgres is running.
+- The latest DB migration is applied and smoke-tested in the current local Postgres database as of 2026-07-03. Migrations must still be applied and smoke-tested whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 

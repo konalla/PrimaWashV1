@@ -5,8 +5,10 @@
 - Verification challenges expire after ten minutes and lock after five failed attempts.
 - Development identity headers are rejected automatically when `NODE_ENV=production`.
 - Production requires `AUTH_SESSION_SECRET` to contain at least 32 characters.
-- OIDC, short-lived access tokens, refresh rotation, and MFA for privileged roles
-- Server-side role, organization, and location authorization with deny-by-default behavior
+- Server-side access memberships resolve partner, property-manager, and internal scopes.
+- Internal users are permissioned by capability, including operations, finance, property, partner, and super-admin permissions.
+- OIDC or production OTP delivery, short-lived access tokens, refresh rotation, and MFA for privileged roles remain required before launch.
+- Server-side role, organization, property, and partner-location authorization with deny-by-default behavior
 - Provider-hosted card collection; encryption in transit and at rest
 - Managed secrets and documented personal-data retention/deletion
 - Immutable audit coverage for security, payment, refund, and privileged actions
@@ -17,12 +19,19 @@
 
 Current implementation:
 
-- Vehicle and booking routes require an actor header in development mode.
+- Mobile and web clients use signed bearer sessions from `/v1/auth/code/verify`.
+- Development actor headers remain available only for local/dev paths and are rejected automatically in production.
+- Auth challenges are still in process memory; production needs persisted challenges, delivery provider integration, rate limiting, and revocable sessions.
 - Customer actors can only access their own owner scope; cross-owner reads/writes return 403.
+- Partner actors are hydrated from persisted access memberships and scoped to their partner location.
+- Property-manager actors are hydrated from persisted access memberships and scoped to their property.
+- Internal actors require explicit permissions for sensitive operations.
 - Request logs are structured JSON and include request id, method, path, status code, and duration.
 - `x-request-id` is accepted from clients and returned on responses for correlation.
 - Vehicle and booking mutations write application-level audit events.
 - Booking status changes and cancellations write application-level audit events.
+- Payment authorization, capture, refund, and void operations write application-level audit events.
+- Communication threads and messages are durable append-only product records. Delete-message behavior is not implemented.
 - Service-record creation writes application-level audit events.
 - Product analytics are stored separately from audit events.
 - Recent audit events are readable only by internal actors.

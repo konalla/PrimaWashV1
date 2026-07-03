@@ -24,16 +24,27 @@ Environment contract:
 
 - `PORT`: API port. Default `3001`.
 - `WEB_PORT`: web dashboard port. Default `3000`.
+- `PERSISTENCE_MODE`: `postgres` for normal local/staging/production operation. `memory` is reserved for tests and deliberate local experiments.
 - `DATABASE_URL`: PostgreSQL connection string.
 - `POSTGRES_USER`: compose database user.
 - `POSTGRES_PASSWORD`: compose database password.
 - `POSTGRES_DB`: compose database name.
+- `AUTH_SESSION_SECRET`: signing secret for bearer sessions. Required in production and must contain at least 32 characters.
+- `ALLOW_DEV_HEADER_AUTH`: allows trusted development actor headers when set to `true`. Must be absent or `false` outside local development.
+- `SHOW_DEV_AUTH_CODE`: exposes the local verification code in auth responses when set to `true`. Must be absent or `false` outside local development.
+- `PAYMENT_PROVIDER`: `local` for development or `stripe` for Stripe-backed payment operations.
+- `STRIPE_SECRET_KEY`: Stripe API secret key when `PAYMENT_PROVIDER=stripe`.
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `/v1/webhooks/stripe`.
 
 Staging requirements before external users:
 
-- Replace demo development actor headers with a real OIDC/JWT verifier.
+- Use bearer sessions only; disable demo development actor headers.
+- Persist auth challenges and revocable sessions, or connect the selected production identity/OTP provider.
 - Move Postgres credentials to managed secrets.
+- Move payment and auth secrets to managed secrets.
 - Restrict CORS to deployed web origins only.
 - Add HTTPS termination and secure headers at the edge.
 - Persist structured logs centrally.
 - Run migrations as a controlled release step, not an always-on service.
+- Add database backup, restore, and migration rollback procedures.
+- Add Stripe webhook delivery monitoring and payment reconciliation runbooks.

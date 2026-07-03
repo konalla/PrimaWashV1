@@ -4,7 +4,15 @@ Product work: resolve launch decisions, interview at least ten owners, five part
 
 Engineering work: establish CI and environments, implement identity and organization boundaries, then deliver the first vertical slice: create vehicle, list availability, create booking, and capture the audit trail with PostgreSQL migrations, API contracts, structured logging, and audit events.
 
-Current implementation status: the first vertical slice exists with shared TypeScript contracts, PostgreSQL migrations, dependency-light API routes, in-memory local persistence, a Postgres adapter selected by `DATABASE_URL`, development actor headers, customer owner-scope enforcement, structured request logging, audit-event schema, product-event analytics, MAVO endpoint, partner availability controls with capacity/closure enforcement, mock payment intents with authorization/capture/void/refund states, audit writes for vehicle/booking/payment/availability/status changes/cancellations/service records, automated API tests, an elevated browser preview, a partner dashboard, CI typecheck/test/build workflow, Dockerfiles, and compose deployment foundation. Remaining engineering work for Phase 0 is deploying the staging environment.
+Current implementation status: the first vertical slice has expanded into a database-backed booking and operations foundation. It includes shared TypeScript contracts, PostgreSQL migrations through the current access-control seed data, dependency-light API routes, Postgres-default local persistence, in-memory adapters for tests and deliberate experiments, signed bearer sessions, persisted access memberships, customer owner-scope enforcement, partner-location scoping, property-manager scoping, internal permission checks, structured request logging, audit-event schema, product-event analytics, MAVO endpoint, partner availability controls with capacity/closure enforcement, booking holds, service modes, local and Stripe payment provider boundaries, payment authorization/capture/void/refund states, audit writes for vehicle/booking/payment/availability/status changes/cancellations/service records, automated API tests, an Expo customer app, a partner/internal/property-management browser portal, CI typecheck/test/build workflow, Dockerfiles, and compose deployment foundation.
+
+Phase 0 remaining engineering work is stabilization rather than feature discovery:
+
+- Apply and smoke-test the latest migrations against local Postgres.
+- Keep API, security, delivery, and product memory docs aligned with the implementation.
+- Verify `npm run check`, API unit tests, and Postgres integration tests.
+- Make local demo users, roles, permissions, and URLs explicit.
+- Keep production launch gaps visible: persisted auth challenges, revocable sessions, real OTP delivery, production Stripe configuration, managed secrets, observability, backups, and staging deployment.
 
 Phase 0 strategy alignment now also includes the product roadmap in `docs/product/strategy-roadmap.md`.
 
