@@ -391,6 +391,56 @@ describe("Prima Wash API", () => {
     assert.equal(sessionResponse.status, 401);
   });
 
+  it("rotates refresh tokens and revokes the refresh family on reuse", async () => {
+    const session = await createCustomerSession("refresh@example.com");
+    assert.equal(typeof session.refreshToken, "string");
+
+    const refreshResponse = await fetch(`${baseUrl}/v1/auth/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: session.refreshToken }),
+    });
+    const refreshPayload = (await refreshResponse.json()) as ApiResponse<AuthSession>;
+    const refreshedSessionResponse = await fetch(`${baseUrl}/v1/auth/session`, {
+      headers: authHeaders(refreshPayload.data),
+    });
+    const reuseResponse = await fetch(`${baseUrl}/v1/auth/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: session.refreshToken }),
+    });
+    const reusePayload = (await reuseResponse.json()) as ApiErrorResponse;
+    const afterReuseSessionResponse = await fetch(`${baseUrl}/v1/auth/session`, {
+      headers: authHeaders(refreshPayload.data),
+    });
+
+    assert.equal(refreshResponse.status, 200);
+    assert.notEqual(refreshPayload.data.accessToken, session.accessToken);
+    assert.notEqual(refreshPayload.data.refreshToken, session.refreshToken);
+    assert.equal(refreshedSessionResponse.status, 200);
+    assert.equal(reuseResponse.status, 401);
+    assert.equal(reusePayload.code, "refresh_token_reuse_detected");
+    assert.equal(afterReuseSessionResponse.status, 401);
+  });
+
+  it("revokes the active refresh token on logout", async () => {
+    const session = await createCustomerSession("logout-refresh@example.com");
+    const logoutResponse = await fetch(`${baseUrl}/v1/auth/logout`, {
+      method: "POST",
+      headers: authHeaders(session),
+    });
+    const refreshResponse = await fetch(`${baseUrl}/v1/auth/session/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: session.refreshToken }),
+    });
+    const refreshPayload = (await refreshResponse.json()) as ApiErrorResponse;
+
+    assert.equal(logoutResponse.status, 200);
+    assert.equal(refreshResponse.status, 401);
+    assert.equal(refreshPayload.code, "invalid_refresh_token");
+  });
+
   it("persists an authenticated customer profile", async () => {
     const session = await createCustomerSession("profile@example.com");
     const updateResponse = await fetch(`${baseUrl}/v1/profile`, {

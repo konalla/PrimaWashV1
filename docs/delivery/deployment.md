@@ -35,6 +35,7 @@ Environment contract:
 - `AUTH_CODE_DELIVERY_WEBHOOK_SECRET`: optional bearer secret sent to the auth-code delivery webhook.
 - `AUTH_RATE_LIMIT_RETENTION_HOURS`: retention window for auth rate-limit events pruned by the cleanup job. Default `24`.
 - `AUTH_REVOKED_SESSION_RETENTION_DAYS`: retention window for revoked auth sessions pruned by the cleanup job. Default `30`.
+- `AUTH_REFRESH_TOKEN_RETENTION_DAYS`: retention window for old used/revoked refresh tokens pruned by the cleanup job. Default `30`.
 - `ALLOW_DEV_HEADER_AUTH`: allows trusted development actor headers when set to `true`. Must be absent or `false` outside local development.
 - `SHOW_DEV_AUTH_CODE`: exposes the local verification code in auth responses when set to `true`. Must be absent or `false` outside local development.
 - `PAYMENT_PROVIDER`: `local` for development or `stripe` for Stripe-backed payment operations.
@@ -44,7 +45,7 @@ Environment contract:
 Staging requirements before external users:
 
 - Use bearer sessions only; disable demo development actor headers.
-- Persist auth challenges, revocable sessions, and auth rate-limit events.
+- Persist auth challenges, revocable sessions, rotating refresh tokens, and auth rate-limit events.
 - Configure `AUTH_CODE_DELIVERY_PROVIDER=webhook` and connect the selected production email/SMS delivery service.
 - Schedule `npm run auth:cleanup --workspace @prima-wash/api` or equivalent infrastructure job.
 - Move Postgres credentials to managed secrets.

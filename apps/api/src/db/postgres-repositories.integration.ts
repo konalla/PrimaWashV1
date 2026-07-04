@@ -393,13 +393,42 @@ describe("Postgres repository parity", () => {
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
+    const refreshToken = await auth.createRefreshToken({
+      sessionId: session.id,
+      userId: session.userId,
+      role: session.role,
+      identifier: session.identifier,
+      tokenHash: `refresh_hash_${suffix}`,
+      familyId: `refresh_family_${suffix}`,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const replacement = await auth.createRefreshToken({
+      sessionId: session.id,
+      userId: session.userId,
+      role: session.role,
+      identifier: session.identifier,
+      tokenHash: `replacement_hash_${suffix}`,
+      familyId: refreshToken.familyId,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
     const loadedSession = await auth.getSession(session.id);
+    const loadedRefreshToken = await auth.getRefreshTokenByHash(`refresh_hash_${suffix}`);
+    const usedRefreshToken = await auth.markRefreshTokenUsed(refreshToken.id, {
+      usedAt: new Date().toISOString(),
+      replacedByTokenId: replacement.id,
+    });
+    const revokedFamilyCount = await auth.revokeRefreshTokenFamily(refreshToken.familyId, new Date().toISOString());
     const revoked = await auth.revokeSession(session.id);
 
     try {
       assert.equal((await auth.getChallenge(challenge.id))?.codeHash, `hash_${suffix}`);
       assert.equal(attempted?.attempts, 1);
       assert.equal(loadedSession?.userId, `usr_auth_${suffix}`);
+      assert.equal(loadedRefreshToken?.id, refreshToken.id);
+      assert.equal(usedRefreshToken?.replacedByTokenId, replacement.id);
+      assert.equal(revokedFamilyCount >= 2, true);
       assert.equal(revoked?.revokedAt !== undefined, true);
     } finally {
       await auth.deleteChallenge(challenge.id);
@@ -446,10 +475,45 @@ describe("Postgres repository parity", () => {
       issuedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
+    const expiredRefreshSession = await auth.createSession({
+      userId: `usr_expired_refresh_${suffix}`,
+      role: "customer",
+      identifier: `expired-refresh-${suffix}@example.com`,
+      issuedAt: new Date(Date.now() - 120_000).toISOString(),
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const activeRefreshSession = await auth.createSession({
+      userId: `usr_active_refresh_${suffix}`,
+      role: "customer",
+      identifier: `active-refresh-${suffix}@example.com`,
+      issuedAt: new Date(Date.now() - 120_000).toISOString(),
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const expiredRefreshToken = await auth.createRefreshToken({
+      sessionId: expiredRefreshSession.id,
+      userId: expiredRefreshSession.userId,
+      role: expiredRefreshSession.role,
+      identifier: expiredRefreshSession.identifier,
+      tokenHash: `expired_refresh_hash_${suffix}`,
+      familyId: `expired_refresh_family_${suffix}`,
+      issuedAt: new Date(Date.now() - 120_000).toISOString(),
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const activeRefreshToken = await auth.createRefreshToken({
+      sessionId: activeRefreshSession.id,
+      userId: activeRefreshSession.userId,
+      role: activeRefreshSession.role,
+      identifier: activeRefreshSession.identifier,
+      tokenHash: `active_refresh_hash_${suffix}`,
+      familyId: `active_refresh_family_${suffix}`,
+      issuedAt: new Date(Date.now() - 120_000).toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
     const cleanup = await auth.cleanupExpired({
       now: new Date().toISOString(),
       rateLimitEventsBefore: new Date(Date.now() + 1_000).toISOString(),
       revokedSessionsBefore: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      refreshTokensBefore: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
 
     try {
@@ -458,13 +522,19 @@ describe("Postgres repository parity", () => {
       assert.equal(cleanup.deletedChallenges >= 1, true);
       assert.equal(cleanup.deletedRateLimitEvents >= 6, true);
       assert.equal(cleanup.deletedSessions >= 1, true);
+      assert.equal(cleanup.deletedRefreshTokens >= 1, true);
       assert.equal(await auth.getChallenge(expiredChallenge.id), undefined);
       assert.equal((await auth.getChallenge(validChallenge.id))?.id, validChallenge.id);
       assert.equal(await auth.getSession(expiredSession.id), undefined);
       assert.equal((await auth.getSession(validSession.id))?.id, validSession.id);
+      assert.equal(await auth.getRefreshTokenByHash(expiredRefreshToken.tokenHash), undefined);
+      assert.equal((await auth.getRefreshTokenByHash(activeRefreshToken.tokenHash))?.id, activeRefreshToken.id);
+      assert.equal((await auth.getSession(activeRefreshSession.id))?.id, activeRefreshSession.id);
     } finally {
       await auth.deleteChallenge(validChallenge.id);
       await pool.query("delete from auth_sessions where id = $1", [validSession.id]);
+      await pool.query("delete from auth_sessions where id = $1", [expiredRefreshSession.id]);
+      await pool.query("delete from auth_sessions where id = $1", [activeRefreshSession.id]);
       await pool.query("delete from auth_rate_limit_events where identifier = $1", [identifier]);
     }
   });

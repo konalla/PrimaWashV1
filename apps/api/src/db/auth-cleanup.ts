@@ -4,6 +4,7 @@ import { PostgresAuthRepository } from "../modules/auth/repository.js";
 const databaseUrl = process.env.DATABASE_URL ?? "postgres://postgres:postgres@127.0.0.1:5432/prima_wash";
 const rateLimitRetentionHours = Number.parseInt(process.env.AUTH_RATE_LIMIT_RETENTION_HOURS ?? "24", 10);
 const revokedSessionRetentionDays = Number.parseInt(process.env.AUTH_REVOKED_SESSION_RETENTION_DAYS ?? "30", 10);
+const inactiveRefreshTokenRetentionDays = Number.parseInt(process.env.AUTH_REFRESH_TOKEN_RETENTION_DAYS ?? "30", 10);
 const now = new Date();
 const pool = createDatabasePool(databaseUrl);
 const auth = new PostgresAuthRepository(pool);
@@ -13,6 +14,7 @@ try {
     now: now.toISOString(),
     rateLimitEventsBefore: new Date(now.getTime() - rateLimitRetentionHours * 60 * 60 * 1000).toISOString(),
     revokedSessionsBefore: new Date(now.getTime() - revokedSessionRetentionDays * 24 * 60 * 60 * 1000).toISOString(),
+    refreshTokensBefore: new Date(now.getTime() - inactiveRefreshTokenRetentionDays * 24 * 60 * 60 * 1000).toISOString(),
   });
 
   console.log(

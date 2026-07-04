@@ -1,4 +1,4 @@
-import { createHmac, createHash, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
   Actor,
   ActorRole,
@@ -10,7 +10,12 @@ import {
   createAuthCodeDeliveryProvider,
   type AuthCodeDeliveryProvider,
 } from "./delivery.js";
-import { InMemoryAuthRepository, type AuthRepository, type AuthSessionRecord } from "./repository.js";
+import {
+  InMemoryAuthRepository,
+  type AuthRefreshTokenRecord,
+  type AuthRepository,
+  type AuthSessionRecord,
+} from "./repository.js";
 
 export interface SessionPayload {
   readonly sub: string;
@@ -24,6 +29,8 @@ export interface SessionPayload {
 export class AuthService {
   static readonly codeRequestLimit = 5;
   static readonly codeRequestWindowMs = 15 * 60 * 1000;
+  static readonly accessTokenLifetimeSeconds = 24 * 60 * 60;
+  static readonly refreshTokenLifetimeSeconds = 30 * 24 * 60 * 60;
 
   constructor(
     private readonly secret: string,
@@ -102,30 +109,8 @@ export class AuthService {
     }
 
     await this.repository.deleteChallenge(challengeId);
-    const issuedAt = Math.floor(Date.now() / 1000);
-    const expiresAt = issuedAt + 24 * 60 * 60;
     const user = (await resolveUser?.(challenge.identifier)) ?? customerUserForIdentifier(challenge.identifier);
-    const session = await this.repository.createSession({
-      userId: user.id,
-      role: user.role,
-      identifier: user.identifier,
-      issuedAt: new Date(issuedAt * 1000).toISOString(),
-      expiresAt: new Date(expiresAt * 1000).toISOString(),
-    });
-    const payload: SessionPayload = {
-      sub: user.id,
-      role: user.role,
-      identifier: user.identifier,
-      sid: session.id,
-      iat: issuedAt,
-      exp: expiresAt,
-    };
-
-    return {
-      accessToken: signPayload(payload, this.secret),
-      expiresAt: new Date(expiresAt * 1000).toISOString(),
-      user,
-    };
+    return (await this.createSessionForUser(user)).authSession;
   }
 
   async readSession(token: string): Promise<AuthSession> {
@@ -146,6 +131,51 @@ export class AuthService {
     };
   }
 
+  async refreshSession(refreshToken: string): Promise<AuthSession> {
+    const tokenHash = refreshTokenHash(refreshToken, this.secret);
+    const existing = await this.repository.getRefreshTokenByHash(tokenHash);
+    const now = new Date();
+
+    if (!existing) {
+      throw new Error("invalid_refresh_token");
+    }
+
+    if (existing.usedAt) {
+      await this.repository.revokeRefreshTokenFamily(existing.familyId, now.toISOString());
+      await this.repository.revokeSessionsForRefreshTokenFamily(existing.familyId, now.toISOString());
+      throw new Error("refresh_token_reuse_detected");
+    }
+
+    if (existing.revokedAt || new Date(existing.expiresAt).getTime() <= now.getTime()) {
+      throw new Error("invalid_refresh_token");
+    }
+
+    const sourceSession = await this.repository.getSession(existing.sessionId);
+
+    if (!sourceSession || sourceSession.revokedAt) {
+      await this.repository.revokeRefreshTokenFamily(existing.familyId, now.toISOString());
+      await this.repository.revokeSessionsForRefreshTokenFamily(existing.familyId, now.toISOString());
+      throw new Error("invalid_refresh_token");
+    }
+
+    const user: AuthUser = {
+      id: existing.userId,
+      role: existing.role,
+      identifier: existing.identifier,
+      displayName: displayNameForIdentifier(existing.identifier),
+      onboardingComplete: true,
+    };
+    const session = await this.createSessionForUser(user, existing.familyId, now);
+
+    await this.repository.markRefreshTokenUsed(existing.id, {
+      usedAt: now.toISOString(),
+      replacedByTokenId: session.refreshTokenRecord.id,
+    });
+    await this.repository.revokeSession(existing.sessionId);
+
+    return session.authSession;
+  }
+
   async actorFromToken(token: string): Promise<Actor> {
     const payload = verifyToken(token, this.secret);
     await this.assertActiveSession(payload);
@@ -155,6 +185,7 @@ export class AuthService {
   async revokeToken(token: string): Promise<void> {
     const payload = verifyToken(token, this.secret);
     await this.repository.revokeSession(payload.sid);
+    await this.repository.revokeRefreshTokensForSession(payload.sid, new Date().toISOString());
   }
 
   async assertActiveSession(payload: SessionPayload): Promise<AuthSessionRecord> {
@@ -172,6 +203,54 @@ export class AuthService {
     }
 
     return session;
+  }
+
+  private async createSessionForUser(
+    user: AuthUser,
+    refreshFamilyId = `auth_rtf_${randomUUID()}`,
+    now = new Date(),
+  ): Promise<{ readonly authSession: AuthSession; readonly refreshTokenRecord: AuthRefreshTokenRecord }> {
+    const issuedAt = Math.floor(now.getTime() / 1000);
+    const expiresAt = issuedAt + AuthService.accessTokenLifetimeSeconds;
+    const refreshExpiresAt = issuedAt + AuthService.refreshTokenLifetimeSeconds;
+    const session = await this.repository.createSession({
+      userId: user.id,
+      role: user.role,
+      identifier: user.identifier,
+      issuedAt: new Date(issuedAt * 1000).toISOString(),
+      expiresAt: new Date(expiresAt * 1000).toISOString(),
+    });
+    const payload: SessionPayload = {
+      sub: user.id,
+      role: user.role,
+      identifier: user.identifier,
+      sid: session.id,
+      iat: issuedAt,
+      exp: expiresAt,
+    };
+    const refreshToken = generateRefreshToken();
+
+    const refreshTokenRecord = await this.repository.createRefreshToken({
+      sessionId: session.id,
+      userId: user.id,
+      role: user.role,
+      identifier: user.identifier,
+      tokenHash: refreshTokenHash(refreshToken, this.secret),
+      familyId: refreshFamilyId,
+      issuedAt: new Date(issuedAt * 1000).toISOString(),
+      expiresAt: new Date(refreshExpiresAt * 1000).toISOString(),
+    });
+
+    return {
+      authSession: {
+        accessToken: signPayload(payload, this.secret),
+        refreshToken,
+        expiresAt: new Date(expiresAt * 1000).toISOString(),
+        refreshExpiresAt: new Date(refreshExpiresAt * 1000).toISOString(),
+        user,
+      },
+      refreshTokenRecord,
+    };
   }
 }
 
@@ -282,6 +361,14 @@ function displayNameForIdentifier(identifier: string): string {
 
 function codeHash(code: string, secret: string): string {
   return createHmac("sha256", secret).update(code).digest("base64url");
+}
+
+function refreshTokenHash(token: string, secret: string): string {
+  return createHmac("sha256", secret).update(token).digest("base64url");
+}
+
+function generateRefreshToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 function safeEqual(left: string, right: string): boolean {

@@ -52,9 +52,15 @@ export interface VerifyAuthCodeRequest {
   readonly code: string;
 }
 
+export interface RefreshAuthSessionRequest {
+  readonly refreshToken: string;
+}
+
 export interface AuthSession {
   readonly accessToken: string;
+  readonly refreshToken?: string;
   readonly expiresAt: string;
+  readonly refreshExpiresAt?: string;
   readonly user: AuthUser;
 }
 

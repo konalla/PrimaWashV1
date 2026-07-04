@@ -10,6 +10,7 @@ import type {
   Booking,
   BookingHold,
   RequestAuthCodeRequest,
+  RefreshAuthSessionRequest,
   VerifyAuthCodeRequest,
   CancelBookingRequest,
   CapacityTemplate,
@@ -797,6 +798,24 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         sendJson(response, 200, { data: await authService.readSession(token) });
       } catch (error) {
         sendAuthVerificationError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/auth/session/refresh") {
+      try {
+        const input = await readJsonBody<RefreshAuthSessionRequest>(request);
+        sendJson(response, 200, { data: await authService.refreshSession(input.refreshToken) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "invalid_refresh_token";
+
+        if (message === "refresh_token_reuse_detected") {
+          sendError(response, 401, message, "Refresh token reuse was detected. Sign in again");
+          return;
+        }
+
+        sendError(response, 401, "invalid_refresh_token", "The refresh session is invalid or expired");
       }
 
       return;

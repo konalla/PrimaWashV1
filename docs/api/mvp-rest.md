@@ -7,9 +7,10 @@ The API now supports the customer booking loop, partner operations, property/con
 - `POST /v1/auth/code/request`
 - `POST /v1/auth/code/verify`
 - `GET /v1/auth/session`
+- `POST /v1/auth/session/refresh`
 - `POST /v1/auth/logout`
 
-Mobile and web requests use `Authorization: Bearer <access-token>`. The local auth-code delivery provider can return development code `123456` when configured for development. Auth challenges and sessions are persisted in Postgres-backed environments, and logout revokes the current session. Verification-code requests are rate limited per normalized identifier and request source. Production config rejects exposed development codes and local auth-code delivery. Production still requires connecting the selected email/SMS provider behind the delivery boundary, refresh-token rotation or another renewal model, and broader abuse controls beyond code-request throttling.
+Mobile and web requests use `Authorization: Bearer <access-token>`. The local auth-code delivery provider can return development code `123456` when configured for development. Auth challenges, access sessions, and refresh tokens are persisted in Postgres-backed environments. Refresh tokens are opaque, stored only as hashes, and rotate through `POST /v1/auth/session/refresh`. Refresh-token reuse revokes the full refresh family and linked access sessions. Logout revokes the current access session and active refresh token for that session. Verification-code requests are rate limited per normalized identifier and request source. Production config rejects exposed development codes and local auth-code delivery. Production still requires connecting the selected email/SMS provider behind the delivery boundary and broader abuse controls beyond code-request throttling.
 
 Development actor headers exist for local testing only. They are rejected automatically when `NODE_ENV=production` and must not be used by staging or production clients.
 
@@ -176,7 +177,7 @@ Local development defaults to Postgres unless `PERSISTENCE_MODE=memory` is delib
 
 Auth maintenance:
 
-- `npm run auth:cleanup --workspace @prima-wash/api` prunes expired auth challenges, expired sessions, old revoked sessions, and retained auth rate-limit events.
+- `npm run auth:cleanup --workspace @prima-wash/api` prunes expired auth challenges, expired sessions, old revoked sessions, retained auth rate-limit events, and old inactive refresh tokens.
 
 Auth-code delivery modes:
 

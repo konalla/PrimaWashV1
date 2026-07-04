@@ -34,6 +34,32 @@ export interface CreateAuthSessionInput {
   readonly expiresAt: string;
 }
 
+export interface AuthRefreshTokenRecord {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly role: ActorRole;
+  readonly identifier: string;
+  readonly tokenHash: string;
+  readonly familyId: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  readonly usedAt?: string;
+  readonly revokedAt?: string;
+  readonly replacedByTokenId?: string;
+}
+
+export interface CreateAuthRefreshTokenInput {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly role: ActorRole;
+  readonly identifier: string;
+  readonly tokenHash: string;
+  readonly familyId: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+}
+
 export interface RecordAuthRequestInput {
   readonly identifier: string;
   readonly source: string;
@@ -53,6 +79,7 @@ export interface AuthCleanupResult {
   readonly deletedChallenges: number;
   readonly deletedRateLimitEvents: number;
   readonly deletedSessions: number;
+  readonly deletedRefreshTokens: number;
 }
 
 export interface AuthRepository {
@@ -64,16 +91,27 @@ export interface AuthRepository {
   createSession(input: CreateAuthSessionInput): Promise<AuthSessionRecord>;
   getSession(sessionId: string): Promise<AuthSessionRecord | undefined>;
   revokeSession(sessionId: string): Promise<AuthSessionRecord | undefined>;
+  createRefreshToken(input: CreateAuthRefreshTokenInput): Promise<AuthRefreshTokenRecord>;
+  getRefreshTokenByHash(tokenHash: string): Promise<AuthRefreshTokenRecord | undefined>;
+  markRefreshTokenUsed(
+    tokenId: string,
+    input: { readonly usedAt: string; readonly replacedByTokenId: string },
+  ): Promise<AuthRefreshTokenRecord | undefined>;
+  revokeRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number>;
+  revokeSessionsForRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number>;
+  revokeRefreshTokensForSession(sessionId: string, revokedAt: string): Promise<number>;
   cleanupExpired(input: {
     readonly now: string;
     readonly rateLimitEventsBefore: string;
     readonly revokedSessionsBefore?: string;
+    readonly refreshTokensBefore?: string;
   }): Promise<AuthCleanupResult>;
 }
 
 export class InMemoryAuthRepository implements AuthRepository {
   readonly #challenges = new Map<string, AuthChallengeRecord>();
   readonly #sessions = new Map<string, AuthSessionRecord>();
+  readonly #refreshTokens = new Map<string, AuthRefreshTokenRecord>();
   readonly #requestEvents: { readonly identifier: string; readonly source: string; readonly occurredAt: string }[] = [];
 
   async recordCodeRequest(input: RecordAuthRequestInput): Promise<AuthRequestLimitResult> {
@@ -153,10 +191,87 @@ export class InMemoryAuthRepository implements AuthRepository {
     return revoked;
   }
 
+  async createRefreshToken(input: CreateAuthRefreshTokenInput): Promise<AuthRefreshTokenRecord> {
+    const token: AuthRefreshTokenRecord = {
+      id: `auth_rt_${randomUUID()}`,
+      ...input,
+    };
+    this.#refreshTokens.set(token.id, token);
+    return token;
+  }
+
+  async getRefreshTokenByHash(tokenHash: string): Promise<AuthRefreshTokenRecord | undefined> {
+    return [...this.#refreshTokens.values()].find((token) => token.tokenHash === tokenHash);
+  }
+
+  async markRefreshTokenUsed(
+    tokenId: string,
+    input: { readonly usedAt: string; readonly replacedByTokenId: string },
+  ): Promise<AuthRefreshTokenRecord | undefined> {
+    const token = this.#refreshTokens.get(tokenId);
+
+    if (!token) {
+      return undefined;
+    }
+
+    const updated = {
+      ...token,
+      usedAt: input.usedAt,
+      replacedByTokenId: input.replacedByTokenId,
+    };
+    this.#refreshTokens.set(tokenId, updated);
+    return updated;
+  }
+
+  async revokeRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number> {
+    let count = 0;
+
+    for (const [id, token] of this.#refreshTokens) {
+      if (token.familyId === familyId && !token.revokedAt) {
+        this.#refreshTokens.set(id, { ...token, revokedAt });
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
+  async revokeSessionsForRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number> {
+    let count = 0;
+    const sessionIds = new Set(
+      [...this.#refreshTokens.values()].filter((token) => token.familyId === familyId).map((token) => token.sessionId),
+    );
+
+    for (const sessionId of sessionIds) {
+      const session = this.#sessions.get(sessionId);
+
+      if (session && !session.revokedAt) {
+        this.#sessions.set(sessionId, { ...session, revokedAt });
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
+  async revokeRefreshTokensForSession(sessionId: string, revokedAt: string): Promise<number> {
+    let count = 0;
+
+    for (const [id, token] of this.#refreshTokens) {
+      if (token.sessionId === sessionId && !token.revokedAt) {
+        this.#refreshTokens.set(id, { ...token, revokedAt });
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
   async cleanupExpired(input: {
     readonly now: string;
     readonly rateLimitEventsBefore: string;
     readonly revokedSessionsBefore?: string;
+    readonly refreshTokensBefore?: string;
   }): Promise<AuthCleanupResult> {
     const now = new Date(input.now).getTime();
     const rateLimitCutoff = new Date(input.rateLimitEventsBefore).getTime();
@@ -164,6 +279,7 @@ export class InMemoryAuthRepository implements AuthRepository {
     let deletedChallenges = 0;
     let deletedSessions = 0;
     let deletedRateLimitEvents = 0;
+    let deletedRefreshTokens = 0;
 
     for (const [id, challenge] of this.#challenges) {
       if (new Date(challenge.expiresAt).getTime() <= now) {
@@ -178,8 +294,14 @@ export class InMemoryAuthRepository implements AuthRepository {
         revokedCutoff !== undefined &&
         session.revokedAt !== undefined &&
         new Date(session.revokedAt).getTime() <= revokedCutoff;
+      const hasActiveRefreshToken = [...this.#refreshTokens.values()].some(
+        (token) =>
+          token.sessionId === id &&
+          !token.revokedAt &&
+          new Date(token.expiresAt).getTime() > now,
+      );
 
-      if (expired || oldRevoked) {
+      if ((expired || oldRevoked) && !hasActiveRefreshToken) {
         this.#sessions.delete(id);
         deletedSessions += 1;
       }
@@ -194,7 +316,23 @@ export class InMemoryAuthRepository implements AuthRepository {
       }
     }
 
-    return { deletedChallenges, deletedRateLimitEvents, deletedSessions };
+    if (input.refreshTokensBefore) {
+      const refreshCutoff = new Date(input.refreshTokensBefore).getTime();
+
+      for (const [id, token] of this.#refreshTokens) {
+        const expired = new Date(token.expiresAt).getTime() <= now;
+        const inactive =
+          (token.revokedAt !== undefined && new Date(token.revokedAt).getTime() <= refreshCutoff) ||
+          (token.usedAt !== undefined && new Date(token.usedAt).getTime() <= refreshCutoff);
+
+        if (expired || inactive) {
+          this.#refreshTokens.delete(id);
+          deletedRefreshTokens += 1;
+        }
+      }
+    }
+
+    return { deletedChallenges, deletedRateLimitEvents, deletedSessions, deletedRefreshTokens };
   }
 }
 
@@ -298,26 +436,129 @@ export class PostgresAuthRepository implements AuthRepository {
     return result.rows[0] ? mapSessionRow(result.rows[0]) : undefined;
   }
 
+  async createRefreshToken(input: CreateAuthRefreshTokenInput): Promise<AuthRefreshTokenRecord> {
+    const result = await this.pool.query<AuthRefreshTokenRow>(
+      `insert into auth_refresh_tokens (
+         id, session_id, user_id, role, identifier, token_hash, family_id, issued_at, expires_at
+       )
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       returning id, session_id, user_id, role, identifier, token_hash, family_id, issued_at, expires_at, used_at, revoked_at, replaced_by_token_id`,
+      [
+        `auth_rt_${randomUUID()}`,
+        input.sessionId,
+        input.userId,
+        input.role,
+        input.identifier,
+        input.tokenHash,
+        input.familyId,
+        input.issuedAt,
+        input.expiresAt,
+      ],
+    );
+
+    return mapRefreshTokenRow(result.rows[0]);
+  }
+
+  async getRefreshTokenByHash(tokenHash: string): Promise<AuthRefreshTokenRecord | undefined> {
+    const result = await this.pool.query<AuthRefreshTokenRow>(
+      `select id, session_id, user_id, role, identifier, token_hash, family_id, issued_at, expires_at, used_at, revoked_at, replaced_by_token_id
+       from auth_refresh_tokens
+       where token_hash = $1`,
+      [tokenHash],
+    );
+
+    return result.rows[0] ? mapRefreshTokenRow(result.rows[0]) : undefined;
+  }
+
+  async markRefreshTokenUsed(
+    tokenId: string,
+    input: { readonly usedAt: string; readonly replacedByTokenId: string },
+  ): Promise<AuthRefreshTokenRecord | undefined> {
+    const result = await this.pool.query<AuthRefreshTokenRow>(
+      `update auth_refresh_tokens
+       set used_at = coalesce(used_at, $2), replaced_by_token_id = coalesce(replaced_by_token_id, $3)
+       where id = $1
+       returning id, session_id, user_id, role, identifier, token_hash, family_id, issued_at, expires_at, used_at, revoked_at, replaced_by_token_id`,
+      [tokenId, input.usedAt, input.replacedByTokenId],
+    );
+
+    return result.rows[0] ? mapRefreshTokenRow(result.rows[0]) : undefined;
+  }
+
+  async revokeRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number> {
+    const result = await this.pool.query(
+      `update auth_refresh_tokens
+       set revoked_at = coalesce(revoked_at, $2)
+       where family_id = $1`,
+      [familyId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async revokeSessionsForRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number> {
+    const result = await this.pool.query(
+      `update auth_sessions
+       set revoked_at = coalesce(revoked_at, $2)
+       where id in (
+         select session_id
+         from auth_refresh_tokens
+         where family_id = $1
+       )`,
+      [familyId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async revokeRefreshTokensForSession(sessionId: string, revokedAt: string): Promise<number> {
+    const result = await this.pool.query(
+      `update auth_refresh_tokens
+       set revoked_at = coalesce(revoked_at, $2)
+       where session_id = $1`,
+      [sessionId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
   async cleanupExpired(input: {
     readonly now: string;
     readonly rateLimitEventsBefore: string;
     readonly revokedSessionsBefore?: string;
+    readonly refreshTokensBefore?: string;
   }): Promise<AuthCleanupResult> {
-    const [challengeResult, rateLimitResult, sessionResult] = await Promise.all([
+    const [challengeResult, rateLimitResult, refreshTokenResult] = await Promise.all([
       this.pool.query("delete from auth_challenges where expires_at <= $1", [input.now]),
       this.pool.query("delete from auth_rate_limit_events where occurred_at <= $1", [input.rateLimitEventsBefore]),
       this.pool.query(
-        `delete from auth_sessions
+        `delete from auth_refresh_tokens
          where expires_at <= $1
-            or ($2::timestamptz is not null and revoked_at is not null and revoked_at <= $2::timestamptz)`,
-        [input.now, input.revokedSessionsBefore ?? null],
+            or ($2::timestamptz is not null and (revoked_at <= $2::timestamptz or used_at <= $2::timestamptz))`,
+        [input.now, input.refreshTokensBefore ?? null],
       ),
     ]);
+    const sessionResult = await this.pool.query(
+      `delete from auth_sessions s
+       where (
+           s.expires_at <= $1
+           or ($2::timestamptz is not null and s.revoked_at is not null and s.revoked_at <= $2::timestamptz)
+         )
+         and not exists (
+           select 1
+           from auth_refresh_tokens rt
+           where rt.session_id = s.id
+             and rt.revoked_at is null
+             and rt.expires_at > $1
+         )`,
+      [input.now, input.revokedSessionsBefore ?? null],
+    );
 
     return {
       deletedChallenges: challengeResult.rowCount ?? 0,
       deletedRateLimitEvents: rateLimitResult.rowCount ?? 0,
       deletedSessions: sessionResult.rowCount ?? 0,
+      deletedRefreshTokens: refreshTokenResult.rowCount ?? 0,
     };
   }
 }
@@ -338,6 +579,21 @@ interface AuthSessionRow {
   readonly issued_at: Date | string;
   readonly expires_at: Date | string;
   readonly revoked_at: Date | string | null;
+}
+
+interface AuthRefreshTokenRow {
+  readonly id: string;
+  readonly session_id: string;
+  readonly user_id: string;
+  readonly role: ActorRole;
+  readonly identifier: string;
+  readonly token_hash: string;
+  readonly family_id: string;
+  readonly issued_at: Date | string;
+  readonly expires_at: Date | string;
+  readonly used_at: Date | string | null;
+  readonly revoked_at: Date | string | null;
+  readonly replaced_by_token_id: string | null;
 }
 
 function mapChallengeRow(row: AuthChallengeRow | undefined): AuthChallengeRecord {
@@ -367,6 +623,27 @@ function mapSessionRow(row: AuthSessionRow | undefined): AuthSessionRecord {
     issuedAt: toIsoString(row.issued_at),
     expiresAt: toIsoString(row.expires_at),
     ...(row.revoked_at ? { revokedAt: toIsoString(row.revoked_at) } : {}),
+  };
+}
+
+function mapRefreshTokenRow(row: AuthRefreshTokenRow | undefined): AuthRefreshTokenRecord {
+  if (!row) {
+    throw new Error("auth_refresh_token_persist_failed");
+  }
+
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    userId: row.user_id,
+    role: row.role,
+    identifier: row.identifier,
+    tokenHash: row.token_hash,
+    familyId: row.family_id,
+    issuedAt: toIsoString(row.issued_at),
+    expiresAt: toIsoString(row.expires_at),
+    ...(row.used_at ? { usedAt: toIsoString(row.used_at) } : {}),
+    ...(row.revoked_at ? { revokedAt: toIsoString(row.revoked_at) } : {}),
+    ...(row.replaced_by_token_id ? { replacedByTokenId: row.replaced_by_token_id } : {}),
   };
 }
 

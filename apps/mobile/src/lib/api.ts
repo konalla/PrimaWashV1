@@ -30,6 +30,7 @@ import type {
   ServiceRecord,
   Vehicle,
   RequestAuthCodeResponse,
+  RefreshAuthSessionRequest,
   UpdateCustomerProfileRequest,
   UpdateVehicleRequest,
 } from '@prima-wash/contracts';
@@ -96,6 +97,8 @@ export const primaApi = {
       body: JSON.stringify({ challengeId, code }),
     }),
   session: () => request<AuthSession>('/v1/auth/session'),
+  refreshSession: (input: RefreshAuthSessionRequest) =>
+    request<AuthSession>('/v1/auth/session/refresh', { method: 'POST', body: JSON.stringify(input) }),
   logout: () => request<{ readonly loggedOut: boolean }>('/v1/auth/logout', { method: 'POST' }),
   profile: () => request<CustomerProfile>('/v1/profile'),
   updateProfile: (input: UpdateCustomerProfileRequest) =>

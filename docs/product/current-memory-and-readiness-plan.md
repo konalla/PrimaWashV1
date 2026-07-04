@@ -1,6 +1,6 @@
 # Prima Wash Current Memory and Readiness Plan
 
-Last updated: 2026-07-03
+Last updated: 2026-07-04
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
@@ -29,6 +29,21 @@ Latest Phase 1 auth verification on 2026-07-03:
 - `npm run test --workspace @prima-wash/api` passed with 90 API tests.
 - `npm run db:migrate` applied `0028_auth_rate_limits.sql`.
 - `npm run db:smoke` passed with 28 applied migrations.
+- `npm run test:postgres` passed with 8 Postgres repository integration tests.
+- `npm run auth:cleanup --workspace @prima-wash/api` passed.
+
+Latest Phase 1 refresh-session verification on 2026-07-04:
+
+- Added `0029_auth_refresh_tokens.sql`.
+- Auth sessions now return opaque refresh tokens on verification and refresh.
+- Refresh tokens are stored only as hashes, expire separately from access tokens, and rotate on every refresh.
+- Refresh-token reuse revokes the full refresh family and linked access sessions.
+- `/v1/auth/session/refresh` issues a new access token and rotated refresh token.
+- Mobile session restore now refreshes when a stored refresh token exists.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 92 API tests.
+- `npm run db:migrate` applied `0029_auth_refresh_tokens.sql`.
+- `npm run db:smoke` passed with 29 applied migrations.
 - `npm run test:postgres` passed with 8 Postgres repository integration tests.
 - `npm run auth:cleanup --workspace @prima-wash/api` passed.
 
@@ -76,10 +91,11 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0026_internal_permission_users.sql`.
+- Postgres migrations through `0029_auth_refresh_tokens.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
+- Rotating refresh tokens with hashed storage, reuse detection, and refresh-family revocation.
 - Verification-code request throttling and auth cleanup script.
 - Auth-code delivery provider abstraction with local and webhook modes.
 - Signed bearer access tokens.
@@ -96,6 +112,7 @@ Customer mobile app currently includes:
 
 - Login and verification code flow.
 - Session storage and bearer API calls.
+- Refresh-token session restoration and rotation.
 - Residence setup for condo/HDB/landed-style profiles.
 - Garage vehicle add/edit/delete.
 - Partner discovery with manual/current location preference.
@@ -122,7 +139,7 @@ Auth and identity:
 
 - Auth challenges are now persisted in Postgres-backed environments.
 - Logout now revokes a persisted server-side session.
-- No refresh-token rotation or renewal model yet.
+- Refresh-token rotation exists for customer, partner, property-manager, and internal bearer sessions.
 - No direct email/SMS vendor adapter is connected yet. A webhook delivery boundary exists for production integration.
 - Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
 - No MFA, staff invite flow, or production identity provider.
@@ -150,7 +167,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is applied and smoke-tested in the current local Postgres database as of 2026-07-03. Migrations must still be applied and smoke-tested whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is applied and smoke-tested in the current local Postgres database as of 2026-07-04. Migrations must still be applied and smoke-tested whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -188,9 +205,9 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 - Persist revocable auth sessions and make logout revoke the current session. Completed 2026-07-03.
 - Add auth attempt rate limiting and challenge/session expiry cleanup. Completed for verification-code requests and cleanup script on 2026-07-03.
 - Add auth-code delivery abstraction and production safety gates. Completed 2026-07-03 with local and webhook provider modes.
+- Add refresh-token rotation or another secure session renewal model. Completed 2026-07-04.
 - Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
 - Connect a real email/SMS provider behind the delivery boundary.
-- Add refresh-token rotation or another secure session renewal model.
 - Create staff, partner, and property-manager invite flows.
 - Disable dev header auth in non-local environments.
 - Add admin user management for roles and internal permissions.

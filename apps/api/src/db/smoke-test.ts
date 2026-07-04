@@ -49,6 +49,7 @@ try {
   await assertTableExists("auth_challenges");
   await assertTableExists("auth_sessions");
   await assertTableExists("auth_rate_limit_events");
+  await assertTableExists("auth_refresh_tokens");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -65,6 +66,10 @@ try {
   await assertColumnExists("auth_sessions", "revoked_at");
   await assertColumnExists("auth_rate_limit_events", "source");
   await assertColumnExists("auth_rate_limit_events", "event_type");
+  await assertColumnExists("auth_refresh_tokens", "token_hash");
+  await assertColumnExists("auth_refresh_tokens", "family_id");
+  await assertColumnExists("auth_refresh_tokens", "used_at");
+  await assertColumnExists("auth_refresh_tokens", "revoked_at");
 
   await assertAccessMemberships();
   await assertTransactionalWriteRead();

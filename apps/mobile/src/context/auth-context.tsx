@@ -31,9 +31,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
         const parsed = JSON.parse(stored) as AuthSession;
         setApiAccessToken(parsed.accessToken);
-        const verified = await primaApi.session();
-        setSession(verified);
-        await writeStoredSession(JSON.stringify(verified));
+        const verified = parsed.refreshToken
+          ? await primaApi.refreshSession({ refreshToken: parsed.refreshToken })
+          : await primaApi.session();
+        const restored = {
+          ...verified,
+          refreshToken: verified.refreshToken ?? parsed.refreshToken,
+          refreshExpiresAt: verified.refreshExpiresAt ?? parsed.refreshExpiresAt,
+        };
+        setApiAccessToken(restored.accessToken);
+        setSession(restored);
+        await writeStoredSession(JSON.stringify(restored));
       } catch {
         setApiAccessToken(undefined);
         await clearStoredSession();
