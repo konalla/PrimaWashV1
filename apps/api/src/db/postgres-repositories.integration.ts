@@ -152,6 +152,7 @@ describe("Postgres repository parity", () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const identifier = `partner-invite-${suffix}@example.com`;
     let invitationId: string | undefined;
+    let revokedInvitationId: string | undefined;
     let userId: string | undefined;
 
     try {
@@ -168,7 +169,25 @@ describe("Postgres repository parity", () => {
       });
       invitationId = invitation.id;
 
+      const listed = await invitations.list({ limit: 10 });
+      const recoded = await invitations.updateCode(invitation.id, {
+        codeHash: `hash_updated_${suffix}`,
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      });
       const loaded = await invitations.get(invitation.id);
+      const revokedInvitation = await invitations.create({
+        identifier: `revoked-partner-invite-${suffix}@example.com`,
+        displayName: "Revoked Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+        permissions: [],
+        codeHash: `hash_revoked_${suffix}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        invitedByUserId: "usr_internal_001",
+      });
+      revokedInvitationId = revokedInvitation.id;
+      const revoked = await invitations.revoke(revokedInvitation.id, new Date().toISOString());
       const accepted = await invitations.markAccepted(invitation.id, new Date().toISOString());
       const identity = await accessControl.createUserMembership({
         identifier,
@@ -180,7 +199,10 @@ describe("Postgres repository parity", () => {
       userId = identity.user.id;
       const resolved = await accessControl.resolveLogin(identifier);
 
-      assert.equal(loaded?.codeHash, `hash_${suffix}`);
+      assert.equal(listed.some((item) => item.id === invitation.id), true);
+      assert.equal(recoded?.codeHash, `hash_updated_${suffix}`);
+      assert.equal(loaded?.codeHash, `hash_updated_${suffix}`);
+      assert.equal(revoked?.revokedAt !== undefined, true);
       assert.equal(accepted?.acceptedAt !== undefined, true);
       assert.equal(identity.user.role, "partner");
       assert.equal(resolved?.actor.role, "partner");
@@ -188,6 +210,10 @@ describe("Postgres repository parity", () => {
     } finally {
       if (invitationId) {
         await pool.query("delete from access_invitations where id = $1", [invitationId]);
+      }
+
+      if (revokedInvitationId) {
+        await pool.query("delete from access_invitations where id = $1", [revokedInvitationId]);
       }
 
       if (userId) {

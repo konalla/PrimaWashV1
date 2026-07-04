@@ -459,6 +459,106 @@ describe("Prima Wash API", () => {
     assert.equal(secondPayload.code, "access_invitation_already_accepted");
   });
 
+  it("lists, resends, and revokes pending access invitations", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "pending.lifecycle@example.com",
+        displayName: "Pending Lifecycle",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const listResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      headers: internalHeaders,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<{ invitations: AccessInvitation[] }>;
+    const internalInviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "internal.lifecycle@example.com",
+        displayName: "Internal Lifecycle",
+        role: "internal",
+        permissions: ["operations_read"],
+      }),
+    });
+    const internalInvitePayload = (await internalInviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const partnerScopedListResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      headers: { ...internalHeaders, "x-prima-permissions": "partner_manage" },
+    });
+    const partnerScopedListPayload = (await partnerScopedListResponse.json()) as ApiResponse<{ invitations: AccessInvitation[] }>;
+    const resendResponse = await fetch(`${baseUrl}/v1/internal/access-invitations/${invitePayload.data.id}/resend`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const resendPayload = (await resendResponse.json()) as ApiResponse<{ invitation: AccessInvitation }>;
+    const revokeResponse = await fetch(`${baseUrl}/v1/internal/access-invitations/${invitePayload.data.id}/revoke`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const revokePayload = (await revokeResponse.json()) as ApiResponse<AccessInvitation>;
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invitationId: invitePayload.data.id, code: resendPayload.data.invitation.devCode }),
+    });
+    const acceptPayload = (await acceptResponse.json()) as ApiErrorResponse;
+
+    assert.equal(inviteResponse.status, 201);
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.data.invitations.some((invitation) => invitation.id === invitePayload.data.id), true);
+    assert.equal(internalInviteResponse.status, 201);
+    assert.equal(partnerScopedListResponse.status, 200);
+    assert.equal(partnerScopedListPayload.data.invitations.some((invitation) => invitation.id === invitePayload.data.id), true);
+    assert.equal(partnerScopedListPayload.data.invitations.some((invitation) => invitation.id === internalInvitePayload.data.id), false);
+    assert.equal(resendResponse.status, 200);
+    assert.equal(resendPayload.data.invitation.devCode, "123456");
+    assert.equal(revokeResponse.status, 200);
+    assert.equal(revokePayload.data.revokedAt !== undefined, true);
+    assert.equal(acceptResponse.status, 410);
+    assert.equal(acceptPayload.code, "access_invitation_revoked");
+  });
+
+  it("blocks accepted invitations from revoke and resend actions", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "accepted.lifecycle@example.com",
+        displayName: "Accepted Lifecycle",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invitationId: invitePayload.data.id, code: invitePayload.data.devCode }),
+    });
+    const revokeResponse = await fetch(`${baseUrl}/v1/internal/access-invitations/${invitePayload.data.id}/revoke`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const resendResponse = await fetch(`${baseUrl}/v1/internal/access-invitations/${invitePayload.data.id}/resend`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+    const revokePayload = (await revokeResponse.json()) as ApiErrorResponse;
+    const resendPayload = (await resendResponse.json()) as ApiErrorResponse;
+
+    assert.equal(acceptResponse.status, 200);
+    assert.equal(revokeResponse.status, 409);
+    assert.equal(revokePayload.code, "access_invitation_already_accepted");
+    assert.equal(resendResponse.status, 409);
+    assert.equal(resendPayload.code, "access_invitation_already_accepted");
+  });
+
   it("rejects an incorrect verification code", async () => {
     const requestResponse = await fetch(`${baseUrl}/v1/auth/code/request`, {
       method: "POST",

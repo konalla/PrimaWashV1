@@ -28,6 +28,7 @@ import type {
   CommunicationThreadType,
   CustomerProfile,
   CreateBookingRequest,
+  ListAccessInvitationsResponse,
   PartnerBookingDecisionRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
@@ -48,6 +49,7 @@ import type {
   PartnerLocation,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
+  ResendAccessInvitationResponse,
   ResidenceType,
   SchedulingConfig,
   ServiceRecord,
@@ -68,6 +70,7 @@ import {
   assertOwnerAccess,
   assertPartnerOrInternal,
   assertPropertyManagerAccess,
+  hasInternalPermission,
   requireActor,
 } from "./http/auth.js";
 import { readJsonBody, readRawBody } from "./http/body.js";
@@ -252,6 +255,143 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         sendJson(response, 200, { data: session });
       } catch (error) {
         sendAuthVerificationError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/access-invitations") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertAccessInvitationListPermission(actor);
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "50", 10);
+        const invitations = await options.repositories.invitations.list({
+          limit: Math.min(Math.max(Number.isFinite(limit) ? limit : 50, 1), 100),
+        });
+        const payload: ListAccessInvitationsResponse = {
+          invitations: invitations
+            .filter((invitation) => canManageAccessInvitationRecord(actor, invitation))
+            .map(publicAccessInvitation),
+        };
+
+        sendJson(response, 200, { data: payload });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_invitation_list_failed", "Access invitations could not be loaded", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const invitationRevokeMatch = requestUrl.pathname.match(/^\/v1\/internal\/access-invitations\/([^/]+)\/revoke$/);
+    if (request.method === "POST" && invitationRevokeMatch?.[1]) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        const invitation = await options.repositories.invitations.get(decodeURIComponent(invitationRevokeMatch[1]));
+
+        if (!invitation) {
+          sendError(response, 404, "access_invitation_not_found", "Access invitation does not exist");
+          return;
+        }
+
+        assertAccessInvitationRecordPermission(actor, invitation);
+
+        if (invitation.acceptedAt) {
+          sendError(response, 409, "access_invitation_already_accepted", "Accepted invitations cannot be revoked");
+          return;
+        }
+
+        const revoked = await options.repositories.invitations.revoke(invitation.id, new Date().toISOString());
+
+        await options.repositories.audit.record({
+          actor,
+          action: "access_invitation.revoked",
+          resourceType: "access_invitation",
+          resourceId: invitation.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            identifier: invitation.identifier,
+            role: invitation.role,
+          },
+        });
+
+        sendJson(response, 200, { data: publicAccessInvitation(revoked ?? invitation) });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_invitation_revoke_failed", "Access invitation could not be revoked", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const invitationResendMatch = requestUrl.pathname.match(/^\/v1\/internal\/access-invitations\/([^/]+)\/resend$/);
+    if (request.method === "POST" && invitationResendMatch?.[1]) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        const invitation = await options.repositories.invitations.get(decodeURIComponent(invitationResendMatch[1]));
+
+        if (!invitation) {
+          sendError(response, 404, "access_invitation_not_found", "Access invitation does not exist");
+          return;
+        }
+
+        assertAccessInvitationRecordPermission(actor, invitation);
+
+        if (invitation.acceptedAt) {
+          sendError(response, 409, "access_invitation_already_accepted", "Accepted invitations cannot be resent");
+          return;
+        }
+
+        if (invitation.revokedAt) {
+          sendError(response, 410, "access_invitation_revoked", "Revoked invitations cannot be resent");
+          return;
+        }
+
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const delivery = await authCodeDeliveryProvider.deliver({
+          identifier: invitation.identifier,
+          deliveryHint: maskInvitationIdentifier(invitation.identifier),
+          expiresAt,
+          purpose: "access_invitation",
+        });
+        const updated = await options.repositories.invitations.updateCode(invitation.id, {
+          codeHash: accessInvitationCodeHash(delivery.code, authSessionSecret),
+          expiresAt,
+        });
+        const payload: ResendAccessInvitationResponse = {
+          invitation: {
+            ...publicAccessInvitation(updated ?? invitation),
+            ...(delivery.devCode ? { devCode: delivery.devCode } : {}),
+          },
+        };
+
+        await options.repositories.audit.record({
+          actor,
+          action: "access_invitation.resent",
+          resourceType: "access_invitation",
+          resourceId: invitation.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            identifier: invitation.identifier,
+            role: invitation.role,
+            expiresAt,
+          },
+        });
+
+        sendJson(response, 200, { data: payload });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "access_invitation_resend_failed";
+
+        if (message === "auth_code_delivery_failed") {
+          sendError(response, 503, message, "Access invitation delivery is temporarily unavailable");
+          return;
+        }
+
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_invitation_resend_failed", "Access invitation could not be resent", message);
+        }
       }
 
       return;
@@ -4086,6 +4226,48 @@ function assertAccessInvitationPermission(actor: Actor, input: CreateAccessInvit
   }
 
   assertInternalPermission(actor, "property_manage");
+}
+
+function assertAccessInvitationListPermission(actor: Actor): void {
+  assertInternal(actor);
+
+  if (
+    !hasInternalPermission(actor, "super_admin") &&
+    !hasInternalPermission(actor, "partner_manage") &&
+    !hasInternalPermission(actor, "property_manage")
+  ) {
+    throw new Error("internal_permission_required");
+  }
+}
+
+function assertAccessInvitationRecordPermission(
+  actor: Actor,
+  invitation: { readonly role: AccessInvitation["role"] },
+): void {
+  assertAccessInvitationPermission(actor, {
+    identifier: "permission-check@example.com",
+    displayName: "Permission Check",
+    role: invitation.role,
+  });
+}
+
+function canManageAccessInvitationRecord(
+  actor: Actor,
+  invitation: { readonly role: AccessInvitation["role"] },
+): boolean {
+  if (actor.role !== "internal") {
+    return false;
+  }
+
+  if (invitation.role === "internal") {
+    return hasInternalPermission(actor, "super_admin");
+  }
+
+  if (invitation.role === "partner") {
+    return hasInternalPermission(actor, "partner_manage");
+  }
+
+  return hasInternalPermission(actor, "property_manage");
 }
 
 function normalizeInvitationIdentifier(identifier: string): string {

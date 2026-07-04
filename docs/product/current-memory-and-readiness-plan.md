@@ -57,9 +57,11 @@ Latest Phase 1 access-invitation verification on 2026-07-04:
 - Partner invitations require `partner_manage`, property-manager invitations require `property_manage`, and internal staff invitations require `super_admin`.
 - Accepted invitations cannot be reused.
 - Added a web admin Access section for creating scoped staff, partner, and property-manager invitations.
+- Added invitation list, resend, and revoke actions in the API and web admin Access section.
 - Added a Partner manager internal profile for browser testing and partner-management invite boundaries.
+- Revoked invitations cannot be accepted, and accepted invitations cannot be resent or revoked.
 - `npm run check` passed.
-- `npm run test --workspace @prima-wash/api` passed with 97 API tests.
+- `npm run test --workspace @prima-wash/api` passed with 99 API tests.
 - `npm run db:migrate` applied `0031_partner_manage_internal_user.sql`.
 - `npm run db:smoke` passed with 31 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
@@ -161,7 +163,7 @@ Auth and identity:
 - No direct email/SMS vendor adapter is connected yet. A webhook delivery boundary exists for production integration.
 - Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
 - No MFA or production identity provider.
-- Staff, partner, and property-manager invite creation now exists in the API and web admin UI. Invitation listing, revocation, resend, and expiry management still need to be built.
+- Staff, partner, and property-manager invite creation, listing, resend, and revocation now exist in the API and web admin UI. Expiry automation and deeper account-management screens still need to be built.
 - Development header auth still exists for local/dev and must be disabled in production.
 
 Payments and finance:
@@ -227,7 +229,7 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 - Add refresh-token rotation or another secure session renewal model. Completed 2026-07-04.
 - Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
 - Connect a real email/SMS provider behind the delivery boundary.
-- Create staff, partner, and property-manager invite flows. Completed for API/repository and admin creation UI on 2026-07-04; listing, revocation, resend, and expiry management remain.
+- Create staff, partner, and property-manager invite flows. Completed for API/repository and admin creation/list/resend/revoke UI on 2026-07-04; expiry automation and deeper account-management screens remain.
 - Disable dev header auth in non-local environments.
 - Add admin user management for roles and internal permissions.
 

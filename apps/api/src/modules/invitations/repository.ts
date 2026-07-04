@@ -4,8 +4,11 @@ import type { DatabasePool } from "../../db/pool.js";
 
 export interface InvitationRepository {
   create(input: CreateAccessInvitationInput): Promise<AccessInvitationRecord>;
+  list(input?: ListAccessInvitationsInput): Promise<readonly AccessInvitationRecord[]>;
   get(id: string): Promise<AccessInvitationRecord | undefined>;
   markAccepted(id: string, acceptedAt: string): Promise<AccessInvitationRecord | undefined>;
+  revoke(id: string, revokedAt: string): Promise<AccessInvitationRecord | undefined>;
+  updateCode(id: string, input: UpdateAccessInvitationCodeInput): Promise<AccessInvitationRecord | undefined>;
 }
 
 export interface CreateAccessInvitationInput {
@@ -24,6 +27,15 @@ export interface CreateAccessInvitationInput {
 export interface AccessInvitationRecord extends AccessInvitation {
   readonly displayName: string;
   readonly codeHash: string;
+}
+
+export interface ListAccessInvitationsInput {
+  readonly limit?: number;
+}
+
+export interface UpdateAccessInvitationCodeInput {
+  readonly codeHash: string;
+  readonly expiresAt: string;
 }
 
 export class InMemoryInvitationRepository implements InvitationRepository {
@@ -53,6 +65,13 @@ export class InMemoryInvitationRepository implements InvitationRepository {
     return this.#invitations.get(id);
   }
 
+  async list(input: ListAccessInvitationsInput = {}): Promise<readonly AccessInvitationRecord[]> {
+    const limit = input.limit ?? 50;
+    return [...this.#invitations.values()]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit);
+  }
+
   async markAccepted(id: string, acceptedAt: string): Promise<AccessInvitationRecord | undefined> {
     const invitation = this.#invitations.get(id);
 
@@ -63,6 +82,30 @@ export class InMemoryInvitationRepository implements InvitationRepository {
     const accepted = { ...invitation, acceptedAt };
     this.#invitations.set(id, accepted);
     return accepted;
+  }
+
+  async revoke(id: string, revokedAt: string): Promise<AccessInvitationRecord | undefined> {
+    const invitation = this.#invitations.get(id);
+
+    if (!invitation) {
+      return undefined;
+    }
+
+    const revoked = { ...invitation, revokedAt };
+    this.#invitations.set(id, revoked);
+    return revoked;
+  }
+
+  async updateCode(id: string, input: UpdateAccessInvitationCodeInput): Promise<AccessInvitationRecord | undefined> {
+    const invitation = this.#invitations.get(id);
+
+    if (!invitation) {
+      return undefined;
+    }
+
+    const updated = { ...invitation, codeHash: input.codeHash, expiresAt: input.expiresAt };
+    this.#invitations.set(id, updated);
+    return updated;
   }
 }
 
@@ -100,6 +143,18 @@ export class PostgresInvitationRepository implements InvitationRepository {
     return result.rows[0] ? mapAccessInvitationRow(result.rows[0]) : undefined;
   }
 
+  async list(input: ListAccessInvitationsInput = {}): Promise<readonly AccessInvitationRecord[]> {
+    const limit = input.limit ?? 50;
+    const result = await this.pool.query<AccessInvitationRow>(
+      `select *
+       from access_invitations
+       order by created_at desc
+       limit $1`,
+      [limit],
+    );
+    return result.rows.map(mapAccessInvitationRow);
+  }
+
   async markAccepted(id: string, acceptedAt: string): Promise<AccessInvitationRecord | undefined> {
     const result = await this.pool.query<AccessInvitationRow>(
       `update access_invitations
@@ -107,6 +162,29 @@ export class PostgresInvitationRepository implements InvitationRepository {
        where id = $1
        returning *`,
       [id, acceptedAt],
+    );
+    return result.rows[0] ? mapAccessInvitationRow(result.rows[0]) : undefined;
+  }
+
+  async revoke(id: string, revokedAt: string): Promise<AccessInvitationRecord | undefined> {
+    const result = await this.pool.query<AccessInvitationRow>(
+      `update access_invitations
+       set revoked_at = coalesce(revoked_at, $2)
+       where id = $1
+       returning *`,
+      [id, revokedAt],
+    );
+    return result.rows[0] ? mapAccessInvitationRow(result.rows[0]) : undefined;
+  }
+
+  async updateCode(id: string, input: UpdateAccessInvitationCodeInput): Promise<AccessInvitationRecord | undefined> {
+    const result = await this.pool.query<AccessInvitationRow>(
+      `update access_invitations
+       set code_hash = $2,
+           expires_at = $3
+       where id = $1
+       returning *`,
+      [id, input.codeHash, input.expiresAt],
     );
     return result.rows[0] ? mapAccessInvitationRow(result.rows[0]) : undefined;
   }

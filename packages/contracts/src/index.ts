@@ -102,6 +102,14 @@ export interface AcceptAccessInvitationResponse {
   readonly session: AuthSession;
 }
 
+export interface ListAccessInvitationsResponse {
+  readonly invitations: readonly AccessInvitation[];
+}
+
+export interface ResendAccessInvitationResponse {
+  readonly invitation: AccessInvitation;
+}
+
 export interface CustomerProfile {
   readonly userId: string;
   readonly identifier: string;

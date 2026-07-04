@@ -1776,6 +1776,7 @@
             <p class="muted">Choose the invite type, enter the recipient, and create a scoped invitation. In local development the one-time code appears here.</p>
           </aside>
         </div>
+        <div class="cluster" id="access-invitations"></div>
       </section>
 
       <section class="card availability-card" id="condo-leads-section">
@@ -2134,6 +2135,7 @@
       const accessSectionEl = document.querySelector("#access-section");
       const accessInvitationForm = document.querySelector("#access-invitation-form");
       const accessInvitationResultEl = document.querySelector("#access-invitation-result");
+      const accessInvitationsEl = document.querySelector("#access-invitations");
       const accessPermissionPillEl = document.querySelector("#access-permission-pill");
       const inviteRoleSelect = document.querySelector("#invite-role");
       const invitePropertySelect = document.querySelector("#invite-property");
@@ -2162,6 +2164,7 @@
       let condoLeadsCache = [];
       let primaWashDaysCache = [];
       let primaWashDayBookingsCache = [];
+      let accessInvitationsCache = [];
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "upcoming";
       let selectedBookingId = null;
@@ -2249,6 +2252,7 @@
           accessInvitationForm.reset();
           inviteRoleSelect.value = invitation.role;
           syncInvitationForm();
+          await refreshAccessInvitations();
           showToast("Access invitation created.");
         } catch (error) {
           showToast(error.message, "error");
@@ -2369,6 +2373,13 @@
         return hasAdminPermission("property_manage");
       }
 
+      function canListAccessInvitations() {
+        return (
+          isAdminMode &&
+          (hasAdminPermission("super_admin") || hasAdminPermission("partner_manage") || hasAdminPermission("property_manage"))
+        );
+      }
+
       function invitationPermissionMessage(role) {
         if (role === "internal") {
           return "Super admin permission is required for internal invitations.";
@@ -2459,6 +2470,81 @@
         `;
       }
 
+      function renderAccessInvitations(invitations) {
+        if (!isAdminMode) {
+          return;
+        }
+
+        if (!canListAccessInvitations()) {
+          accessInvitationsEl.innerHTML = `
+            <div class="empty">Access invitation management requires super admin, partner management, or property management permission.</div>
+          `;
+          return;
+        }
+
+        accessInvitationsEl.innerHTML =
+          invitations.length === 0
+            ? `<div class="empty">No invitations yet. New invitations will appear here.</div>`
+            : invitations.map(renderAccessInvitationRow).join("");
+      }
+
+      function renderAccessInvitationRow(invitation) {
+        const status = accessInvitationStatus(invitation);
+        const canAct = status === "pending" && canManageInvitation(invitation);
+        return `
+          <article class="lead-row">
+            <div class="lead-copy">
+              <div>
+                <h3>${escapeHtml(invitation.identifier)}</h3>
+                <p class="muted">${formatStatus(invitation.role)} · invited ${formatRelativeTime(invitation.createdAt)} · expires ${formatRelativeTime(invitation.expiresAt)}</p>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-chip ${status === "pending" ? "" : "is-warning"}">${formatStatus(status)}</span>
+                <span class="lead-chip">${escapeHtml(invitation.organizationId || invitation.propertyId || "Prima Wash")}</span>
+                ${invitation.partnerLocationId ? `<span class="lead-chip">${escapeHtml(invitation.partnerLocationId)}</span>` : ""}
+              </div>
+              <p class="muted">Invited by ${escapeHtml(invitation.invitedByUserId)}${invitation.acceptedAt ? " · accepted " + formatRelativeTime(invitation.acceptedAt) : ""}${invitation.revokedAt ? " · revoked " + formatRelativeTime(invitation.revokedAt) : ""}</p>
+            </div>
+            <div class="lead-copy">
+              <strong>${formatStatus(invitation.role)}</strong>
+              <span class="muted">${invitation.permissions?.length ? invitation.permissions.map(formatStatus).join(", ") : "Scoped access"}</span>
+            </div>
+            <div class="queue-actions">
+              <button class="action" type="button" data-resend-invitation="${invitation.id}" ${canAct ? "" : "disabled"}>Resend</button>
+              <button class="action" type="button" data-revoke-invitation="${invitation.id}" ${canAct ? "" : "disabled"}>Revoke</button>
+            </div>
+          </article>
+        `;
+      }
+
+      function accessInvitationStatus(invitation) {
+        if (invitation.acceptedAt) {
+          return "accepted";
+        }
+
+        if (invitation.revokedAt) {
+          return "revoked";
+        }
+
+        if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
+          return "expired";
+        }
+
+        return "pending";
+      }
+
+      function canManageInvitation(invitation) {
+        if (invitation.role === "internal") {
+          return hasAdminPermission("super_admin");
+        }
+
+        if (invitation.role === "partner") {
+          return hasAdminPermission("partner_manage");
+        }
+
+        return hasAdminPermission("property_manage");
+      }
+
       function workspaceHeaders(permissions = "super_admin") {
         return isAdminMode ? adminHeaders(permissions) : partnerHeaders();
       }
@@ -2538,12 +2624,17 @@
               requestJson(`/v1/internal/prima-wash-day-bookings`, adminHeaders("operations_read")),
             ])
           : [{ monthlyActiveVehicleOwners: 0 }, [], [], []];
+        const accessInvitations = isAdminMode && canListAccessInvitations()
+          ? await requestJson(`/v1/internal/access-invitations`, adminHeaders())
+          : { invitations: [] };
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
         condoLeadsCache = condoLeads;
+        accessInvitationsCache = accessInvitations.invitations || [];
         renderDashboard(dashboard, mavo);
         syncInvitationForm();
+        renderAccessInvitations(accessInvitationsCache);
         if (isAdminMode) {
           if (hasAdminPermission("property_manage")) {
             renderCondoLeads(condoLeads);
@@ -4315,6 +4406,46 @@
         return payload.data;
       }
 
+      async function refreshAccessInvitations() {
+        if (!canListAccessInvitations()) {
+          accessInvitationsCache = [];
+          renderAccessInvitations(accessInvitationsCache);
+          return;
+        }
+
+        const payload = await requestJson(`/v1/internal/access-invitations`, adminHeaders());
+        accessInvitationsCache = payload.invitations || [];
+        renderAccessInvitations(accessInvitationsCache);
+      }
+
+      async function resendAccessInvitation(invitationId) {
+        const response = await fetch(`${apiBase}/v1/internal/access-invitations/${encodeURIComponent(invitationId)}/resend`, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Invitation resend failed");
+        }
+
+        return payload.data.invitation;
+      }
+
+      async function revokeAccessInvitation(invitationId) {
+        const response = await fetch(`${apiBase}/v1/internal/access-invitations/${encodeURIComponent(invitationId)}/revoke`, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Invitation revoke failed");
+        }
+
+        return payload.data;
+      }
+
       async function fetchOperationalProfile(propertyId) {
         const response = await fetch(`${apiBase}/v1/internal/properties/${propertyId}/operational-profile`, {
           headers: {
@@ -4387,6 +4518,47 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const resendInvitationButton = event.target.closest("button[data-resend-invitation]");
+
+        if (resendInvitationButton) {
+          resendInvitationButton.disabled = true;
+
+          try {
+            const invitation = await resendAccessInvitation(resendInvitationButton.dataset.resendInvitation);
+            renderAccessInvitationResult(invitation);
+            await refreshAccessInvitations();
+            showToast("Invitation code resent.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            resendInvitationButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const revokeInvitationButton = event.target.closest("button[data-revoke-invitation]");
+
+        if (revokeInvitationButton) {
+          if (!window.confirm("Revoke this pending invitation? The recipient will no longer be able to accept it.")) {
+            return;
+          }
+
+          revokeInvitationButton.disabled = true;
+
+          try {
+            await revokeAccessInvitation(revokeInvitationButton.dataset.revokeInvitation);
+            await refreshAccessInvitations();
+            showToast("Invitation revoked.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            revokeInvitationButton.disabled = false;
+          }
+
+          return;
+        }
+
         const savePropertyLeadButton = event.target.closest("button[data-save-property-lead]");
 
         if (savePropertyLeadButton) {
