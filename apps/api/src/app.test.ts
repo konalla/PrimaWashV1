@@ -395,6 +395,39 @@ describe("Prima Wash API", () => {
     assert.equal(internalPayload.code, "internal_permission_required");
   });
 
+  it("allows partner management bearer sessions to create only partner invitations", async () => {
+    const session = await createCustomerSession("partner.ops@primawash.local");
+    const partnerInviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...authHeaders(session), "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "partner-managed@example.com",
+        displayName: "Partner Managed",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const internalInviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...authHeaders(session), "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "partner-managed-internal@example.com",
+        displayName: "Partner Managed Internal",
+        role: "internal",
+        permissions: ["operations_read"],
+      }),
+    });
+    const partnerPayload = (await partnerInviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const internalPayload = (await internalInviteResponse.json()) as ApiErrorResponse;
+
+    assert.equal(session.user.role, "internal");
+    assert.equal(partnerInviteResponse.status, 201);
+    assert.equal(partnerPayload.data.role, "partner");
+    assert.equal(internalInviteResponse.status, 403);
+    assert.equal(internalPayload.code, "internal_permission_required");
+  });
+
   it("prevents accepted access invitations from being reused", async () => {
     const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
       method: "POST",

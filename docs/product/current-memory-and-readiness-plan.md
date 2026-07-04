@@ -50,15 +50,18 @@ Latest Phase 1 refresh-session verification on 2026-07-04:
 Latest Phase 1 access-invitation verification on 2026-07-04:
 
 - Added `0030_access_invitations.sql`.
+- Added `0031_partner_manage_internal_user.sql`.
 - Added persisted access invitations for internal, partner, and property-manager users.
 - Invitation codes are hashed at rest and expire after seven days.
 - Accepted invitations create scoped access memberships and issue bearer/refresh sessions.
 - Partner invitations require `partner_manage`, property-manager invitations require `property_manage`, and internal staff invitations require `super_admin`.
 - Accepted invitations cannot be reused.
+- Added a web admin Access section for creating scoped staff, partner, and property-manager invitations.
+- Added a Partner manager internal profile for browser testing and partner-management invite boundaries.
 - `npm run check` passed.
-- `npm run test --workspace @prima-wash/api` passed with 96 API tests.
-- `npm run db:migrate` applied `0030_access_invitations.sql`.
-- `npm run db:smoke` passed with 30 applied migrations.
+- `npm run test --workspace @prima-wash/api` passed with 97 API tests.
+- `npm run db:migrate` applied `0031_partner_manage_internal_user.sql`.
+- `npm run db:smoke` passed with 31 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
 ## Product Direction
@@ -105,7 +108,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0030_access_invitations.sql`.
+- Postgres migrations through `0031_partner_manage_internal_user.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -158,7 +161,7 @@ Auth and identity:
 - No direct email/SMS vendor adapter is connected yet. A webhook delivery boundary exists for production integration.
 - Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
 - No MFA or production identity provider.
-- Staff, partner, and property-manager invite flows now exist at the API layer, but the admin UI for creating/managing invitations still needs to be built.
+- Staff, partner, and property-manager invite creation now exists in the API and web admin UI. Invitation listing, revocation, resend, and expiry management still need to be built.
 - Development header auth still exists for local/dev and must be disabled in production.
 
 Payments and finance:
@@ -224,7 +227,7 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 - Add refresh-token rotation or another secure session renewal model. Completed 2026-07-04.
 - Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
 - Connect a real email/SMS provider behind the delivery boundary.
-- Create staff, partner, and property-manager invite flows. Completed at API/repository level on 2026-07-04; admin UI remains.
+- Create staff, partner, and property-manager invite flows. Completed for API/repository and admin creation UI on 2026-07-04; listing, revocation, resend, and expiry management remain.
 - Disable dev header auth in non-local environments.
 - Add admin user management for roles and internal permissions.
 

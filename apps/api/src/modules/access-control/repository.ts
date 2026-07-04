@@ -58,6 +58,12 @@ const seededMemberships: readonly AccessMembership[] = [
     permissions: ["operations_read", "finance_read", "finance_write"],
   },
   {
+    userId: "usr_internal_partner_001",
+    role: "internal",
+    organizationId: "org_platform_001",
+    permissions: ["operations_read", "partner_manage"],
+  },
+  {
     userId: "usr_internal_property_001",
     role: "internal",
     organizationId: "org_platform_001",
@@ -112,6 +118,11 @@ const seededUsers: readonly AccessUser[] = [
     id: "usr_internal_finance_001",
     email: "finance@primawash.local",
     fullName: "Prima Wash Finance",
+  },
+  {
+    id: "usr_internal_partner_001",
+    email: "partner.ops@primawash.local",
+    fullName: "Prima Wash Partner Ops",
   },
   {
     id: "usr_internal_property_001",

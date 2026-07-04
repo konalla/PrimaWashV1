@@ -1024,6 +1024,59 @@
         font-size: 12px;
       }
 
+      .access-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 16px;
+        align-items: start;
+      }
+
+      .access-form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .access-result {
+        display: grid;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        background: #fbfaf6;
+      }
+
+      .access-result code {
+        display: block;
+        overflow-wrap: anywhere;
+        border: 1px solid rgba(11, 79, 90, 0.18);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        background: #ffffff;
+        color: var(--green-2);
+        font-weight: 900;
+      }
+
+      .access-permission-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .access-permission-list label {
+        display: flex;
+        min-height: 40px;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        padding: 8px 10px;
+        background: #ffffff;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
       .message-list {
         display: grid;
         gap: 10px;
@@ -1501,7 +1554,8 @@
         }
 
         .hero,
-        .split {
+        .split,
+        .access-grid {
           grid-template-columns: 1fr;
         }
 
@@ -1526,7 +1580,9 @@
         }
 
         .metric-grid,
-        .dialog-grid {
+        .dialog-grid,
+        .access-form,
+        .access-permission-list {
           grid-template-columns: 1fr;
         }
 
@@ -1598,6 +1654,7 @@
           <a class="nav-item" href="#availability-section"><span class="nav-icon">◫</span>Availability</a>
           <a class="nav-item" href="#activity-section"><span class="nav-icon">↻</span>Activity</a>
           <a class="nav-item" href="#condo-leads-section"><span class="nav-icon">CL</span>Condo leads</a>
+          <a class="nav-item" href="#access-section"><span class="nav-icon">A</span>Access</a>
         </nav>
         <div class="sidebar-footer">
           <div class="business-avatar">PW</div>
@@ -1625,6 +1682,7 @@
             <option value="ops_read">Ops read-only</option>
             <option value="ops_write">Ops coordinator</option>
             <option value="finance">Finance</option>
+            <option value="partner">Partner manager</option>
             <option value="property">Property manager</option>
           </select>
           <button class="icon-button" type="button" aria-label="Notifications">●</button>
@@ -1657,6 +1715,68 @@
 
       <section class="metric-grid" id="metrics"></section>
       <div class="secondary-metrics" id="secondary-metrics" aria-label="Secondary business metrics"></div>
+
+      <section class="card availability-card" id="access-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Access control</p>
+            <h2>Invite team members and partners</h2>
+            <p class="section-description">Create scoped invitations for Prima Wash staff, partner operators, and property office managers.</p>
+          </div>
+          <span class="pill" id="access-permission-pill"><span class="dot"></span> Super admin</span>
+        </div>
+        <div class="access-grid">
+          <form class="access-form" id="access-invitation-form">
+            <div class="field">
+              <label for="invite-role">Invite type</label>
+              <select id="invite-role" name="role" required>
+                <option value="partner">Partner operator</option>
+                <option value="property_manager">Property office manager</option>
+                <option value="internal">Prima Wash internal user</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="invite-email">Email address</label>
+              <input id="invite-email" name="identifier" type="email" placeholder="name@example.com" required />
+            </div>
+            <div class="field">
+              <label for="invite-name">Display name</label>
+              <input id="invite-name" name="displayName" type="text" placeholder="Full name" required />
+            </div>
+            <div class="field" data-invite-field="partnerLocationId">
+              <label for="invite-partner-location">Partner location</label>
+              <select id="invite-partner-location" name="partnerLocationId">
+                <option value="loc_demo_001">Prima Wash Central</option>
+                <option value="loc_harbour_001">Harbour Auto Spa</option>
+                <option value="loc_orchard_001">Orchard Detail Lab</option>
+              </select>
+            </div>
+            <div class="field" data-invite-field="propertyId" hidden>
+              <label for="invite-property">Property</label>
+              <select id="invite-property" name="propertyId"></select>
+            </div>
+            <div class="field field-wide" data-invite-field="permissions" hidden>
+              <label>Internal permissions</label>
+              <div class="access-permission-list">
+                <label><input type="checkbox" name="permissions" value="operations_read" checked /> Operations read</label>
+                <label><input type="checkbox" name="permissions" value="operations_write" /> Operations write</label>
+                <label><input type="checkbox" name="permissions" value="finance_read" /> Finance read</label>
+                <label><input type="checkbox" name="permissions" value="finance_write" /> Finance write</label>
+                <label><input type="checkbox" name="permissions" value="partner_manage" /> Partner manage</label>
+                <label><input type="checkbox" name="permissions" value="property_manage" /> Property manage</label>
+              </div>
+            </div>
+            <div class="dialog-actions field-wide">
+              <button class="action primary-command" type="submit">Create invitation</button>
+            </div>
+          </form>
+          <aside class="access-result" id="access-invitation-result">
+            <p class="eyebrow">Invitation status</p>
+            <h3>No invitation created yet</h3>
+            <p class="muted">Choose the invite type, enter the recipient, and create a scoped invitation. In local development the one-time code appears here.</p>
+          </aside>
+        </div>
+      </section>
 
       <section class="card availability-card" id="condo-leads-section">
         <div class="section-heading">
@@ -1953,6 +2073,11 @@
           permissions: "operations_read,finance_read,finance_write",
           identifier: "finance@primawash.local",
         },
+        partner: {
+          label: "Partner manager",
+          permissions: "operations_read,partner_manage",
+          identifier: "partner.ops@primawash.local",
+        },
         property: {
           label: "Property manager",
           permissions: "operations_read,property_manage",
@@ -2006,6 +2131,12 @@
       const sidebarLocationNameEl = document.querySelector("#sidebar-location-name");
       const businessAvatarEl = document.querySelector(".business-avatar");
       const condoLeadsSectionEl = document.querySelector("#condo-leads-section");
+      const accessSectionEl = document.querySelector("#access-section");
+      const accessInvitationForm = document.querySelector("#access-invitation-form");
+      const accessInvitationResultEl = document.querySelector("#access-invitation-result");
+      const accessPermissionPillEl = document.querySelector("#access-permission-pill");
+      const inviteRoleSelect = document.querySelector("#invite-role");
+      const invitePropertySelect = document.querySelector("#invite-property");
       const toastEl = document.querySelector("#toast");
       const availabilityDialog = document.querySelector("#availability-dialog");
       const availabilityForm = document.querySelector("#availability-form");
@@ -2079,6 +2210,7 @@
 
       if (!isAdminMode) {
         condoLeadsSectionEl.hidden = true;
+        accessSectionEl.hidden = true;
       }
 
       adminPermissionSelect.addEventListener("change", async () => {
@@ -2093,6 +2225,35 @@
           showToast(`Internal profile: ${activeAdminProfile().label}`);
         } catch (error) {
           showToast(error.message, "error");
+        }
+      });
+
+      inviteRoleSelect.addEventListener("change", () => {
+        syncInvitationForm();
+      });
+
+      accessInvitationForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (!canCreateSelectedInvitation()) {
+          showToast(invitationPermissionMessage(inviteRoleSelect.value), "error");
+          return;
+        }
+
+        const submitButton = accessInvitationForm.querySelector("button[type='submit']");
+        submitButton.disabled = true;
+
+        try {
+          const invitation = await createAccessInvitation(readAccessInvitationInput(accessInvitationForm));
+          renderAccessInvitationResult(invitation);
+          accessInvitationForm.reset();
+          inviteRoleSelect.value = invitation.role;
+          syncInvitationForm();
+          showToast("Access invitation created.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
         }
       });
 
@@ -2191,6 +2352,113 @@
         return `<button class="action is-disabled" type="button" disabled title="${permission} permission required">${label}</button>`;
       }
 
+      function canCreateSelectedInvitation() {
+        if (!isAdminMode) {
+          return false;
+        }
+
+        const role = inviteRoleSelect.value;
+        if (role === "internal") {
+          return hasAdminPermission("super_admin");
+        }
+
+        if (role === "partner") {
+          return hasAdminPermission("partner_manage");
+        }
+
+        return hasAdminPermission("property_manage");
+      }
+
+      function invitationPermissionMessage(role) {
+        if (role === "internal") {
+          return "Super admin permission is required for internal invitations.";
+        }
+
+        if (role === "partner") {
+          return "Partner management permission is required for partner invitations.";
+        }
+
+        return "Property management permission is required for office management invitations.";
+      }
+
+      function syncInvitationForm() {
+        if (!isAdminMode) {
+          return;
+        }
+
+        const role = inviteRoleSelect.value;
+        const partnerField = accessInvitationForm.querySelector("[data-invite-field='partnerLocationId']");
+        const propertyField = accessInvitationForm.querySelector("[data-invite-field='propertyId']");
+        const permissionsField = accessInvitationForm.querySelector("[data-invite-field='permissions']");
+        const submitButton = accessInvitationForm.querySelector("button[type='submit']");
+        partnerField.hidden = role !== "partner";
+        propertyField.hidden = role !== "property_manager";
+        permissionsField.hidden = role !== "internal";
+
+        if (role === "property_manager") {
+          invitePropertySelect.innerHTML =
+            condoLeadsCache.length === 0
+              ? `<option value="prop_sg_marina_one">Marina One Residences</option>`
+              : condoLeadsCache.map((lead) => `<option value="${lead.id}">${escapeHtml(lead.name)}</option>`).join("");
+        }
+
+        const canCreate = canCreateSelectedInvitation();
+        accessInvitationForm.querySelectorAll("input, select, button").forEach((field) => {
+          field.disabled = !canCreate && field !== inviteRoleSelect;
+        });
+        inviteRoleSelect.disabled = false;
+        submitButton.title = canCreate ? "" : invitationPermissionMessage(role);
+        accessPermissionPillEl.innerHTML = `<span class="dot"></span> ${escapeHtml(activeAdminProfile().label)}`;
+      }
+
+      function readAccessInvitationInput(formElement) {
+        const form = new FormData(formElement);
+        const role = String(form.get("role") || "partner");
+        const input = {
+          role,
+          identifier: String(form.get("identifier") || "").trim(),
+          displayName: String(form.get("displayName") || "").trim(),
+        };
+
+        if (role === "partner") {
+          const partnerLocationId = String(form.get("partnerLocationId") || selectedPartnerLocationId);
+          return {
+            ...input,
+            partnerLocationId,
+            organizationId: partnerLocations[partnerLocationId]?.organizationId,
+          };
+        }
+
+        if (role === "property_manager") {
+          return {
+            ...input,
+            propertyId: String(form.get("propertyId") || "prop_sg_marina_one"),
+          };
+        }
+
+        return {
+          ...input,
+          permissions: form.getAll("permissions").map((permission) => String(permission)),
+        };
+      }
+
+      function renderAccessInvitationResult(invitation) {
+        accessInvitationResultEl.innerHTML = `
+          <p class="eyebrow">Invitation created</p>
+          <h3>${formatStatus(invitation.role)} invite</h3>
+          <p class="muted">${escapeHtml(invitation.identifier)} expires ${formatRelativeTime(invitation.expiresAt)}.</p>
+          <div>
+            <span class="lead-chip">${escapeHtml(invitation.organizationId || invitation.propertyId || "Prima Wash")}</span>
+            ${invitation.partnerLocationId ? `<span class="lead-chip">${escapeHtml(invitation.partnerLocationId)}</span>` : ""}
+          </div>
+          ${
+            invitation.devCode
+              ? `<div><strong>Local development code</strong><code>${escapeHtml(invitation.devCode)}</code></div>`
+              : `<p class="muted">The delivery provider accepted the invitation code. No code is exposed outside local development.</p>`
+          }
+        `;
+      }
+
       function workspaceHeaders(permissions = "super_admin") {
         return isAdminMode ? adminHeaders(permissions) : partnerHeaders();
       }
@@ -2275,6 +2543,7 @@
         primaWashDaysCache = primaWashDays;
         condoLeadsCache = condoLeads;
         renderDashboard(dashboard, mavo);
+        syncInvitationForm();
         if (isAdminMode) {
           if (hasAdminPermission("property_manage")) {
             renderCondoLeads(condoLeads);
@@ -4023,6 +4292,24 @@
 
         if (!response.ok) {
           throw new Error(payload.message || "Prima Wash Day create failed");
+        }
+
+        return payload.data;
+      }
+
+      async function createAccessInvitation(input) {
+        const response = await fetch(`${apiBase}/v1/internal/access-invitations`, {
+          method: "POST",
+          headers: {
+            ...adminHeaders(),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Access invitation failed");
         }
 
         return payload.data;
