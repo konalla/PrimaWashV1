@@ -75,6 +75,11 @@ import {
   PostgresAccessControlRepository,
   type AccessControlRepository,
 } from "./access-control/repository.js";
+import {
+  InMemoryInvitationRepository,
+  PostgresInvitationRepository,
+  type InvitationRepository,
+} from "./invitations/repository.js";
 import { InMemoryAuthRepository, PostgresAuthRepository, type AuthRepository } from "./auth/repository.js";
 
 export interface Repositories {
@@ -94,6 +99,7 @@ export interface Repositories {
   readonly scheduling: SchedulingConfigRepository;
   readonly communications: CommunicationRepository;
   readonly accessControl: AccessControlRepository;
+  readonly invitations: InvitationRepository;
   readonly auth: AuthRepository;
   readonly databasePool?: DatabasePool;
 }
@@ -120,6 +126,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       scheduling: new InMemorySchedulingConfigRepository(),
       communications: new InMemoryCommunicationRepository(),
       accessControl: new InMemoryAccessControlRepository(),
+      invitations: new InMemoryInvitationRepository(),
       auth: new InMemoryAuthRepository(),
     };
   }
@@ -144,6 +151,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     scheduling: new PostgresSchedulingConfigRepository(databasePool),
     communications: new PostgresCommunicationRepository(databasePool),
     accessControl: new PostgresAccessControlRepository(databasePool),
+    invitations: new PostgresInvitationRepository(databasePool),
     auth: new PostgresAuthRepository(databasePool),
     databasePool,
   };

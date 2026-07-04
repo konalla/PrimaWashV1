@@ -6,6 +6,7 @@ export interface DeliverAuthCodeInput {
   readonly identifier: string;
   readonly deliveryHint: string;
   readonly expiresAt: string;
+  readonly purpose?: "auth_code" | "access_invitation";
 }
 
 export interface DeliverAuthCodeResult {
@@ -80,7 +81,7 @@ class WebhookAuthCodeDeliveryProvider implements AuthCodeDeliveryProvider {
         ...(this.options.webhookSecret ? { authorization: `Bearer ${this.options.webhookSecret}` } : {}),
       },
       body: JSON.stringify({
-        type: "auth_code",
+        type: input.purpose ?? "auth_code",
         identifier: input.identifier,
         deliveryHint: input.deliveryHint,
         code,

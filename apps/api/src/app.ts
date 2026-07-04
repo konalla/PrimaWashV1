@@ -6,6 +6,9 @@ import type {
   AvailabilitySearchResponse,
   AvailabilitySearchSlot,
   Actor,
+  AccessInvitation,
+  AcceptAccessInvitationRequest,
+  AcceptAccessInvitationResponse,
   BillingSession,
   Booking,
   BookingHold,
@@ -15,6 +18,7 @@ import type {
   CancelBookingRequest,
   CapacityTemplate,
   CreateAvailabilitySlotRequest,
+  CreateAccessInvitationRequest,
   CreateBookingHoldRequest,
   CreateCapacityTemplateRequest,
   CreateCommunicationMessageRequest,
@@ -33,6 +37,7 @@ import type {
   UpdateVehicleRequest,
   UpdateCustomerProfileRequest,
   HealthResponse,
+  InternalPermission,
   ProductEventName,
   PartnerDashboardResponse,
   PartnerAvailabilitySlot,
@@ -114,6 +119,7 @@ import {
   validateCreateCommunicationMessage,
   validateCreateCommunicationThread,
 } from "./modules/communications/repository.js";
+import { publicAccessInvitation } from "./modules/invitations/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -132,10 +138,10 @@ export function createApiServer(options: CreateApiServerOptions): Server {
   const authCodeDeliveryProvider =
     options.authCodeDeliveryProvider ??
     createAuthCodeDeliveryProvider("local", { exposeDevelopmentCode: process.env.SHOW_DEV_AUTH_CODE === "true" });
+  const authSessionSecret =
+    options.authSessionSecret ?? process.env.AUTH_SESSION_SECRET ?? "prima-wash-development-secret-change-before-production";
   const authService = new AuthService(
-    options.authSessionSecret ??
-      process.env.AUTH_SESSION_SECRET ??
-      "prima-wash-development-secret-change-before-production",
+    authSessionSecret,
     authCodeDeliveryProvider,
     options.repositories.auth,
   );
@@ -246,6 +252,146 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         sendJson(response, 200, { data: session });
       } catch (error) {
         sendAuthVerificationError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/internal/access-invitations") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        const input = await readJsonBody<CreateAccessInvitationRequest>(request);
+        const errors = validateCreateAccessInvitation(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Access invitation payload is invalid", errors);
+          return;
+        }
+
+        assertAccessInvitationPermission(actor, input);
+
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const normalizedIdentifier = normalizeInvitationIdentifier(input.identifier);
+        const delivery = await authCodeDeliveryProvider.deliver({
+          identifier: normalizedIdentifier,
+          deliveryHint: maskInvitationIdentifier(normalizedIdentifier),
+          expiresAt,
+          purpose: "access_invitation",
+        });
+        const invitation = await options.repositories.invitations.create({
+          identifier: normalizedIdentifier,
+          displayName: input.displayName,
+          role: input.role,
+          ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+          ...(input.partnerLocationId ? { partnerLocationId: input.partnerLocationId } : {}),
+          ...(input.propertyId ? { propertyId: input.propertyId } : {}),
+          permissions: input.role === "internal" ? filterInternalPermissions(input.permissions ?? []) : [],
+          codeHash: accessInvitationCodeHash(delivery.code, authSessionSecret),
+          expiresAt,
+          invitedByUserId: actor.userId,
+        });
+        const payload: AccessInvitation = {
+          ...publicAccessInvitation(invitation),
+          ...(delivery.devCode ? { devCode: delivery.devCode } : {}),
+        };
+
+        await options.repositories.audit.record({
+          actor,
+          action: "access_invitation.created",
+          resourceType: "access_invitation",
+          resourceId: invitation.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            identifier: invitation.identifier,
+            role: invitation.role,
+            organizationId: invitation.organizationId,
+            partnerLocationId: invitation.partnerLocationId,
+            propertyId: invitation.propertyId,
+            expiresAt: invitation.expiresAt,
+          },
+        });
+
+        sendJson(response, 201, { data: payload });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "access_invitation_failed";
+
+        if (message === "auth_code_delivery_failed") {
+          sendError(response, 503, message, "Access invitation delivery is temporarily unavailable");
+          return;
+        }
+
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_invitation_failed", "Access invitation could not be created", message);
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/access-invitations/accept") {
+      try {
+        const input = await readJsonBody<AcceptAccessInvitationRequest>(request);
+        const invitation = await options.repositories.invitations.get(input.invitationId);
+
+        if (!invitation) {
+          sendError(response, 404, "access_invitation_not_found", "Access invitation does not exist");
+          return;
+        }
+
+        if (invitation.revokedAt) {
+          sendError(response, 410, "access_invitation_revoked", "Access invitation has been revoked");
+          return;
+        }
+
+        if (invitation.acceptedAt) {
+          sendError(response, 409, "access_invitation_already_accepted", "Access invitation has already been accepted");
+          return;
+        }
+
+        if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
+          sendError(response, 410, "access_invitation_expired", "Access invitation has expired");
+          return;
+        }
+
+        if (!safeCompareString(invitation.codeHash, accessInvitationCodeHash(input.code.trim(), authSessionSecret))) {
+          sendError(response, 401, "invalid_access_invitation_code", "Access invitation code is invalid");
+          return;
+        }
+
+        const identity = await options.repositories.accessControl.createUserMembership({
+          identifier: invitation.identifier,
+          displayName: invitation.displayName,
+          role: invitation.role,
+          ...(invitation.organizationId ? { organizationId: invitation.organizationId } : {}),
+          ...(invitation.partnerLocationId ? { partnerLocationId: invitation.partnerLocationId } : {}),
+          ...(invitation.propertyId ? { propertyId: invitation.propertyId } : {}),
+          permissions: invitation.permissions,
+        });
+        const accepted = await options.repositories.invitations.markAccepted(invitation.id, new Date().toISOString());
+        const session = await authService.createSession(identity.user);
+        const payload: AcceptAccessInvitationResponse = {
+          invitation: publicAccessInvitation(accepted ?? invitation),
+          session,
+        };
+
+        await options.repositories.audit.record({
+          actor: identity.actor,
+          action: "access_invitation.accepted",
+          resourceType: "access_invitation",
+          resourceId: invitation.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            identifier: invitation.identifier,
+            role: invitation.role,
+            organizationId: invitation.organizationId,
+            partnerLocationId: invitation.partnerLocationId,
+            propertyId: invitation.propertyId,
+          },
+        });
+
+        sendJson(response, 200, { data: payload });
+      } catch (error) {
+        sendError(response, 400, "access_invitation_accept_failed", "Access invitation could not be accepted", String(error));
       }
 
       return;
@@ -3879,6 +4025,96 @@ function safeCompareHex(left: string, right: string): boolean {
   } catch {
     return false;
   }
+}
+
+function safeCompareString(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function accessInvitationCodeHash(code: string, secret: string): string {
+  return createHmac("sha256", secret).update(code).digest("base64url");
+}
+
+function validateCreateAccessInvitation(input: CreateAccessInvitationRequest): string[] {
+  const errors: string[] = [];
+  const role = input.role;
+
+  if (!isValidAccessInvitationEmail(input.identifier)) {
+    errors.push("identifier must be a valid email address");
+  }
+
+  if (!input.displayName || input.displayName.trim().length < 2) {
+    errors.push("displayName must be at least 2 characters");
+  }
+
+  if (role !== "internal" && role !== "partner" && role !== "property_manager") {
+    errors.push("role must be internal, partner, or property_manager");
+  }
+
+  if (role === "partner") {
+    if (!input.organizationId) {
+      errors.push("organizationId is required for partner invitations");
+    }
+
+    if (!input.partnerLocationId) {
+      errors.push("partnerLocationId is required for partner invitations");
+    }
+  }
+
+  if (role === "property_manager" && !input.propertyId) {
+    errors.push("propertyId is required for property manager invitations");
+  }
+
+  if (role === "internal" && (input.permissions ?? []).some((permission) => !isInternalPermission(permission))) {
+    errors.push("permissions contains an unsupported internal permission");
+  }
+
+  return errors;
+}
+
+function assertAccessInvitationPermission(actor: Actor, input: CreateAccessInvitationRequest): void {
+  if (input.role === "internal") {
+    assertInternalPermission(actor, "super_admin");
+    return;
+  }
+
+  if (input.role === "partner") {
+    assertInternalPermission(actor, "partner_manage");
+    return;
+  }
+
+  assertInternalPermission(actor, "property_manage");
+}
+
+function normalizeInvitationIdentifier(identifier: string): string {
+  return identifier.trim().toLowerCase();
+}
+
+function maskInvitationIdentifier(identifier: string): string {
+  const [name = "", domain = ""] = identifier.split("@");
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
+function isValidAccessInvitationEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+function filterInternalPermissions(values: readonly string[]): readonly InternalPermission[] {
+  return values.filter(isInternalPermission);
+}
+
+function isInternalPermission(value: string): value is InternalPermission {
+  return (
+    value === "operations_read" ||
+    value === "operations_write" ||
+    value === "finance_read" ||
+    value === "finance_write" ||
+    value === "partner_manage" ||
+    value === "property_manage" ||
+    value === "super_admin"
+  );
 }
 
 async function reconcileStripeWebhookEvent(

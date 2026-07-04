@@ -8,6 +8,7 @@ import { PostgresAuthRepository } from "../modules/auth/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
+import { PostgresInvitationRepository } from "../modules/invitations/repository.js";
 import { PostgresPaymentRepository } from "../modules/payments/repository.js";
 import { PostgresVehicleRepository } from "../modules/vehicles/repository.js";
 
@@ -21,6 +22,7 @@ describe("Postgres repository parity", () => {
   let bookings: PostgresBookingRepository;
   let communications: PostgresCommunicationRepository;
   let condoOperations: PostgresCondoOperationsRepository;
+  let invitations: PostgresInvitationRepository;
   let payments: PostgresPaymentRepository;
   let vehicles: PostgresVehicleRepository;
 
@@ -33,6 +35,7 @@ describe("Postgres repository parity", () => {
     bookings = new PostgresBookingRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
     condoOperations = new PostgresCondoOperationsRepository(pool);
+    invitations = new PostgresInvitationRepository(pool);
     payments = new PostgresPaymentRepository(pool);
     vehicles = new PostgresVehicleRepository(pool);
   });
@@ -145,6 +148,57 @@ describe("Postgres repository parity", () => {
     }
   });
 
+  it("persists access invitations and creates scoped memberships", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const identifier = `partner-invite-${suffix}@example.com`;
+    let invitationId: string | undefined;
+    let userId: string | undefined;
+
+    try {
+      const invitation = await invitations.create({
+        identifier,
+        displayName: "Invited Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+        permissions: [],
+        codeHash: `hash_${suffix}`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        invitedByUserId: "usr_internal_001",
+      });
+      invitationId = invitation.id;
+
+      const loaded = await invitations.get(invitation.id);
+      const accepted = await invitations.markAccepted(invitation.id, new Date().toISOString());
+      const identity = await accessControl.createUserMembership({
+        identifier,
+        displayName: "Invited Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      });
+      userId = identity.user.id;
+      const resolved = await accessControl.resolveLogin(identifier);
+
+      assert.equal(loaded?.codeHash, `hash_${suffix}`);
+      assert.equal(accepted?.acceptedAt !== undefined, true);
+      assert.equal(identity.user.role, "partner");
+      assert.equal(resolved?.actor.role, "partner");
+      assert.equal(resolved?.actor.organizationId, "org_partner_001");
+    } finally {
+      if (invitationId) {
+        await pool.query("delete from access_invitations where id = $1", [invitationId]);
+      }
+
+      if (userId) {
+        await pool.query("delete from access_memberships where user_id = $1", [userId]);
+        await pool.query("delete from users where id = $1", [userId]);
+      } else {
+        await pool.query("delete from users where lower(email) = $1", [identifier]);
+      }
+    }
+  });
+
   it("persists Prima Wash Day bookings with property-service defaults", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const created: CleanupIds = {};
@@ -159,15 +213,27 @@ describe("Postgres repository parity", () => {
       });
       created.vehicleId = vehicle.id;
 
+      const primaWashDay = await condoOperations.createPrimaWashDay({
+        propertyId: "prop_sg_marina_one",
+        partnerLocationId: "loc_demo_001",
+        approvedServiceArea: "Temporary integration-test visitor lot",
+        startsAt: "2026-07-11T01:00:00.000Z",
+        endsAt: "2026-07-11T05:00:00.000Z",
+        capacity: 3,
+        serviceCodes: ["wash_premium"],
+        status: "planned",
+      });
+      created.primaWashDayIds = [primaWashDay.id];
+
       const booking = await bookings.create({
         ownerId: "usr_demo_001",
         vehicleId: vehicle.id,
-        primaWashDayId: "pwd_sg_marina_one_20260704",
+        primaWashDayId: primaWashDay.id,
         serviceCode: "wash_premium",
       });
       created.bookingId = booking.id;
 
-      assert.equal(booking.primaWashDayId, "pwd_sg_marina_one_20260704");
+      assert.equal(booking.primaWashDayId, primaWashDay.id);
       assert.equal(booking.partnerLocationId, "loc_demo_001");
       assert.equal(booking.onsiteServiceMode, "customer_property");
       assert.equal(booking.valetRequested, false);
@@ -178,7 +244,7 @@ describe("Postgres repository parity", () => {
       assert.equal(confirmed.status, "confirmed");
 
       const reloaded = await bookings.get(booking.id);
-      assertPrimaWashDayBooking(reloaded);
+      assertPrimaWashDayBooking(reloaded, primaWashDay.id);
     } finally {
       await cleanup(pool, created);
     }
@@ -591,9 +657,9 @@ async function createTemporaryProperty(pool: DatabasePool, propertyId: string, n
   );
 }
 
-function assertPrimaWashDayBooking(booking: Booking | undefined): asserts booking is Booking {
+function assertPrimaWashDayBooking(booking: Booking | undefined, primaWashDayId: string): asserts booking is Booking {
   assert.ok(booking);
-  assert.equal(booking.primaWashDayId, "pwd_sg_marina_one_20260704");
+  assert.equal(booking.primaWashDayId, primaWashDayId);
   assert.equal(booking.onsiteServiceMode, "customer_property");
   assert.equal(booking.status, "confirmed");
 }

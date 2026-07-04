@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import type { Actor, ActorRole, AuthUser, InternalPermission } from "@prima-wash/contracts";
 import type { DatabasePool } from "../../db/pool.js";
 
 export interface AccessControlRepository {
   resolveActor(candidate: Actor): Promise<Actor | undefined>;
   resolveLogin(identifier: string): Promise<AuthLoginIdentity | undefined>;
+  createUserMembership(input: CreateUserMembershipInput): Promise<AuthLoginIdentity>;
 }
 
 export interface AuthLoginIdentity {
@@ -18,6 +20,16 @@ interface AccessMembership {
   readonly partnerLocationId?: string;
   readonly propertyId?: string;
   readonly permissions: readonly InternalPermission[];
+}
+
+export interface CreateUserMembershipInput {
+  readonly identifier: string;
+  readonly displayName: string;
+  readonly role: Exclude<ActorRole, "customer" | "fleet">;
+  readonly organizationId?: string;
+  readonly partnerLocationId?: string;
+  readonly propertyId?: string;
+  readonly permissions?: readonly InternalPermission[];
 }
 
 const seededMemberships: readonly AccessMembership[] = [
@@ -146,6 +158,42 @@ export class InMemoryAccessControlRepository implements AccessControlRepository 
 
     return buildAuthLoginIdentity(user, this.#memberships.filter((membership) => membership.userId === user.id));
   }
+
+  async createUserMembership(input: CreateUserMembershipInput): Promise<AuthLoginIdentity> {
+    const email = normalizeIdentifier(input.identifier);
+    let user = this.#users.find((item) => item.email === email);
+
+    if (!user) {
+      user = {
+        id: userIdForIdentifier(email),
+        email,
+        fullName: input.displayName.trim(),
+      };
+      this.#users.push(user);
+    }
+
+    const existingMembership = this.#memberships.find(
+      (membership) =>
+        membership.userId === user.id &&
+        membership.role === input.role &&
+        membership.organizationId === input.organizationId &&
+        membership.partnerLocationId === input.partnerLocationId &&
+        membership.propertyId === input.propertyId,
+    );
+
+    if (!existingMembership) {
+      this.#memberships.push({
+        userId: user.id,
+        role: input.role,
+        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+        ...(input.partnerLocationId ? { partnerLocationId: input.partnerLocationId } : {}),
+        ...(input.propertyId ? { propertyId: input.propertyId } : {}),
+        permissions: input.permissions ?? [],
+      });
+    }
+
+    return buildAuthLoginIdentity(user, this.#memberships.filter((membership) => membership.userId === user.id));
+  }
 }
 
 export class PostgresAccessControlRepository implements AccessControlRepository {
@@ -226,6 +274,57 @@ export class PostgresAccessControlRepository implements AccessControlRepository 
           : [],
       ),
     );
+  }
+
+  async createUserMembership(input: CreateUserMembershipInput): Promise<AuthLoginIdentity> {
+    const email = normalizeIdentifier(input.identifier);
+    const userId = userIdForIdentifier(email);
+    const organizationId = input.organizationId ?? (input.role === "internal" ? "org_platform_001" : undefined);
+    const userResult = await this.pool.query<{ id: string; email: string; full_name: string }>(
+      `insert into users (id, organization_id, email, full_name)
+       values ($1, $2, $3, $4)
+       on conflict (email) do update set
+         full_name = excluded.full_name,
+         organization_id = coalesce(users.organization_id, excluded.organization_id)
+       returning id, email, full_name`,
+      [userId, organizationId ?? null, email, input.displayName.trim()],
+    );
+    const user = userResult.rows[0];
+
+    if (!user) {
+      throw new Error("access_user_create_failed");
+    }
+
+    await this.pool.query(
+      `insert into access_memberships (
+         id, user_id, role, organization_id, partner_location_id, property_id, permissions, active
+       )
+       values ($1, $2, $3, $4, $5, $6, $7, true)
+       on conflict (id) do update set
+         organization_id = excluded.organization_id,
+         partner_location_id = excluded.partner_location_id,
+         property_id = excluded.property_id,
+         permissions = excluded.permissions,
+         active = true,
+         updated_at = now()`,
+      [
+        membershipIdForInput(user.id, input),
+        user.id,
+        input.role,
+        organizationId ?? null,
+        input.partnerLocationId ?? null,
+        input.propertyId ?? null,
+        input.permissions ?? [],
+      ],
+    );
+
+    const identity = await this.resolveLogin(email);
+
+    if (!identity) {
+      throw new Error("access_membership_create_failed");
+    }
+
+    return identity;
   }
 }
 
@@ -312,6 +411,20 @@ interface AuthLoginRow {
 
 function normalizeIdentifier(identifier: string): string {
   return identifier.trim().toLowerCase();
+}
+
+function userIdForIdentifier(identifier: string): string {
+  return `usr_${hashIdentifier(identifier).slice(0, 16)}`;
+}
+
+function membershipIdForInput(userId: string, input: CreateUserMembershipInput): string {
+  return `access_${hashIdentifier(
+    [userId, input.role, input.organizationId ?? "", input.partnerLocationId ?? "", input.propertyId ?? ""].join(":"),
+  ).slice(0, 24)}`;
+}
+
+function hashIdentifier(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function isInternalPermission(value: string): value is InternalPermission {

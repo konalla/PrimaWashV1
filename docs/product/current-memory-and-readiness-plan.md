@@ -47,6 +47,20 @@ Latest Phase 1 refresh-session verification on 2026-07-04:
 - `npm run test:postgres` passed with 8 Postgres repository integration tests.
 - `npm run auth:cleanup --workspace @prima-wash/api` passed.
 
+Latest Phase 1 access-invitation verification on 2026-07-04:
+
+- Added `0030_access_invitations.sql`.
+- Added persisted access invitations for internal, partner, and property-manager users.
+- Invitation codes are hashed at rest and expire after seven days.
+- Accepted invitations create scoped access memberships and issue bearer/refresh sessions.
+- Partner invitations require `partner_manage`, property-manager invitations require `property_manage`, and internal staff invitations require `super_admin`.
+- Accepted invitations cannot be reused.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 96 API tests.
+- `npm run db:migrate` applied `0030_access_invitations.sql`.
+- `npm run db:smoke` passed with 30 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -91,7 +105,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0029_auth_refresh_tokens.sql`.
+- Postgres migrations through `0030_access_invitations.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -100,6 +114,7 @@ Backend foundations now include:
 - Auth-code delivery provider abstraction with local and webhook modes.
 - Signed bearer access tokens.
 - Access memberships for partner, internal, and property-manager scoping.
+- Persisted access invitations for staff, partners, and property managers, with scoped membership creation on acceptance.
 - Internal permissions including operations, finance, property, partner, and super-admin permissions.
 - Customer profiles, residential profiles, garage vehicles, and service records.
 - Property records, property interests, condo activation pipeline, condo operational profiles, and Prima Wash Days.
@@ -142,7 +157,8 @@ Auth and identity:
 - Refresh-token rotation exists for customer, partner, property-manager, and internal bearer sessions.
 - No direct email/SMS vendor adapter is connected yet. A webhook delivery boundary exists for production integration.
 - Basic verification-code request rate limiting exists. Broader abuse prevention for search, booking, payment, account recovery, and privileged operations is still needed.
-- No MFA, staff invite flow, or production identity provider.
+- No MFA or production identity provider.
+- Staff, partner, and property-manager invite flows now exist at the API layer, but the admin UI for creating/managing invitations still needs to be built.
 - Development header auth still exists for local/dev and must be disabled in production.
 
 Payments and finance:
@@ -161,7 +177,7 @@ Product and UX:
 
 - The customer app has real API flows but still needs production polish, clearer state handling, stronger empty/error states, and route-level QA.
 - The web portal is still a single static surface rather than a finished role-specific product shell.
-- Internal admin, partner, property-management, and customer experiences need separate navigation, permissions, and verification paths.
+- Internal admin, partner, property-management, and customer experiences need separate navigation and richer permission-management screens.
 - Some older product docs may still need periodic review, but the active API, security, delivery, and current-memory docs now reflect the bearer-session, access-membership, Postgres-default baseline.
 
 Platform readiness:
@@ -208,7 +224,7 @@ Goal: replace temporary auth behavior with a production-grade identity foundatio
 - Add refresh-token rotation or another secure session renewal model. Completed 2026-07-04.
 - Add broader abuse controls for search, booking, payment, account recovery, and privileged actions.
 - Connect a real email/SMS provider behind the delivery boundary.
-- Create staff, partner, and property-manager invite flows.
+- Create staff, partner, and property-manager invite flows. Completed at API/repository level on 2026-07-04; admin UI remains.
 - Disable dev header auth in non-local environments.
 - Add admin user management for roles and internal permissions.
 

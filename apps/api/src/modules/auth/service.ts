@@ -113,6 +113,10 @@ export class AuthService {
     return (await this.createSessionForUser(user)).authSession;
   }
 
+  async createSession(user: AuthUser): Promise<AuthSession> {
+    return (await this.createSessionForUser(user)).authSession;
+  }
+
   async readSession(token: string): Promise<AuthSession> {
     const payload = verifyToken(token, this.secret);
     const session = await this.assertActiveSession(payload);

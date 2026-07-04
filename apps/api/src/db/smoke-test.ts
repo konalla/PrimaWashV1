@@ -50,6 +50,7 @@ try {
   await assertTableExists("auth_sessions");
   await assertTableExists("auth_rate_limit_events");
   await assertTableExists("auth_refresh_tokens");
+  await assertTableExists("access_invitations");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -70,6 +71,10 @@ try {
   await assertColumnExists("auth_refresh_tokens", "family_id");
   await assertColumnExists("auth_refresh_tokens", "used_at");
   await assertColumnExists("auth_refresh_tokens", "revoked_at");
+  await assertColumnExists("access_invitations", "code_hash");
+  await assertColumnExists("access_invitations", "accepted_at");
+  await assertColumnExists("access_invitations", "revoked_at");
+  await assertColumnExists("access_invitations", "permissions");
 
   await assertAccessMemberships();
   await assertTransactionalWriteRead();

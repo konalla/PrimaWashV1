@@ -64,6 +64,44 @@ export interface AuthSession {
   readonly user: AuthUser;
 }
 
+export type AccessInvitationRole = "internal" | "partner" | "property_manager";
+
+export interface AccessInvitation {
+  readonly id: string;
+  readonly identifier: string;
+  readonly role: AccessInvitationRole;
+  readonly organizationId?: string;
+  readonly partnerLocationId?: string;
+  readonly propertyId?: string;
+  readonly permissions: readonly InternalPermission[];
+  readonly expiresAt: string;
+  readonly acceptedAt?: string;
+  readonly revokedAt?: string;
+  readonly invitedByUserId: string;
+  readonly createdAt: string;
+  readonly devCode?: string;
+}
+
+export interface CreateAccessInvitationRequest {
+  readonly identifier: string;
+  readonly displayName: string;
+  readonly role: AccessInvitationRole;
+  readonly organizationId?: string;
+  readonly partnerLocationId?: string;
+  readonly propertyId?: string;
+  readonly permissions?: readonly InternalPermission[];
+}
+
+export interface AcceptAccessInvitationRequest {
+  readonly invitationId: string;
+  readonly code: string;
+}
+
+export interface AcceptAccessInvitationResponse {
+  readonly invitation: AccessInvitation;
+  readonly session: AuthSession;
+}
+
 export interface CustomerProfile {
   readonly userId: string;
   readonly identifier: string;

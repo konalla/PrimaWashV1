@@ -5,6 +5,8 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
   ApiErrorResponse,
+  AccessInvitation,
+  AcceptAccessInvitationResponse,
   AuthSession,
   BillingSession,
   CommunicationMessage,
@@ -278,6 +280,150 @@ describe("Prima Wash API", () => {
     assert.equal(ownDashboardResponse.status, 200);
     assert.equal(otherDashboardResponse.status, 403);
     assert.equal(otherPayload.code, "forbidden_property_scope");
+  });
+
+  it("creates and accepts partner access invitations into scoped bearer sessions", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "new.partner@example.com",
+        displayName: "New Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+
+    assert.equal(inviteResponse.status, 201);
+    assert.equal(invitePayload.data.role, "partner");
+    assert.equal(invitePayload.data.partnerLocationId, "loc_demo_001");
+    assert.equal(invitePayload.data.devCode, "123456");
+
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        invitationId: invitePayload.data.id,
+        code: invitePayload.data.devCode,
+      }),
+    });
+    const acceptPayload = (await acceptResponse.json()) as ApiResponse<AcceptAccessInvitationResponse>;
+    const ownDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: { authorization: `Bearer ${acceptPayload.data.session.accessToken}` },
+    });
+    const competitorDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard?partnerLocationId=loc_harbour_001`, {
+      headers: { authorization: `Bearer ${acceptPayload.data.session.accessToken}` },
+    });
+    const competitorPayload = (await competitorDashboardResponse.json()) as ApiErrorResponse;
+
+    assert.equal(acceptResponse.status, 200);
+    assert.equal(acceptPayload.data.session.user.role, "partner");
+    assert.equal(acceptPayload.data.session.user.identifier, "new.partner@example.com");
+    assert.equal(acceptPayload.data.invitation.acceptedAt !== undefined, true);
+    assert.equal(ownDashboardResponse.status, 200);
+    assert.equal(competitorDashboardResponse.status, 403);
+    assert.equal(competitorPayload.code, "partner_location_forbidden");
+  });
+
+  it("creates property manager invitations with property permissions only", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "x-prima-permissions": "property_manage", "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "new.manager@example.com",
+        displayName: "New Manager",
+        role: "property_manager",
+        propertyId: "prop_sg_reflections",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        invitationId: invitePayload.data.id,
+        code: invitePayload.data.devCode,
+      }),
+    });
+    const acceptPayload = (await acceptResponse.json()) as ApiResponse<AcceptAccessInvitationResponse>;
+    const ownDashboardResponse = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_reflections`, {
+      headers: { authorization: `Bearer ${acceptPayload.data.session.accessToken}` },
+    });
+    const otherDashboardResponse = await fetch(`${baseUrl}/v1/management/property-dashboard?propertyId=prop_sg_marina_one`, {
+      headers: { authorization: `Bearer ${acceptPayload.data.session.accessToken}` },
+    });
+    const otherPayload = (await otherDashboardResponse.json()) as ApiErrorResponse;
+
+    assert.equal(inviteResponse.status, 201);
+    assert.equal(acceptResponse.status, 200);
+    assert.equal(acceptPayload.data.session.user.role, "property_manager");
+    assert.equal(ownDashboardResponse.status, 200);
+    assert.equal(otherDashboardResponse.status, 403);
+    assert.equal(otherPayload.code, "forbidden_property_scope");
+  });
+
+  it("blocks insufficient internal permissions from creating access invitations", async () => {
+    const partnerInviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "x-prima-permissions": "operations_read", "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "blocked.partner@example.com",
+        displayName: "Blocked Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const internalInviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "x-prima-permissions": "partner_manage", "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "blocked.internal@example.com",
+        displayName: "Blocked Internal",
+        role: "internal",
+        permissions: ["operations_read"],
+      }),
+    });
+    const partnerPayload = (await partnerInviteResponse.json()) as ApiErrorResponse;
+    const internalPayload = (await internalInviteResponse.json()) as ApiErrorResponse;
+
+    assert.equal(partnerInviteResponse.status, 403);
+    assert.equal(partnerPayload.code, "internal_permission_required");
+    assert.equal(internalInviteResponse.status, 403);
+    assert.equal(internalPayload.code, "internal_permission_required");
+  });
+
+  it("prevents accepted access invitations from being reused", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "single.use.partner@example.com",
+        displayName: "Single Use Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const body = JSON.stringify({ invitationId: invitePayload.data.id, code: invitePayload.data.devCode });
+    const firstAcceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    const secondAcceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    const secondPayload = (await secondAcceptResponse.json()) as ApiErrorResponse;
+
+    assert.equal(firstAcceptResponse.status, 200);
+    assert.equal(secondAcceptResponse.status, 409);
+    assert.equal(secondPayload.code, "access_invitation_already_accepted");
   });
 
   it("rejects an incorrect verification code", async () => {
