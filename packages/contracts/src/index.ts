@@ -110,6 +110,30 @@ export interface ResendAccessInvitationResponse {
   readonly invitation: AccessInvitation;
 }
 
+export interface AccessMembership {
+  readonly id: string;
+  readonly userId: string;
+  readonly identifier: string;
+  readonly displayName: string;
+  readonly role: AccessInvitationRole;
+  readonly organizationId?: string;
+  readonly partnerLocationId?: string;
+  readonly propertyId?: string;
+  readonly permissions: readonly InternalPermission[];
+  readonly active: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ListAccessMembershipsResponse {
+  readonly memberships: readonly AccessMembership[];
+}
+
+export interface UpdateAccessMembershipRequest {
+  readonly permissions?: readonly InternalPermission[];
+  readonly active?: boolean;
+}
+
 export interface CustomerProfile {
   readonly userId: string;
   readonly identifier: string;

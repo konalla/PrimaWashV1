@@ -7,6 +7,7 @@ import type {
   AvailabilitySearchSlot,
   Actor,
   AccessInvitation,
+  AccessMembership,
   AcceptAccessInvitationRequest,
   AcceptAccessInvitationResponse,
   BillingSession,
@@ -29,6 +30,7 @@ import type {
   CustomerProfile,
   CreateBookingRequest,
   ListAccessInvitationsResponse,
+  ListAccessMembershipsResponse,
   PartnerBookingDecisionRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
@@ -60,6 +62,7 @@ import type {
   UpdateCondoOperationalProfileRequest,
   UpdatePrimaWashDayRequest,
   UpdateAvailabilitySlotRequest,
+  UpdateAccessMembershipRequest,
   UpdateCapacityTemplateRequest,
   UpdateSchedulingConfigRequest,
   Vehicle,
@@ -278,6 +281,91 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       } catch (error) {
         if (!sendAuthError(response, error)) {
           sendError(response, 400, "access_invitation_list_failed", "Access invitations could not be loaded", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/access-memberships") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertAccessInvitationListPermission(actor);
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "100", 10);
+        const memberships = await options.repositories.accessControl.listMemberships({
+          limit: Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 200),
+        });
+        const payload: ListAccessMembershipsResponse = {
+          memberships: memberships.filter((membership) => canManageAccessMembershipRecord(actor, membership)),
+        };
+
+        sendJson(response, 200, { data: payload });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_membership_list_failed", "Access memberships could not be loaded", String(error));
+        }
+      }
+
+      return;
+    }
+
+    const membershipUpdateMatch = requestUrl.pathname.match(/^\/v1\/internal\/access-memberships\/([^/]+)$/);
+    if (request.method === "PATCH" && membershipUpdateMatch?.[1]) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        const membership = await options.repositories.accessControl.getMembership(decodeURIComponent(membershipUpdateMatch[1]));
+
+        if (!membership) {
+          sendError(response, 404, "access_membership_not_found", "Access membership does not exist");
+          return;
+        }
+
+        assertAccessMembershipRecordPermission(actor, membership);
+
+        const input = await readJsonBody<UpdateAccessMembershipRequest>(request);
+        const errors = validateUpdateAccessMembership(input, membership);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Access membership payload is invalid", errors);
+          return;
+        }
+
+        if (membership.userId === actor.userId && input.active === false) {
+          sendError(response, 409, "access_membership_self_deactivation_blocked", "You cannot deactivate your own active access");
+          return;
+        }
+
+        const update = {
+          ...(membership.role === "internal" && input.permissions ? { permissions: filterInternalPermissions(input.permissions) } : {}),
+          ...(input.active !== undefined ? { active: input.active } : {}),
+        };
+        const updated = await options.repositories.accessControl.updateMembership(membership.id, update);
+        const now = new Date().toISOString();
+
+        if (input.active === false && membership.active) {
+          await options.repositories.auth.revokeSessionsForUser(membership.userId, now);
+          await options.repositories.auth.revokeRefreshTokensForUser(membership.userId, now);
+        }
+
+        await options.repositories.audit.record({
+          actor,
+          action: input.active === false ? "access_membership.deactivated" : "access_membership.updated",
+          resourceType: "access_membership",
+          resourceId: membership.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            userId: membership.userId,
+            identifier: membership.identifier,
+            role: membership.role,
+            active: updated?.active ?? membership.active,
+            permissions: updated?.permissions ?? membership.permissions,
+          },
+        });
+
+        sendJson(response, 200, { data: updated ?? membership });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "access_membership_update_failed", "Access membership could not be updated", String(error));
         }
       }
 
@@ -4268,6 +4356,50 @@ function canManageAccessInvitationRecord(
   }
 
   return hasInternalPermission(actor, "property_manage");
+}
+
+function assertAccessMembershipRecordPermission(actor: Actor, membership: AccessMembership): void {
+  if (!canManageAccessMembershipRecord(actor, membership)) {
+    throw new Error("internal_permission_required");
+  }
+}
+
+function canManageAccessMembershipRecord(actor: Actor, membership: AccessMembership): boolean {
+  if (actor.role !== "internal") {
+    return false;
+  }
+
+  if (membership.role === "internal") {
+    return hasInternalPermission(actor, "super_admin");
+  }
+
+  if (membership.role === "partner") {
+    return hasInternalPermission(actor, "partner_manage");
+  }
+
+  return hasInternalPermission(actor, "property_manage");
+}
+
+function validateUpdateAccessMembership(input: UpdateAccessMembershipRequest, membership: AccessMembership): string[] {
+  const errors: string[] = [];
+
+  if (input.active !== undefined && typeof input.active !== "boolean") {
+    errors.push("active must be a boolean");
+  }
+
+  if (input.permissions !== undefined) {
+    if (membership.role !== "internal") {
+      errors.push("permissions can only be changed for internal memberships");
+    } else if (input.permissions.some((permission) => !isInternalPermission(permission))) {
+      errors.push("permissions contains an unsupported internal permission");
+    }
+  }
+
+  if (input.active === undefined && input.permissions === undefined) {
+    errors.push("active or permissions is required");
+  }
+
+  return errors;
 }
 
 function normalizeInvitationIdentifier(identifier: string): string {

@@ -99,6 +99,8 @@ export interface AuthRepository {
   ): Promise<AuthRefreshTokenRecord | undefined>;
   revokeRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number>;
   revokeSessionsForRefreshTokenFamily(familyId: string, revokedAt: string): Promise<number>;
+  revokeSessionsForUser(userId: string, revokedAt: string): Promise<number>;
+  revokeRefreshTokensForUser(userId: string, revokedAt: string): Promise<number>;
   revokeRefreshTokensForSession(sessionId: string, revokedAt: string): Promise<number>;
   cleanupExpired(input: {
     readonly now: string;
@@ -247,6 +249,32 @@ export class InMemoryAuthRepository implements AuthRepository {
 
       if (session && !session.revokedAt) {
         this.#sessions.set(sessionId, { ...session, revokedAt });
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
+  async revokeSessionsForUser(userId: string, revokedAt: string): Promise<number> {
+    let count = 0;
+
+    for (const [id, session] of this.#sessions) {
+      if (session.userId === userId && !session.revokedAt) {
+        this.#sessions.set(id, { ...session, revokedAt });
+        count += 1;
+      }
+    }
+
+    return count;
+  }
+
+  async revokeRefreshTokensForUser(userId: string, revokedAt: string): Promise<number> {
+    let count = 0;
+
+    for (const [id, token] of this.#refreshTokens) {
+      if (token.userId === userId && !token.revokedAt) {
+        this.#refreshTokens.set(id, { ...token, revokedAt });
         count += 1;
       }
     }
@@ -506,6 +534,28 @@ export class PostgresAuthRepository implements AuthRepository {
          where family_id = $1
        )`,
       [familyId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async revokeSessionsForUser(userId: string, revokedAt: string): Promise<number> {
+    const result = await this.pool.query(
+      `update auth_sessions
+       set revoked_at = coalesce(revoked_at, $2)
+       where user_id = $1`,
+      [userId, revokedAt],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
+  async revokeRefreshTokensForUser(userId: string, revokedAt: string): Promise<number> {
+    const result = await this.pool.query(
+      `update auth_refresh_tokens
+       set revoked_at = coalesce(revoked_at, $2)
+       where user_id = $1`,
+      [userId, revokedAt],
     );
 
     return result.rowCount ?? 0;

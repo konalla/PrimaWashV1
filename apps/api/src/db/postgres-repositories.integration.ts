@@ -198,6 +198,12 @@ describe("Postgres repository parity", () => {
       });
       userId = identity.user.id;
       const resolved = await accessControl.resolveLogin(identifier);
+      const membership = (await accessControl.listMemberships({ limit: 25 })).find((item) => item.identifier === identifier);
+
+      assert.ok(membership);
+
+      const updatedMembership = await accessControl.updateMembership(membership.id, { active: false });
+      const resolvedAfterDeactivation = await accessControl.resolveLogin(identifier);
 
       assert.equal(listed.some((item) => item.id === invitation.id), true);
       assert.equal(recoded?.codeHash, `hash_updated_${suffix}`);
@@ -207,6 +213,10 @@ describe("Postgres repository parity", () => {
       assert.equal(identity.user.role, "partner");
       assert.equal(resolved?.actor.role, "partner");
       assert.equal(resolved?.actor.organizationId, "org_partner_001");
+      assert.equal(membership.role, "partner");
+      assert.equal(membership.active, true);
+      assert.equal(updatedMembership?.active, false);
+      assert.equal(resolvedAfterDeactivation?.actor.role, "customer");
     } finally {
       if (invitationId) {
         await pool.query("delete from access_invitations where id = $1", [invitationId]);

@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import type {
   ApiErrorResponse,
   AccessInvitation,
+  AccessMembership,
   AcceptAccessInvitationResponse,
   AuthSession,
   BillingSession,
@@ -557,6 +558,129 @@ describe("Prima Wash API", () => {
     assert.equal(revokePayload.code, "access_invitation_already_accepted");
     assert.equal(resendResponse.status, 409);
     assert.equal(resendPayload.code, "access_invitation_already_accepted");
+  });
+
+  it("lists active access memberships by internal permission scope", async () => {
+    const superAdminResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: internalHeaders,
+    });
+    const partnerManagerSession = await createCustomerSession("partner.ops@primawash.local");
+    const partnerScopedResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: authHeaders(partnerManagerSession),
+    });
+    const propertyManagerSession = await createCustomerSession("property.ops@primawash.local");
+    const propertyScopedResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: authHeaders(propertyManagerSession),
+    });
+    const superAdminPayload = (await superAdminResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+    const partnerScopedPayload = (await partnerScopedResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+    const propertyScopedPayload = (await propertyScopedResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+
+    assert.equal(superAdminResponse.status, 200);
+    assert.equal(superAdminPayload.data.memberships.some((membership) => membership.role === "internal"), true);
+    assert.equal(superAdminPayload.data.memberships.some((membership) => membership.role === "partner"), true);
+    assert.equal(superAdminPayload.data.memberships.some((membership) => membership.role === "property_manager"), true);
+    assert.equal(partnerScopedResponse.status, 200);
+    assert.equal(partnerScopedPayload.data.memberships.every((membership) => membership.role === "partner"), true);
+    assert.equal(propertyScopedResponse.status, 200);
+    assert.equal(propertyScopedPayload.data.memberships.every((membership) => membership.role === "property_manager"), true);
+  });
+
+  it("updates internal membership permissions without replacing the user session", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "ops.promoted@example.com",
+        displayName: "Ops Promoted",
+        role: "internal",
+        permissions: ["operations_read"],
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invitationId: invitePayload.data.id, code: invitePayload.data.devCode }),
+    });
+    const acceptPayload = (await acceptResponse.json()) as ApiResponse<AcceptAccessInvitationResponse>;
+    const deniedResponse = await fetch(`${baseUrl}/v1/internal/property-leads`, {
+      headers: authHeaders(acceptPayload.data.session),
+    });
+    const membershipsResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: internalHeaders,
+    });
+    const membershipsPayload = (await membershipsResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+    const membership = membershipsPayload.data.memberships.find((item) => item.identifier === "ops.promoted@example.com");
+
+    assert.equal(inviteResponse.status, 201);
+    assert.equal(acceptResponse.status, 200);
+    assert.equal(deniedResponse.status, 403);
+    assert.ok(membership);
+
+    const updateResponse = await fetch(`${baseUrl}/v1/internal/access-memberships/${membership.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ permissions: ["operations_read", "property_manage"] }),
+    });
+    const updatePayload = (await updateResponse.json()) as ApiResponse<AccessMembership>;
+    const allowedResponse = await fetch(`${baseUrl}/v1/internal/property-leads`, {
+      headers: authHeaders(acceptPayload.data.session),
+    });
+
+    assert.equal(updateResponse.status, 200);
+    assert.deepEqual(updatePayload.data.permissions, ["operations_read", "property_manage"]);
+    assert.equal(allowedResponse.status, 200);
+  });
+
+  it("deactivates access memberships and revokes existing sessions", async () => {
+    const inviteResponse = await fetch(`${baseUrl}/v1/internal/access-invitations`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        identifier: "deactivate.partner@example.com",
+        displayName: "Deactivate Partner",
+        role: "partner",
+        organizationId: "org_partner_001",
+        partnerLocationId: "loc_demo_001",
+      }),
+    });
+    const invitePayload = (await inviteResponse.json()) as ApiResponse<AccessInvitation>;
+    const acceptResponse = await fetch(`${baseUrl}/v1/access-invitations/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invitationId: invitePayload.data.id, code: invitePayload.data.devCode }),
+    });
+    const acceptPayload = (await acceptResponse.json()) as ApiResponse<AcceptAccessInvitationResponse>;
+    const activeDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: authHeaders(acceptPayload.data.session),
+    });
+    const membershipsResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: internalHeaders,
+    });
+    const membershipsPayload = (await membershipsResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+    const membership = membershipsPayload.data.memberships.find((item) => item.identifier === "deactivate.partner@example.com");
+
+    assert.equal(inviteResponse.status, 201);
+    assert.equal(acceptResponse.status, 200);
+    assert.equal(activeDashboardResponse.status, 200);
+    assert.ok(membership);
+
+    const deactivateResponse = await fetch(`${baseUrl}/v1/internal/access-memberships/${membership.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ active: false }),
+    });
+    const deactivatePayload = (await deactivateResponse.json()) as ApiResponse<AccessMembership>;
+    const revokedDashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: authHeaders(acceptPayload.data.session),
+    });
+    const reloginSession = await createCustomerSession("deactivate.partner@example.com");
+
+    assert.equal(deactivateResponse.status, 200);
+    assert.equal(deactivatePayload.data.active, false);
+    assert.equal(revokedDashboardResponse.status, 401);
+    assert.equal(reloginSession.user.role, "customer");
   });
 
   it("rejects an incorrect verification code", async () => {
