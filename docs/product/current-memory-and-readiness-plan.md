@@ -58,12 +58,14 @@ Latest Phase 1 access-invitation verification on 2026-07-04:
 - Accepted invitations cannot be reused.
 - Added a web admin Access section for creating scoped staff, partner, and property-manager invitations.
 - Added invitation list, resend, and revoke actions in the API and web admin Access section.
-- Added active access membership management: scoped membership listing, internal permission updates, access deactivation, and session/refresh-token revocation on deactivation.
+- Added active access membership management: scoped membership listing, internal permission updates, access deactivation/reactivation, and session/refresh-token revocation on deactivation.
 - Access records are deactivated rather than deleted so audit history remains intact.
+- Added safeguards so internal memberships keep at least one permission and super admins cannot accidentally remove their own `super_admin` permission.
+- Added active access UI affordances for readable scope labels, explicit confirmations, reactivation, and recent access lifecycle activity.
 - Added a Partner manager internal profile for browser testing and partner-management invite boundaries.
 - Revoked invitations cannot be accepted, and accepted invitations cannot be resent or revoked.
 - `npm run check` passed.
-- `npm run test --workspace @prima-wash/api` passed with 102 API tests.
+- `npm run test --workspace @prima-wash/api` passed with 103 API tests.
 - `npm run db:migrate` applied `0031_partner_manage_internal_user.sql`.
 - `npm run db:smoke` passed with 31 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.

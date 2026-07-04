@@ -335,6 +335,21 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        if (
+          membership.userId === actor.userId &&
+          input.permissions !== undefined &&
+          membership.permissions.includes("super_admin") &&
+          !input.permissions.includes("super_admin")
+        ) {
+          sendError(
+            response,
+            409,
+            "access_membership_self_super_admin_removal_blocked",
+            "You cannot remove your own super admin permission",
+          );
+          return;
+        }
+
         const update = {
           ...(membership.role === "internal" && input.permissions ? { permissions: filterInternalPermissions(input.permissions) } : {}),
           ...(input.active !== undefined ? { active: input.active } : {}),
@@ -349,7 +364,12 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         await options.repositories.audit.record({
           actor,
-          action: input.active === false ? "access_membership.deactivated" : "access_membership.updated",
+          action:
+            input.active === false
+              ? "access_membership.deactivated"
+              : input.active === true && !membership.active
+                ? "access_membership.reactivated"
+                : "access_membership.updated",
           resourceType: "access_membership",
           resourceId: membership.id,
           requestId: requestContext.requestId,
@@ -4390,6 +4410,8 @@ function validateUpdateAccessMembership(input: UpdateAccessMembershipRequest, me
   if (input.permissions !== undefined) {
     if (membership.role !== "internal") {
       errors.push("permissions can only be changed for internal memberships");
+    } else if (input.permissions.length === 0) {
+      errors.push("internal memberships must keep at least one permission");
     } else if (input.permissions.some((permission) => !isInternalPermission(permission))) {
       errors.push("permissions contains an unsupported internal permission");
     }

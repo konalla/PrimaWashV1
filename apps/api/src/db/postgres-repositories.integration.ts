@@ -204,6 +204,8 @@ describe("Postgres repository parity", () => {
 
       const updatedMembership = await accessControl.updateMembership(membership.id, { active: false });
       const resolvedAfterDeactivation = await accessControl.resolveLogin(identifier);
+      const reactivatedMembership = await accessControl.updateMembership(membership.id, { active: true });
+      const resolvedAfterReactivation = await accessControl.resolveLogin(identifier);
 
       assert.equal(listed.some((item) => item.id === invitation.id), true);
       assert.equal(recoded?.codeHash, `hash_updated_${suffix}`);
@@ -217,6 +219,8 @@ describe("Postgres repository parity", () => {
       assert.equal(membership.active, true);
       assert.equal(updatedMembership?.active, false);
       assert.equal(resolvedAfterDeactivation?.actor.role, "customer");
+      assert.equal(reactivatedMembership?.active, true);
+      assert.equal(resolvedAfterReactivation?.actor.role, "partner");
     } finally {
       if (invitationId) {
         await pool.query("delete from access_invitations where id = $1", [invitationId]);

@@ -2534,8 +2534,8 @@
           <div class="section-heading compact-heading">
             <div>
               <p class="eyebrow">Active access</p>
-              <h3>Manage users with live access</h3>
-              <p class="section-description">Deactivate access without deleting audit history. Internal permissions can only be changed by super admins.</p>
+              <h3>Manage team, partner, and office access</h3>
+              <p class="section-description">Deactivate or reactivate access without deleting audit history. Internal permissions can only be changed by super admins.</p>
             </div>
             <span class="pill">${memberships.length} users</span>
           </div>
@@ -2544,6 +2544,7 @@
               ? `<div class="empty">No manageable active users for this internal profile.</div>`
               : memberships.map(renderAccessMembershipRow).join("")
           }
+          ${renderAccessMembershipAudit()}
         `;
       }
 
@@ -2569,13 +2570,13 @@
               </div>
               <div class="lead-meta">
                 <span class="lead-chip ${membership.active ? "" : "is-warning"}">${membership.active ? "Active" : "Inactive"}</span>
-                <span class="lead-chip">${escapeHtml(membership.organizationId || membership.propertyId || "Prima Wash")}</span>
+                <span class="lead-chip">${escapeHtml(accessMembershipScopeChip(membership))}</span>
                 ${membership.partnerLocationId ? `<span class="lead-chip">${escapeHtml(membership.partnerLocationId)}</span>` : ""}
               </div>
             </div>
             <div class="lead-copy">
               <strong>Scope</strong>
-              <span class="muted">${membership.role === "internal" ? "Prima Wash internal" : escapeHtml(membership.partnerLocationId || membership.propertyId || "Scoped workspace")}</span>
+              <span class="muted">${escapeHtml(accessMembershipScopeLabel(membership))}</span>
             </div>
             <div class="lead-copy">
               <strong>Permissions</strong>
@@ -2602,9 +2603,69 @@
                   ? `<button class="action" type="button" data-save-membership-permissions="${escapeHtml(membership.id)}">Save permissions</button>`
                   : ""
               }
-              <button class="action" type="button" data-deactivate-membership="${escapeHtml(membership.id)}" ${canManage && membership.active ? "" : "disabled"}>Deactivate</button>
+              ${
+                membership.active
+                  ? `<button class="action" type="button" data-deactivate-membership="${escapeHtml(membership.id)}" ${canManage ? "" : "disabled"}>Deactivate</button>`
+                  : `<button class="action" type="button" data-reactivate-membership="${escapeHtml(membership.id)}" ${canManage ? "" : "disabled"}>Reactivate</button>`
+              }
             </div>
           </article>
+        `;
+      }
+
+      function accessMembershipScopeChip(membership) {
+        if (membership.role === "internal") {
+          return "Prima Wash internal";
+        }
+
+        if (membership.role === "partner") {
+          return "Partner location";
+        }
+
+        return "Property office";
+      }
+
+      function accessMembershipScopeLabel(membership) {
+        if (membership.role === "internal") {
+          return "Prima Wash internal operations workspace";
+        }
+
+        if (membership.role === "partner") {
+          return `Partner location: ${membership.partnerLocationId || "assigned location"}`;
+        }
+
+        return `Property office: ${membership.propertyId || "assigned property"}`;
+      }
+
+      function renderAccessMembershipAudit() {
+        const events = (dashboardCache?.data?.auditEvents || [])
+          .filter((event) => event.action.startsWith("access_invitation.") || event.action.startsWith("access_membership."))
+          .slice(0, 5);
+
+        if (events.length === 0) {
+          return `<div class="empty">Access lifecycle activity will appear here after invitations, permission changes, deactivations, or reactivations.</div>`;
+        }
+
+        return `
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">Access audit</p>
+              <h3>Recent access lifecycle</h3>
+            </div>
+          </div>
+          ${events
+            .map(
+              (event) => `
+                <div class="audit-row">
+                  <div class="badge">OK</div>
+                  <div>
+                    <strong>${formatActivity(event)}</strong><br />
+                    <span class="muted">${formatActivityDetail(event)} - ${formatRelativeTime(event.createdAt)}</span>
+                  </div>
+                </div>
+              `,
+            )
+            .join("")}
         `;
       }
 
@@ -4650,6 +4711,25 @@
           const membershipId = saveMembershipPermissionsButton.dataset.saveMembershipPermissions;
           const row = saveMembershipPermissionsButton.closest("[data-membership-row]");
           const permissions = [...row.querySelectorAll("input[name='membership-permissions']:checked")].map((input) => input.value);
+          const membership = accessMembershipsCache.find((item) => item.id === membershipId);
+
+          if (permissions.length === 0) {
+            showToast("Internal access must keep at least one permission.", "error");
+            return;
+          }
+
+          if (
+            membership?.userId === workspaceSession?.user?.id &&
+            membership.permissions?.includes("super_admin") &&
+            !permissions.includes("super_admin")
+          ) {
+            showToast("You cannot remove your own super admin access.", "error");
+            return;
+          }
+
+          if (!window.confirm("Save internal permission changes for this user? This changes what they can see and modify in Prima Wash admin.")) {
+            return;
+          }
 
           saveMembershipPermissionsButton.disabled = true;
 
@@ -4669,7 +4749,7 @@
         const deactivateMembershipButton = event.target.closest("button[data-deactivate-membership]");
 
         if (deactivateMembershipButton) {
-          if (!window.confirm("Deactivate this user's access? Existing sessions will be revoked, but the record remains for audit history.")) {
+          if (!window.confirm("Deactivate access and revoke existing sessions? The record will remain for audit history.")) {
             return;
           }
 
@@ -4683,6 +4763,28 @@
             showToast(error.message, "error");
           } finally {
             deactivateMembershipButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const reactivateMembershipButton = event.target.closest("button[data-reactivate-membership]");
+
+        if (reactivateMembershipButton) {
+          if (!window.confirm("Reactivate this user's access? They will be able to sign in again with their assigned scope.")) {
+            return;
+          }
+
+          reactivateMembershipButton.disabled = true;
+
+          try {
+            await updateAccessMembership(reactivateMembershipButton.dataset.reactivateMembership, { active: true });
+            await refreshAccessMemberships();
+            showToast("Access reactivated.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            reactivateMembershipButton.disabled = false;
           }
 
           return;

@@ -681,6 +681,48 @@ describe("Prima Wash API", () => {
     assert.equal(deactivatePayload.data.active, false);
     assert.equal(revokedDashboardResponse.status, 401);
     assert.equal(reloginSession.user.role, "customer");
+
+    const reactivateResponse = await fetch(`${baseUrl}/v1/internal/access-memberships/${membership.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ active: true }),
+    });
+    const reactivatePayload = (await reactivateResponse.json()) as ApiResponse<AccessMembership>;
+    const restoredSession = await createCustomerSession("deactivate.partner@example.com");
+
+    assert.equal(reactivateResponse.status, 200);
+    assert.equal(reactivatePayload.data.active, true);
+    assert.equal(restoredSession.user.role, "partner");
+  });
+
+  it("blocks unsafe internal membership permission updates", async () => {
+    const listResponse = await fetch(`${baseUrl}/v1/internal/access-memberships`, {
+      headers: internalHeaders,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<{ memberships: AccessMembership[] }>;
+    const superAdminMembership = listPayload.data.memberships.find((membership) => membership.userId === "usr_internal_001");
+    const opsReadMembership = listPayload.data.memberships.find((membership) => membership.userId === "usr_internal_ops_read_001");
+
+    assert.ok(superAdminMembership);
+    assert.ok(opsReadMembership);
+
+    const selfRemovalResponse = await fetch(`${baseUrl}/v1/internal/access-memberships/${superAdminMembership.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ permissions: ["operations_read"] }),
+    });
+    const selfRemovalPayload = (await selfRemovalResponse.json()) as ApiErrorResponse;
+    const emptyPermissionsResponse = await fetch(`${baseUrl}/v1/internal/access-memberships/${opsReadMembership.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ permissions: [] }),
+    });
+    const emptyPermissionsPayload = (await emptyPermissionsResponse.json()) as ApiErrorResponse;
+
+    assert.equal(selfRemovalResponse.status, 409);
+    assert.equal(selfRemovalPayload.code, "access_membership_self_super_admin_removal_blocked");
+    assert.equal(emptyPermissionsResponse.status, 400);
+    assert.equal(emptyPermissionsPayload.code, "validation_failed");
   });
 
   it("rejects an incorrect verification code", async () => {
