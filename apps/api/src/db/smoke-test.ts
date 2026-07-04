@@ -56,6 +56,10 @@ try {
   await assertColumnExists("bookings", "onsite_service_mode");
   await assertColumnExists("bookings", "valet_requested");
   await assertColumnExists("bookings", "execution_notes");
+  await assertColumnExists("bookings", "operational_exception_code");
+  await assertColumnExists("bookings", "operational_exception_notes");
+  await assertColumnExists("bookings", "operational_exception_reported_at");
+  await assertColumnExists("bookings", "operational_exception_resolved_at");
   await assertColumnExists("payment_intents", "provider");
   await assertColumnExists("payment_intents", "provider_reference");
   await assertColumnExists("payment_intents", "client_secret");
@@ -189,12 +193,14 @@ async function assertTransactionalWriteRead(): Promise<void> {
     await client.query(
       `insert into bookings (
         id, owner_id, vehicle_id, partner_location_id, service_code, status, scheduled_start_at, scheduled_end_at,
-        accepted_price_amount_minor, accepted_price_currency, onsite_service_mode, valet_requested, execution_notes
+        accepted_price_amount_minor, accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+        operational_exception_code, operational_exception_notes, operational_exception_reported_at
       )
       values (
         $1, 'usr_demo_001', $2, 'loc_demo_001', 'wash_basic', 'pending_payment',
         '2026-07-04T06:00:00.000Z', '2026-07-04T06:30:00.000Z', 2500, 'USD',
-        'pickup_return', true, 'Smoke test pickup and return persistence.'
+        'pickup_return', true, 'Smoke test pickup and return persistence.',
+        'pickup_return_issue', 'Smoke test exception persistence.', now()
       )`,
       [bookingId, vehicleId],
     );
@@ -215,20 +221,28 @@ async function assertTransactionalWriteRead(): Promise<void> {
       plate_number: string;
       onsite_service_mode: string;
       valet_requested: boolean;
+      operational_exception_code: string | null;
       message_count: string;
     }>(
-      `select v.plate_number, b.onsite_service_mode, b.valet_requested, count(cm.id)::text as message_count
+      `select v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
+              count(cm.id)::text as message_count
        from bookings b
        join vehicles v on v.id = b.vehicle_id
        join communication_threads ct on ct.resource_id = b.id
        join communication_messages cm on cm.thread_id = ct.id
        where b.id = $1
-       group by v.plate_number, b.onsite_service_mode, b.valet_requested`,
+       group by v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code`,
       [bookingId],
     );
 
     const row = result.rows[0];
-    if (!row || row.onsite_service_mode !== "pickup_return" || !row.valet_requested || Number(row.message_count) !== 1) {
+    if (
+      !row ||
+      row.onsite_service_mode !== "pickup_return" ||
+      !row.valet_requested ||
+      row.operational_exception_code !== "pickup_return_issue" ||
+      Number(row.message_count) !== 1
+    ) {
       throw new Error("transactional_write_read_failed");
     }
 
@@ -236,6 +250,7 @@ async function assertTransactionalWriteRead(): Promise<void> {
       name: "transactional_write_read",
       details: {
         bookingServiceMode: row.onsite_service_mode,
+        operationalExceptionCode: row.operational_exception_code,
         messageCount: Number(row.message_count),
       },
     });

@@ -1,11 +1,13 @@
 import type {
   Booking,
+  BookingOperationalExceptionCode,
   BookingOnsiteServiceMode,
   BookingStatus,
   CreateBookingRequest,
   Money,
   PartnerBookingDecisionRequest,
   ServiceCode,
+  UpdateBookingOperationalExceptionRequest,
   UpdateBookingExecutionRequest,
 } from "@prima-wash/contracts";
 import type { DatabasePool } from "../../db/pool.js";
@@ -21,6 +23,7 @@ export interface BookingRepository {
   create(input: CreateBookingInput): Promise<Booking>;
   updateStatus(bookingId: string, status: BookingStatus): Promise<Booking>;
   updateExecution(bookingId: string, input: NormalizedBookingExecutionUpdate): Promise<Booking>;
+  updateOperationalException(bookingId: string, input: NormalizedBookingOperationalExceptionUpdate): Promise<Booking>;
 }
 
 export type NormalizedBookingExecutionUpdate = Omit<
@@ -29,6 +32,15 @@ export type NormalizedBookingExecutionUpdate = Omit<
 > & {
   readonly technicianCheckedInAt?: string | null;
   readonly technicianCheckedOutAt?: string | null;
+};
+
+export type NormalizedBookingOperationalExceptionUpdate = Required<
+  Pick<UpdateBookingOperationalExceptionRequest, "resolved">
+> & {
+  readonly code?: BookingOperationalExceptionCode;
+  readonly notes?: string;
+  readonly reportedAt?: string;
+  readonly resolvedAt?: string | null;
 };
 
 export class InMemoryBookingRepository implements BookingRepository {
@@ -169,6 +181,21 @@ export class InMemoryBookingRepository implements BookingRepository {
     this.#bookings.set(bookingId, updatedBooking);
     return updatedBooking;
   }
+
+  async updateOperationalException(
+    bookingId: string,
+    input: NormalizedBookingOperationalExceptionUpdate,
+  ): Promise<Booking> {
+    const booking = this.#bookings.get(bookingId);
+
+    if (!booking) {
+      throw new Error("booking_not_found");
+    }
+
+    const updatedBooking = mergeBookingOperationalException(booking, input);
+    this.#bookings.set(bookingId, updatedBooking);
+    return updatedBooking;
+  }
 }
 
 export class PostgresBookingRepository implements BookingRepository {
@@ -180,7 +207,9 @@ export class PostgresBookingRepository implements BookingRepository {
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                  technician_checked_in_at, technician_checked_out_at, created_at
+                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                  operational_exception_notes, operational_exception_reported_at,
+                  operational_exception_resolved_at, created_at
            from bookings
            where owner_id = $1
            order by created_at desc`,
@@ -190,7 +219,9 @@ export class PostgresBookingRepository implements BookingRepository {
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                  technician_checked_in_at, technician_checked_out_at, created_at
+                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                  operational_exception_notes, operational_exception_reported_at,
+                  operational_exception_resolved_at, created_at
            from bookings
            order by created_at desc`,
         );
@@ -203,7 +234,9 @@ export class PostgresBookingRepository implements BookingRepository {
       `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
               scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
               accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-              technician_checked_in_at, technician_checked_out_at, created_at
+              technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+              operational_exception_notes, operational_exception_reported_at,
+              operational_exception_resolved_at, created_at
        from bookings
        where id = $1`,
       [bookingId],
@@ -290,7 +323,9 @@ export class PostgresBookingRepository implements BookingRepository {
           returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                     scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                     accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                    technician_checked_in_at, technician_checked_out_at, created_at`,
+                    technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                    operational_exception_notes, operational_exception_reported_at,
+                    operational_exception_resolved_at, created_at`,
           [
             booking.id,
             booking.ownerId,
@@ -400,7 +435,9 @@ export class PostgresBookingRepository implements BookingRepository {
         returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                  technician_checked_in_at, technician_checked_out_at, created_at`,
+                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                  operational_exception_notes, operational_exception_reported_at,
+                  operational_exception_resolved_at, created_at`,
         [
           booking.id,
           booking.ownerId,
@@ -443,7 +480,9 @@ export class PostgresBookingRepository implements BookingRepository {
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                 technician_checked_in_at, technician_checked_out_at, created_at`,
+                 technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                 operational_exception_notes, operational_exception_reported_at,
+                 operational_exception_resolved_at, created_at`,
       [bookingId, status],
     );
 
@@ -468,7 +507,9 @@ export class PostgresBookingRepository implements BookingRepository {
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-                 technician_checked_in_at, technician_checked_out_at, created_at`,
+                 technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                 operational_exception_notes, operational_exception_reported_at,
+                 operational_exception_resolved_at, created_at`,
       [
         bookingId,
         input.onsiteServiceMode ?? null,
@@ -476,6 +517,41 @@ export class PostgresBookingRepository implements BookingRepository {
         input.executionNotes ?? null,
         input.technicianCheckedInAt ?? null,
         input.technicianCheckedOutAt ?? null,
+      ],
+    );
+
+    const row = result.rows[0];
+
+    if (!row) {
+      throw new Error("booking_not_found");
+    }
+
+    return mapBookingRow(row);
+  }
+
+  async updateOperationalException(
+    bookingId: string,
+    input: NormalizedBookingOperationalExceptionUpdate,
+  ): Promise<Booking> {
+    const result = await this.pool.query<BookingRow>(
+      `update bookings
+       set operational_exception_code = $2,
+           operational_exception_notes = $3,
+           operational_exception_reported_at = $4,
+           operational_exception_resolved_at = $5
+       where id = $1
+       returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
+                 scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
+                 accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 technician_checked_in_at, technician_checked_out_at, operational_exception_code,
+                 operational_exception_notes, operational_exception_reported_at,
+                 operational_exception_resolved_at, created_at`,
+      [
+        bookingId,
+        input.resolved ? null : input.code ?? null,
+        input.resolved ? null : input.notes ?? null,
+        input.resolved ? null : input.reportedAt ?? null,
+        input.resolved ? input.resolvedAt ?? new Date().toISOString() : null,
       ],
     );
 
@@ -608,8 +684,49 @@ export function validatePartnerBookingDecision(input: Partial<PartnerBookingDeci
   return errors;
 }
 
+export function validateUpdateBookingOperationalException(
+  input: Partial<UpdateBookingOperationalExceptionRequest>,
+): string[] {
+  const errors: string[] = [];
+
+  if (input.resolved !== undefined && typeof input.resolved !== "boolean") {
+    errors.push("resolved must be boolean");
+  }
+
+  if (input.resolved !== true && !input.code) {
+    errors.push("code is required unless resolved is true");
+  }
+
+  if (input.code !== undefined && !isValidBookingOperationalExceptionCode(input.code)) {
+    errors.push("code must be a valid operational exception code");
+  }
+
+  if (input.resolved !== true && (!input.notes || input.notes.trim().length < 2)) {
+    errors.push("notes are required for operational exceptions");
+  }
+
+  if (input.notes !== undefined && input.notes.length > 2000) {
+    errors.push("notes must be 2000 characters or fewer");
+  }
+
+  return errors;
+}
+
 function isValidBookingServiceMode(value: string): value is BookingOnsiteServiceMode {
   return ["onsite", "partner_location", "customer_property", "pickup_return"].includes(value);
+}
+
+function isValidBookingOperationalExceptionCode(value: string): value is BookingOperationalExceptionCode {
+  return [
+    "customer_no_show",
+    "partner_late",
+    "access_denied",
+    "vehicle_not_found",
+    "payment_authorization_failed",
+    "pickup_return_issue",
+    "property_rule_conflict",
+    "weather_or_safety_hold",
+  ].includes(value);
 }
 
 interface BuildBookingInput {
@@ -664,6 +781,10 @@ interface BookingRow {
   readonly execution_notes: string | null;
   readonly technician_checked_in_at: Date | string | null;
   readonly technician_checked_out_at: Date | string | null;
+  readonly operational_exception_code: BookingOperationalExceptionCode | null;
+  readonly operational_exception_notes: string | null;
+  readonly operational_exception_reported_at: Date | string | null;
+  readonly operational_exception_resolved_at: Date | string | null;
   readonly created_at: Date | string;
 }
 
@@ -706,6 +827,37 @@ function mergeBookingExecution(booking: Booking, input: NormalizedBookingExecuti
   };
 }
 
+function mergeBookingOperationalException(
+  booking: Booking,
+  input: NormalizedBookingOperationalExceptionUpdate,
+): Booking {
+  if (input.resolved) {
+    const {
+      operationalExceptionCode: _code,
+      operationalExceptionNotes: _notes,
+      operationalExceptionReportedAt: _reportedAt,
+      ...bookingWithoutActiveException
+    } = booking;
+
+    return {
+      ...bookingWithoutActiveException,
+      operationalExceptionResolvedAt: input.resolvedAt ?? new Date().toISOString(),
+    };
+  }
+
+  const {
+    operationalExceptionResolvedAt: _resolvedAt,
+    ...bookingWithoutResolution
+  } = booking;
+
+  return {
+    ...bookingWithoutResolution,
+    ...(input.code ? { operationalExceptionCode: input.code } : {}),
+    ...(input.notes ? { operationalExceptionNotes: input.notes } : {}),
+    operationalExceptionReportedAt: input.reportedAt ?? new Date().toISOString(),
+  };
+}
+
 function mapBookingRow(row: BookingRow): Booking {
   return {
     id: row.id,
@@ -720,6 +872,14 @@ function mapBookingRow(row: BookingRow): Booking {
     ...(row.execution_notes ? { executionNotes: row.execution_notes } : {}),
     ...(row.technician_checked_in_at ? { technicianCheckedInAt: new Date(row.technician_checked_in_at).toISOString() } : {}),
     ...(row.technician_checked_out_at ? { technicianCheckedOutAt: new Date(row.technician_checked_out_at).toISOString() } : {}),
+    ...(row.operational_exception_code ? { operationalExceptionCode: row.operational_exception_code } : {}),
+    ...(row.operational_exception_notes ? { operationalExceptionNotes: row.operational_exception_notes } : {}),
+    ...(row.operational_exception_reported_at
+      ? { operationalExceptionReportedAt: new Date(row.operational_exception_reported_at).toISOString() }
+      : {}),
+    ...(row.operational_exception_resolved_at
+      ? { operationalExceptionResolvedAt: new Date(row.operational_exception_resolved_at).toISOString() }
+      : {}),
     scheduledStartAt: new Date(row.scheduled_start_at).toISOString(),
     scheduledEndAt: new Date(row.scheduled_end_at).toISOString(),
     acceptedPrice: {

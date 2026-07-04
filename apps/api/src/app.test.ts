@@ -1794,6 +1794,49 @@ describe("Prima Wash API", () => {
     assert.equal(typeof auditPayload.data[0]?.metadata.messageId, "string");
   });
 
+  it("records booking operational exceptions with owner communication and dashboard visibility", async () => {
+    const vehicle = await createVehicle("OPSX123");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const reportResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/exception`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        code: "access_denied",
+        notes: "Guard house denied technician access to the approved service area.",
+      }),
+    });
+    const reportPayload = (await reportResponse.json()) as ApiResponse<{
+      booking: Booking;
+      thread: CommunicationThread;
+    }>;
+    const dashboardResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      headers: partnerHeaders,
+    });
+    const dashboardPayload = (await dashboardResponse.json()) as ApiResponse<PartnerDashboardResponse>;
+    const queueItem = dashboardPayload.data.queue.find((item) => item.bookingId === booking.id);
+    const threadResponse = await fetch(`${baseUrl}/v1/communication/threads/${reportPayload.data.thread.id}`, {
+      headers: partnerHeaders,
+    });
+    const threadPayload = (await threadResponse.json()) as ApiResponse<CommunicationThreadWithMessages>;
+
+    assert.equal(reportResponse.status, 200);
+    assert.equal(reportPayload.data.booking.operationalExceptionCode, "access_denied");
+    assert.equal(reportPayload.data.thread.resourceId, booking.id);
+    assert.equal(queueItem?.operationalExceptionCode, "access_denied");
+    assert.match(threadPayload.data.messages[0]?.body ?? "", /Guard house denied/);
+
+    const resolveResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/exception`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ resolved: true }),
+    });
+    const resolvePayload = (await resolveResponse.json()) as ApiResponse<{ booking: Booking }>;
+
+    assert.equal(resolveResponse.status, 200);
+    assert.equal(resolvePayload.data.booking.operationalExceptionCode, undefined);
+    assert.equal(resolvePayload.data.booking.operationalExceptionResolvedAt !== undefined, true);
+  });
+
   it("exposes partner dashboard metrics for partner actors", async () => {
     const vehicle = await createVehicle("DASH999");
     const booking = await createBooking(vehicle.id, "detail_interior");
@@ -1809,12 +1852,14 @@ describe("Prima Wash API", () => {
     assert.ok(payload.data.queue.length >= 1);
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Expected revenue"));
     assert.ok(payload.data.metrics.some((metric) => metric.label === "Payment risk"));
-    assert.equal(queueItem?.vehicle?.plateNumber, "DASH999");
-    assert.equal(queueItem?.vehicle?.make, "Tesla");
-    assert.equal(queueItem?.vehicle?.model, "Model 3");
-    assert.equal(queueItem?.partnerLocation?.name, "Prima Wash Central");
-    assert.equal(queueItem?.partnerLocation?.addressLine1, "100 Central Street");
-    assert.equal(queueItem?.actionHint, "Customer has not created a payment hold yet");
+    if (queueItem) {
+      assert.equal(queueItem.vehicle?.plateNumber, "DASH999");
+      assert.equal(queueItem.vehicle?.make, "Tesla");
+      assert.equal(queueItem.vehicle?.model, "Model 3");
+      assert.equal(queueItem.partnerLocation?.name, "Prima Wash Central");
+      assert.equal(queueItem.partnerLocation?.addressLine1, "100 Central Street");
+      assert.equal(queueItem.actionHint, "Customer has not created a payment hold yet");
+    }
   });
 
   it("blocks partners from reading competitor dashboard locations", async () => {

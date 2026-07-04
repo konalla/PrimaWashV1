@@ -70,6 +70,20 @@ Latest Phase 1 access-invitation verification on 2026-07-04:
 - `npm run db:smoke` passed with 31 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest booking-operations verification on 2026-07-04:
+
+- Added `0032_booking_operational_exceptions.sql`.
+- Bookings can now persist active operational exceptions for customer no-show, partner late arrival, access denial, vehicle not found, payment authorization failure, pickup/return issue, property-rule conflict, and weather/safety hold.
+- Partner-scoped and internal operators can report/update/resolve booking exceptions through the API with existing partner/internal access boundaries.
+- Reporting an exception creates an owner communication thread, audit event, and dashboard-visible booking blocker.
+- Resolving an exception clears the active blocker while retaining resolved timestamp history.
+- Web operations drawers now show exception chips, exception notes, exception reporting controls, and explicit resolution controls.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 104 API tests.
+- `npm run db:migrate` applied `0032_booking_operational_exceptions.sql`.
+- `npm run db:smoke` passed with 32 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -114,7 +128,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0031_partner_manage_internal_user.sql`.
+- Postgres migrations through `0032_booking_operational_exceptions.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -128,6 +142,7 @@ Backend foundations now include:
 - Customer profiles, residential profiles, garage vehicles, and service records.
 - Property records, property interests, condo activation pipeline, condo operational profiles, and Prima Wash Days.
 - Booking holds, bookings, service modes, partner decisions, execution fields, status transitions, cancellations, audit events, and product events.
+- Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, and Stripe webhook reconciliation tests.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.

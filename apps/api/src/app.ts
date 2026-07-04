@@ -58,6 +58,7 @@ import type {
   ServiceCapacityRule,
   UpdatePropertyActivationRequest,
   UpdateBookingExecutionRequest,
+  UpdateBookingOperationalExceptionRequest,
   UpdateBookingStatusRequest,
   UpdateCondoOperationalProfileRequest,
   UpdatePrimaWashDayRequest,
@@ -102,6 +103,7 @@ import {
   validateCreateBooking,
   validatePartnerBookingDecision,
   validateUpdateBookingExecution,
+  validateUpdateBookingOperationalException,
   validateUpdateBookingStatus,
 } from "./modules/bookings/repository.js";
 import type { Repositories } from "./modules/repositories.js";
@@ -2402,6 +2404,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
+    const bookingExceptionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/exception$/);
     const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
     const bookingPartnerDecisionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/partner-decision$/);
     const availabilityUpdateMatch = requestUrl.pathname.match(/^\/v1\/partner\/availability\/([^/]+)$/);
@@ -2609,6 +2612,84 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       } catch (error) {
         if (!sendAuthError(response, error)) {
           sendError(response, 400, "invalid_request", "Booking execution request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "PATCH" && bookingExceptionMatch) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingExceptionMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<UpdateBookingOperationalExceptionRequest>(request);
+        const errors = validateUpdateBookingOperationalException(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking exception payload is invalid", errors);
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
+        const now = new Date().toISOString();
+        const updatedBooking = await options.repositories.bookings.updateOperationalException(booking.id, {
+          resolved: input.resolved === true,
+          ...(input.resolved === true ? { resolvedAt: now } : {}),
+          ...(input.code ? { code: input.code } : {}),
+          ...(input.notes ? { notes: input.notes.trim() } : {}),
+          ...(input.resolved === true ? {} : { reportedAt: booking.operationalExceptionReportedAt ?? now }),
+        });
+        let thread: CommunicationThread | undefined;
+
+        if (input.resolved !== true) {
+          thread = await options.repositories.communications.create({
+            type: "partner_to_owner",
+            resourceType: "booking",
+            resourceId: booking.id,
+            subject: `Booking ${booking.id.slice(-8).toUpperCase()} operational exception`,
+            actor,
+            initialMessage: `Operational exception: ${input.code}. ${input.notes?.trim() ?? ""}`,
+          });
+        }
+
+        await options.repositories.audit.record({
+          actor,
+          action: input.resolved === true ? "booking.exception_resolved" : "booking.exception_reported",
+          resourceType: "booking",
+          resourceId: booking.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            partnerLocationId: updatedBooking.partnerLocationId,
+            exceptionCode: input.resolved === true ? booking.operationalExceptionCode ?? null : updatedBooking.operationalExceptionCode ?? null,
+            threadId: thread?.id,
+          },
+        });
+
+        sendJson(response, 200, { data: { booking: updatedBooking, ...(thread ? { thread } : {}) } });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "partner_booking_forbidden") {
+            sendError(response, 403, message, "Partner is not allowed to manage this booking");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Booking exception request could not be processed", message);
         }
       }
 
@@ -3494,6 +3575,10 @@ function buildPartnerDashboard(
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
+        ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),
+        ...(booking.operationalExceptionNotes ? { operationalExceptionNotes: booking.operationalExceptionNotes } : {}),
+        ...(booking.operationalExceptionReportedAt ? { operationalExceptionReportedAt: booking.operationalExceptionReportedAt } : {}),
+        ...(booking.operationalExceptionResolvedAt ? { operationalExceptionResolvedAt: booking.operationalExceptionResolvedAt } : {}),
         ...(payment ? { paymentIntentId: payment.id, paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,
@@ -3653,6 +3738,10 @@ function buildPrimaWashDayBookingItems(
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
+        ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),
+        ...(booking.operationalExceptionNotes ? { operationalExceptionNotes: booking.operationalExceptionNotes } : {}),
+        ...(booking.operationalExceptionReportedAt ? { operationalExceptionReportedAt: booking.operationalExceptionReportedAt } : {}),
+        ...(booking.operationalExceptionResolvedAt ? { operationalExceptionResolvedAt: booking.operationalExceptionResolvedAt } : {}),
         ...(payment ? { paymentIntentId: payment.id, paymentStatus: payment.status, paymentAmount: payment.amount } : {}),
         actionHint: getPartnerActionHint(booking, payment),
         scheduledStartAt: booking.scheduledStartAt,

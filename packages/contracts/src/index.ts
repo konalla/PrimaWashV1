@@ -430,6 +430,10 @@ export interface PartnerQueueItem {
   readonly executionNotes?: string;
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
+  readonly operationalExceptionCode?: BookingOperationalExceptionCode;
+  readonly operationalExceptionNotes?: string;
+  readonly operationalExceptionReportedAt?: string;
+  readonly operationalExceptionResolvedAt?: string;
   readonly paymentIntentId?: string;
   readonly paymentStatus?: PaymentStatus;
   readonly paymentAmount?: Money;
@@ -521,6 +525,22 @@ export type PartnerBookingDecision = "accept" | "request_clarification" | "rejec
 export interface PartnerBookingDecisionRequest {
   readonly decision: PartnerBookingDecision;
   readonly message?: string;
+}
+
+export type BookingOperationalExceptionCode =
+  | "customer_no_show"
+  | "partner_late"
+  | "access_denied"
+  | "vehicle_not_found"
+  | "payment_authorization_failed"
+  | "pickup_return_issue"
+  | "property_rule_conflict"
+  | "weather_or_safety_hold";
+
+export interface UpdateBookingOperationalExceptionRequest {
+  readonly code?: BookingOperationalExceptionCode;
+  readonly notes?: string;
+  readonly resolved?: boolean;
 }
 
 export interface Vehicle {
@@ -778,6 +798,10 @@ export interface Booking {
   readonly executionNotes?: string;
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
+  readonly operationalExceptionCode?: BookingOperationalExceptionCode;
+  readonly operationalExceptionNotes?: string;
+  readonly operationalExceptionReportedAt?: string;
+  readonly operationalExceptionResolvedAt?: string;
   readonly scheduledStartAt: string;
   readonly scheduledEndAt: string;
   readonly acceptedPrice: Money;

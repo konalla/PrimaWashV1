@@ -101,6 +101,23 @@ describe("Postgres repository parity", () => {
       assert.equal(updatedExecution.technicianCheckedInAt, "2026-07-05T02:05:00.000Z");
       assert.equal(updatedExecution.technicianCheckedOutAt, "2026-07-05T02:35:00.000Z");
 
+      const exceptionBooking = await bookings.updateOperationalException(booking.id, {
+        resolved: false,
+        code: "pickup_return_issue",
+        notes: "Customer requested a different return point.",
+        reportedAt: "2026-07-05T02:10:00.000Z",
+      });
+      const resolvedExceptionBooking = await bookings.updateOperationalException(booking.id, {
+        resolved: true,
+        resolvedAt: "2026-07-05T02:20:00.000Z",
+      });
+
+      assert.equal(exceptionBooking.operationalExceptionCode, "pickup_return_issue");
+      assert.equal(exceptionBooking.operationalExceptionNotes, "Customer requested a different return point.");
+      assert.equal(exceptionBooking.operationalExceptionReportedAt, "2026-07-05T02:10:00.000Z");
+      assert.equal(resolvedExceptionBooking.operationalExceptionCode, undefined);
+      assert.equal(resolvedExceptionBooking.operationalExceptionResolvedAt, "2026-07-05T02:20:00.000Z");
+
       const payment = await payments.createForBooking(updatedExecution, {
         provider: "stripe",
         operation: "create",

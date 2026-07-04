@@ -3290,6 +3290,7 @@
                         <strong>${formatService(item.serviceCode)}</strong><br />
                         <span class="muted">${isAdminMode ? escapeHtml(item.partnerLocation?.name || "Partner location") : "Vehicle appointment"} · Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
                         <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
+                        ${renderOperationalExceptionChip(item)}
                         ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
                       </div>
                       <div class="queue-status">
@@ -3372,6 +3373,7 @@
                         <strong>${formatService(item.serviceCode)}</strong><br />
                         <span class="muted">Condo day booking - Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
                         <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
+                        ${renderOperationalExceptionChip(item)}
                         ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
                       </div>
                       <div class="queue-status">
@@ -3704,6 +3706,7 @@
               </div>
               ${paymentBlocked ? `<div class="blocker-card">Payment blocked. Do not confirm until the customer authorizes payment.</div>` : ""}
               <p class="action-hint">${nextAction}</p>
+              ${item.operationalExceptionCode ? `<div class="blocker-card">Operational exception: ${formatOperationalException(item.operationalExceptionCode)}. ${escapeHtml(item.operationalExceptionNotes || "")}</div>` : ""}
             </section>
 
             <section class="work-order-card">
@@ -3736,6 +3739,7 @@
 
             ${renderServiceModeWorkOrder(item)}
             ${renderSiteInstructions(item)}
+            ${renderOperationalExceptionPanel(item, executionDisabled)}
 
             <section>
               <div class="section-heading compact-heading">
@@ -4004,6 +4008,86 @@
             <div class="detail-item"><span>Site notes</span><strong>${escapeHtml(day.operatingNotes || "No additional notes")}</strong></div>
           </section>
         `;
+      }
+
+      function renderOperationalExceptionPanel(item, executionDisabled) {
+        const exceptionOptions = [
+          "customer_no_show",
+          "partner_late",
+          "access_denied",
+          "vehicle_not_found",
+          "payment_authorization_failed",
+          "pickup_return_issue",
+          "property_rule_conflict",
+          "weather_or_safety_hold",
+        ];
+
+        return `
+          <section>
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Exception handling</p>
+                <h3>${item.operationalExceptionCode ? "Active operational exception" : "Report an operational exception"}</h3>
+                <p class="section-description">Use this for no-shows, access denial, late partner arrival, pickup issues, payment blockers, or site-rule conflicts.</p>
+              </div>
+              ${item.operationalExceptionCode ? `<span class="pill is-warning">${formatOperationalException(item.operationalExceptionCode)}</span>` : ""}
+            </div>
+            <form class="cluster" id="booking-exception-form">
+              <input type="hidden" name="bookingId" value="${item.bookingId}">
+              <div class="form-grid">
+                <label>
+                  Exception type
+                  <select name="code" ${executionDisabled}>
+                    ${exceptionOptions
+                      .map(
+                        (code) => `<option value="${code}" ${item.operationalExceptionCode === code ? "selected" : ""}>${formatOperationalException(code)}</option>`,
+                      )
+                      .join("")}
+                  </select>
+                </label>
+                <label>
+                  Current state
+                  <input type="text" value="${item.operationalExceptionCode ? `Reported ${item.operationalExceptionReportedAt ? formatRelativeTime(item.operationalExceptionReportedAt) : "recently"}` : "No active exception"}" disabled>
+                </label>
+              </div>
+              <div class="field">
+                <label for="booking-exception-notes">Exception notes</label>
+                <textarea id="booking-exception-notes" name="notes" placeholder="What happened, who was informed, and what is needed next" ${executionDisabled}>${escapeHtml(item.operationalExceptionNotes || "")}</textarea>
+              </div>
+              <div class="dialog-actions">
+                <button class="action danger" type="submit" ${executionDisabled}>${item.operationalExceptionCode ? "Update exception" : "Report exception"}</button>
+                ${
+                  item.operationalExceptionCode
+                    ? `<button class="action" type="button" data-resolve-booking-exception="${item.bookingId}" ${executionDisabled}>Resolve exception</button>`
+                    : ""
+                }
+              </div>
+            </form>
+          </section>
+        `;
+      }
+
+      function renderOperationalExceptionChip(item) {
+        if (!item.operationalExceptionCode) {
+          return "";
+        }
+
+        return `<span class="payment-chip is-blocked">Exception: ${formatOperationalException(item.operationalExceptionCode)}</span>`;
+      }
+
+      function formatOperationalException(code) {
+        const labels = {
+          customer_no_show: "Customer no-show",
+          partner_late: "Partner late",
+          access_denied: "Access denied",
+          vehicle_not_found: "Vehicle not found",
+          payment_authorization_failed: "Payment authorization failed",
+          pickup_return_issue: "Pickup/return issue",
+          property_rule_conflict: "Property rule conflict",
+          weather_or_safety_hold: "Weather or safety hold",
+        };
+
+        return labels[code] || formatStatus(code);
       }
 
       function formatTechnicianState(item) {
@@ -4491,6 +4575,24 @@
         return payload.data;
       }
 
+      async function updateBookingException(bookingId, input) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/exception`, {
+          method: "PATCH",
+          headers: {
+            ...workspaceHeaders("operations_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Exception update failed");
+        }
+
+        return payload.data;
+      }
+
       async function submitPartnerDecision(bookingId, decision, message) {
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/partner-decision`, {
           method: "POST",
@@ -4918,6 +5020,29 @@
           return;
         }
 
+        const resolveExceptionButton = event.target.closest("button[data-resolve-booking-exception]");
+
+        if (resolveExceptionButton) {
+          if (!window.confirm("Resolve this operational exception? The exception history remains in audit and messages.")) {
+            return;
+          }
+
+          resolveExceptionButton.disabled = true;
+
+          try {
+            await updateBookingException(resolveExceptionButton.dataset.resolveBookingException, { resolved: true });
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Operational exception resolved.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            resolveExceptionButton.disabled = false;
+          }
+
+          return;
+        }
+
         const partnerThreadButton = event.target.closest("button[data-partner-thread]");
 
         if (partnerThreadButton) {
@@ -5276,6 +5401,37 @@
             bookingCommunicationForm.elements.body.value = "";
             await loadBookingCommunicationThread(bookingCommunicationForm.elements.resourceId.value);
             showToast("Message sent.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const bookingExceptionForm = event.target.closest?.("#booking-exception-form");
+
+        if (bookingExceptionForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(bookingExceptionForm);
+            const notes = String(form.get("notes") || "").trim();
+
+            if (!notes) {
+              throw new Error("Exception notes are required.");
+            }
+
+            await updateBookingException(String(form.get("bookingId")), {
+              code: String(form.get("code")),
+              notes,
+            });
+            await loadDashboard();
+            renderBookingDrawer();
+            showToast("Operational exception recorded and owner thread opened.");
           } catch (error) {
             showToast(error.message, "error");
           } finally {
