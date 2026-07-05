@@ -951,6 +951,31 @@ export interface CreatePaymentIntentRequest {
   readonly bookingId: string;
 }
 
+export type PaymentOperationName = "create" | "authorize" | "capture" | "void" | "refund" | "reconcile";
+
+export type PaymentOperationStatus = "started" | "succeeded" | "failed" | "skipped";
+
+export interface PaymentOperation {
+  readonly id: string;
+  readonly paymentIntentId?: string;
+  readonly bookingId: string;
+  readonly ownerId: string;
+  readonly operation: PaymentOperationName;
+  readonly status: PaymentOperationStatus;
+  readonly provider?: string;
+  readonly providerOperation?: string;
+  readonly providerReference?: string;
+  readonly providerStatus?: string;
+  readonly providerProcessedAt?: string;
+  readonly idempotencyKey?: string;
+  readonly actorUserId?: string;
+  readonly actorRole?: ActorRole;
+  readonly requestId?: string;
+  readonly errorMessage?: string;
+  readonly metadata: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
 export interface BillingSession {
   readonly provider: string;
   readonly providerCustomerId: string;

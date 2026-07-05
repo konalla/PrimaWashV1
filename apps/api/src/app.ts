@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import path from "node:path";
@@ -52,6 +52,7 @@ import type {
   PaymentHistoryItem,
   PaymentIntent,
   PaymentMethodSummary,
+  PaymentOperationName,
   PaymentStatus,
   PartnerLocation,
   PrimaWashDayBookingItem,
@@ -2248,6 +2249,25 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/payment-operations") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "100", 10);
+        const operations = await options.repositories.paymentOperations.list({
+          bookingId: requestUrl.searchParams.get("bookingId") ?? undefined,
+          paymentIntentId: requestUrl.searchParams.get("paymentIntentId") ?? undefined,
+          limit,
+        });
+
+        sendJson(response, 200, { data: operations });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/v1/payments/intents") {
       try {
         const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
@@ -2297,6 +2317,25 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const idempotencyKey = getPaymentIdempotencyKey(request);
+
+        if (idempotencyKey) {
+          const existingOperation = await options.repositories.paymentOperations.findSucceededByIdempotencyKey({
+            operation: "create",
+            bookingId: booking.id,
+            idempotencyKey,
+          });
+
+          if (existingOperation?.paymentIntentId) {
+            const idempotentPayment = await options.repositories.payments.get(existingOperation.paymentIntentId);
+
+            if (idempotentPayment) {
+              sendJson(response, 200, { data: idempotentPayment });
+              return;
+            }
+          }
+        }
+
         const existingPayment = await options.repositories.payments.getByBookingId(booking.id);
         const ownerProfile = existingPayment ? undefined : await options.repositories.profiles.get(booking.ownerId);
         const billingCustomer = ownerProfile
@@ -2327,6 +2366,20 @@ export function createApiServer(options: CreateApiServerOptions): Server {
               : {}),
           },
         });
+
+        if (!existingPayment) {
+          await recordPaymentOperation(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "create",
+            payment,
+            providerResult,
+            idempotencyKey,
+            metadata: {
+              source: "payment_intent_request",
+            },
+          });
+        }
 
         sendJson(response, 201, { data: payment });
       } catch (error) {
@@ -2373,6 +2426,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           authorizedPayment,
           providerResult,
         );
+        await recordPaymentOperation(options.repositories, {
+          actor,
+          requestId: requestContext.requestId,
+          operation: "authorize",
+          payment: authorizedPayment,
+          providerResult,
+          metadata: {
+            source: "payment_authorize_request",
+          },
+        });
 
         const booking = await options.repositories.bookings.get(authorizedPayment.bookingId);
 
@@ -2453,6 +2516,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           capturedPayment,
           providerResult,
         );
+        await recordPaymentOperation(options.repositories, {
+          actor,
+          requestId: requestContext.requestId,
+          operation: "capture",
+          payment: capturedPayment,
+          providerResult,
+          metadata: {
+            source: "payment_capture_request",
+          },
+        });
 
         sendJson(response, 200, { data: capturedPayment });
       } catch (error) {
@@ -2494,6 +2567,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           refundedPayment,
           providerResult,
         );
+        await recordPaymentOperation(options.repositories, {
+          actor,
+          requestId: requestContext.requestId,
+          operation: "refund",
+          payment: refundedPayment,
+          providerResult,
+          metadata: {
+            source: "payment_refund_request",
+          },
+        });
 
         sendJson(response, 200, { data: refundedPayment });
       } catch (error) {
@@ -2963,6 +3046,17 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             voidedPayment.payment,
             voidedPayment.providerResult,
           );
+          await recordPaymentOperation(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "void",
+            payment: voidedPayment.payment,
+            providerResult: voidedPayment.providerResult,
+            metadata: {
+              source: "booking_cancel_request",
+              bookingStatus: updatedBooking.status,
+            },
+          });
         }
 
         await recordProductEvent(options.repositories, {
@@ -3285,6 +3379,17 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             voidedPayment.payment,
             voidedPayment.providerResult,
           );
+          await recordPaymentOperation(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "void",
+            payment: voidedPayment.payment,
+            providerResult: voidedPayment.providerResult,
+            metadata: {
+              source: "booking_status_cancelled",
+              bookingStatus: updatedBooking.status,
+            },
+          });
         }
 
         await recordProductEvent(options.repositories, {
@@ -3527,6 +3632,17 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             capturedPayment.payment,
             capturedPayment.providerResult,
           );
+          await recordPaymentOperation(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "capture",
+            payment: capturedPayment.payment,
+            providerResult: capturedPayment.providerResult,
+            metadata: {
+              source: "booking_completion",
+              bookingStatus: updatedBooking.status,
+            },
+          });
         }
 
         const serviceRecord = await createServiceRecordIfCompleted(options.repositories, updatedBooking);
@@ -4546,6 +4662,36 @@ async function recordPaymentAudit(
   });
 }
 
+async function recordPaymentOperation(
+  repositories: Repositories,
+  input: {
+    readonly actor?: Parameters<typeof assertOwnerAccess>[0] | undefined;
+    readonly requestId?: string | undefined;
+    readonly operation: PaymentOperationName;
+    readonly payment: PaymentIntent;
+    readonly providerResult?: PaymentProviderResult | undefined;
+    readonly idempotencyKey?: string | undefined;
+    readonly metadata?: Record<string, unknown> | undefined;
+  },
+): Promise<void> {
+  await repositories.paymentOperations.create({
+    paymentIntentId: input.payment.id,
+    bookingId: input.payment.bookingId,
+    ownerId: input.payment.ownerId,
+    operation: input.operation,
+    status: "succeeded",
+    providerResult: input.providerResult,
+    idempotencyKey: input.idempotencyKey,
+    actor: input.actor,
+    requestId: input.requestId,
+    metadata: {
+      paymentStatus: input.payment.status,
+      amount: input.payment.amount,
+      ...(input.metadata ?? {}),
+    },
+  });
+}
+
 async function voidAuthorizedPaymentByBooking(
   repositories: Repositories,
   paymentProvider: PaymentProvider,
@@ -4568,6 +4714,13 @@ async function voidAuthorizedPaymentByBooking(
     payment: voidedPayment,
     providerResult,
   };
+}
+
+function getPaymentIdempotencyKey(request: IncomingMessage): string | undefined {
+  const raw = request.headers["idempotency-key"] ?? request.headers["x-idempotency-key"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const normalized = value?.trim();
+  return normalized ? normalized.slice(0, 160) : undefined;
 }
 
 function sendPaymentError(
@@ -5189,6 +5342,19 @@ async function reconcileStripeWebhookEvent(
   const reconciledPayment = await repositories.payments.reconcileStatus(payment.id, action.targetStatus);
 
   await recordStripeWebhookAudit(repositories, event, requestId, reconciledPayment, action, "reconciled");
+  await recordPaymentOperation(repositories, {
+    requestId,
+    operation: "reconcile",
+    payment: reconciledPayment,
+    metadata: {
+      source: "stripe_webhook",
+      stripeEventId: event.id,
+      stripeEventType: event.type,
+      providerReference: action.providerReference,
+      targetStatus: action.targetStatus,
+      reason: action.reason,
+    },
+  });
 
   if (action.targetStatus === "authorized") {
     const booking = await repositories.bookings.get(reconciledPayment.bookingId);

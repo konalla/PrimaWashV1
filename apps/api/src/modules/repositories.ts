@@ -46,6 +46,11 @@ import {
   type PaymentRepository,
 } from "./payments/repository.js";
 import {
+  InMemoryPaymentOperationRepository,
+  PostgresPaymentOperationRepository,
+  type PaymentOperationRepository,
+} from "./payment-operations/repository.js";
+import {
   InMemoryVehicleRepository,
   PostgresVehicleRepository,
   type VehicleRepository,
@@ -108,6 +113,7 @@ export interface Repositories {
   readonly serviceRecords: ServiceRecordRepository;
   readonly productEvents: ProductEventRepository;
   readonly payments: PaymentRepository;
+  readonly paymentOperations: PaymentOperationRepository;
   readonly audit: AuditRepository;
   readonly profiles: ProfileRepository;
   readonly partners: PartnerRepository;
@@ -138,6 +144,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       serviceRecords: new InMemoryServiceRecordRepository(),
       productEvents: new InMemoryProductEventRepository(),
       payments: new InMemoryPaymentRepository(),
+      paymentOperations: new InMemoryPaymentOperationRepository(),
       audit: new InMemoryAuditRepository(),
       profiles: new InMemoryProfileRepository(),
       partners: new InMemoryPartnerRepository(),
@@ -166,6 +173,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     serviceRecords: new PostgresServiceRecordRepository(databasePool),
     productEvents: new PostgresProductEventRepository(databasePool),
     payments: new PostgresPaymentRepository(databasePool),
+    paymentOperations: new PostgresPaymentOperationRepository(databasePool),
     audit: new PostgresAuditRepository(databasePool),
     profiles: new PostgresProfileRepository(databasePool),
     partners: new PostgresPartnerRepository(databasePool),

@@ -32,6 +32,7 @@ import type {
   PaymentIntent,
   PaymentHistoryItem,
   PaymentMethodSummary,
+  PaymentOperation,
   PrimaWashDayBookingItem,
   Property,
   PropertyManagementDashboardResponse,
@@ -3047,6 +3048,42 @@ describe("Prima Wash API", () => {
     assert.equal(confirmed.status, "confirmed");
   });
 
+  it("reuses payment intent creation when the same idempotency key is replayed", async () => {
+    const vehicle = await createVehicle("PAYIDEM1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const operationCount = paymentProviderOperations.length;
+    const headers = { ...customerHeaders, "idempotency-key": `payment-create-${booking.id}` };
+
+    const firstResponse = await fetch(`${baseUrl}/v1/payments/intents`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ bookingId: booking.id }),
+    });
+    const firstPayload = (await firstResponse.json()) as ApiResponse<PaymentIntent>;
+
+    const replayResponse = await fetch(`${baseUrl}/v1/payments/intents`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ bookingId: booking.id }),
+    });
+    const replayPayload = (await replayResponse.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(firstResponse.status, 201);
+    assert.equal(replayResponse.status, 200);
+    assert.equal(replayPayload.data.id, firstPayload.data.id);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["create"]);
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+
+    assert.equal(operationsResponse.status, 200);
+    assert.equal(operationsPayload.data.length, 1);
+    assert.equal(operationsPayload.data[0]?.operation, "create");
+    assert.equal(operationsPayload.data[0]?.idempotencyKey, headers["idempotency-key"]);
+  });
+
   it("captures authorized payment when booking completes", async () => {
     const vehicle = await createVehicle("PAYCAP1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -3104,6 +3141,37 @@ describe("Prima Wash API", () => {
     assert.equal(historyItem?.amount.amountMinor, booking.acceptedPrice.amountMinor);
     assert.ok(historyItem?.capturedAt);
     assert.ok(historyItem?.refundedAt);
+  });
+
+  it("lists append-only payment operation records for internal finance review", async () => {
+    const vehicle = await createVehicle("PAYOPS1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await authorizeBookingPayment(booking.id);
+
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+    await updateBookingStatus(booking.id, "completed");
+
+    const refundResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
+      method: "POST",
+      headers: internalHeaders,
+    });
+
+    assert.equal(refundResponse.status, 200);
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+
+    assert.equal(operationsResponse.status, 200);
+    assert.deepEqual(
+      operationsPayload.data.map((operation) => operation.operation),
+      ["refund", "capture", "authorize", "create"],
+    );
+    assert.ok(operationsPayload.data.every((operation) => operation.status === "succeeded"));
+    assert.ok(operationsPayload.data.every((operation) => operation.requestId));
   });
 
   it("rejects refund attempts before payment capture", async () => {

@@ -12,6 +12,7 @@ import { PostgresBookingHandoverRepository } from "../modules/booking-handovers/
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
 import { PostgresInvitationRepository } from "../modules/invitations/repository.js";
+import { PostgresPaymentOperationRepository } from "../modules/payment-operations/repository.js";
 import { PostgresPaymentRepository } from "../modules/payments/repository.js";
 import { PostgresVehicleRepository } from "../modules/vehicles/repository.js";
 
@@ -30,6 +31,7 @@ describe("Postgres repository parity", () => {
   let condoOperations: PostgresCondoOperationsRepository;
   let invitations: PostgresInvitationRepository;
   let payments: PostgresPaymentRepository;
+  let paymentOperations: PostgresPaymentOperationRepository;
   let vehicles: PostgresVehicleRepository;
 
   before(async () => {
@@ -46,6 +48,7 @@ describe("Postgres repository parity", () => {
     condoOperations = new PostgresCondoOperationsRepository(pool);
     invitations = new PostgresInvitationRepository(pool);
     payments = new PostgresPaymentRepository(pool);
+    paymentOperations = new PostgresPaymentOperationRepository(pool);
     vehicles = new PostgresVehicleRepository(pool);
   });
 
@@ -221,6 +224,36 @@ describe("Postgres repository parity", () => {
       assert.equal(payment.providerReference, `pi_postgres_${suffix}`);
       assert.equal(payment.clientSecret, `secret_${suffix}`);
       assert.equal(payment.status, "requires_authorization");
+
+      const createdOperation = await paymentOperations.create({
+        paymentIntentId: payment.id,
+        bookingId: booking.id,
+        ownerId: booking.ownerId,
+        operation: "create",
+        status: "succeeded",
+        providerResult: {
+          provider: "stripe",
+          operation: "create",
+          providerReference: `pi_postgres_${suffix}`,
+          status: "succeeded",
+          processedAt: "2026-07-05T02:01:00.000Z",
+        },
+        idempotencyKey: `idem_${suffix}`,
+        actor: { userId: booking.ownerId, role: "customer" },
+        requestId: `req_${suffix}`,
+        metadata: { source: "postgres_repository_test" },
+      });
+      const idempotentOperation = await paymentOperations.findSucceededByIdempotencyKey({
+        operation: "create",
+        bookingId: booking.id,
+        idempotencyKey: `idem_${suffix}`,
+      });
+      const listedPaymentOperations = await paymentOperations.list({ bookingId: booking.id });
+
+      assert.equal(createdOperation.paymentIntentId, payment.id);
+      assert.equal(createdOperation.providerReference, `pi_postgres_${suffix}`);
+      assert.equal(idempotentOperation?.id, createdOperation.id);
+      assert.equal(listedPaymentOperations.length, 1);
 
       const idempotentPayment = await payments.createForBooking(updatedExecution, {
         provider: "stripe",
@@ -768,10 +801,12 @@ async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
   }
 
   if (ids.paymentId) {
+    await pool.query("delete from payment_operations where payment_intent_id = $1", [ids.paymentId]);
     await pool.query("delete from payment_intents where id = $1", [ids.paymentId]);
   }
 
   if (ids.bookingId) {
+    await pool.query("delete from payment_operations where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_consents where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_handovers where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_evidence where booking_id = $1", [ids.bookingId]);

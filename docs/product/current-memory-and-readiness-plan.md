@@ -171,6 +171,20 @@ Latest customer consent productionization on 2026-07-05:
 - `npm run db:smoke` passed with 36 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest payment operation hardening on 2026-07-05:
+
+- Added `0037_payment_operations.sql`.
+- Added append-only payment operation records for create, authorize, capture, void, refund, and Stripe webhook reconciliation.
+- Added memory and Postgres payment-operation repositories with list and idempotency lookup support.
+- Added `GET /v1/internal/payment-operations` for internal finance review with `finance_read` permission.
+- Payment intent creation now honors `Idempotency-Key` and `X-Idempotency-Key` for replay protection before creating provider-side intent work.
+- Payment operation rows capture actor, request id, provider result details, provider reference, operation source metadata, and idempotency key where applicable.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 118 API tests.
+- `npm run db:migrate` applied `0037_payment_operations.sql`.
+- `npm run db:smoke` passed with 37 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -215,7 +229,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0036_booking_consents.sql`.
+- Postgres migrations through `0037_payment_operations.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -232,7 +246,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, and Stripe webhook reconciliation tests.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests, append-only payment operation records, and create-intent idempotency-key replay protection.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -276,7 +290,8 @@ Auth and identity:
 
 Payments and finance:
 
-- Stripe provider code exists, but production operation still needs full webhook coverage, reconciliation, capture/refund runbooks, failure handling, receipt/tax logic, and finance visibility.
+- Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
+- Production operation still needs broader Stripe webhook coverage, reconciliation runbooks, capture/refund runbooks, failure handling, receipt/tax logic, and finance dashboards.
 - Local payment mode is still the default development path.
 - Partner payout, commission, settlement, and dispute handling are not implemented.
 
@@ -296,7 +311,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is now `0036_booking_consents.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0037_payment_operations.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -353,8 +368,8 @@ Goal: make booking payment safe enough for real customers.
 
 - Make Stripe the production provider with environment-gated local mode.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable.
-- Add idempotency keys for payment operations.
-- Add finance reconciliation views.
+- Add idempotency keys for payment operations. Completed for payment-intent creation replay protection on 2026-07-05; authorize/capture/refund/void replay handling still needs provider-specific completion.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05; web finance dashboard and provider mismatch workflows remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 
