@@ -1899,6 +1899,61 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data[0]?.uploadedByRole, "partner");
   });
 
+  it("lets partner actors upload evidence files for their bookings", async () => {
+    const vehicle = await createVehicle("EVID03");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const response = await fetch(
+      `${baseUrl}/v1/bookings/${booking.id}/evidence-file?evidenceType=before&fileName=before.jpg&notes=Before%20service`,
+      {
+        method: "POST",
+        headers: { ...partnerHeaders, "content-type": "image/jpeg" },
+        body: Buffer.from("fake-image-bytes"),
+      },
+    );
+    const payload = (await response.json()) as ApiResponse<BookingEvidence>;
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.evidenceType, "before");
+    assert.match(payload.data.storageKey ?? "", /^booking-evidence\/book_/);
+    assert.match(payload.data.url ?? "", /^evidence:\/\//);
+
+    const listResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/evidence`, {
+      headers: partnerHeaders,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<BookingEvidence[]>;
+
+    assert.equal(listResponse.status, 200);
+    assert.equal(listPayload.data[0]?.id, payload.data.id);
+  });
+
+  it("rejects invalid evidence file uploads", async () => {
+    const vehicle = await createVehicle("EVID04");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const invalidTypeResponse = await fetch(
+      `${baseUrl}/v1/bookings/${booking.id}/evidence-file?evidenceType=before&fileName=before.txt`,
+      {
+        method: "POST",
+        headers: { ...partnerHeaders, "content-type": "text/plain" },
+        body: Buffer.from("not an image"),
+      },
+    );
+    const invalidTypePayload = (await invalidTypeResponse.json()) as ApiErrorResponse;
+    const oversizedResponse = await fetch(
+      `${baseUrl}/v1/bookings/${booking.id}/evidence-file?evidenceType=before&fileName=before.jpg`,
+      {
+        method: "POST",
+        headers: { ...partnerHeaders, "content-type": "image/jpeg" },
+        body: Buffer.alloc(5_000_001, 1),
+      },
+    );
+    const oversizedPayload = (await oversizedResponse.json()) as ApiErrorResponse;
+
+    assert.equal(invalidTypeResponse.status, 400);
+    assert.equal(invalidTypePayload.code, "validation_failed");
+    assert.equal(oversizedResponse.status, 413);
+    assert.equal(oversizedPayload.code, "request_body_too_large");
+  });
+
   it("prevents customers and competitor partners from writing booking evidence", async () => {
     const vehicle = await createVehicle("EVID02");
     const booking = await createBooking(vehicle.id, "wash_basic");

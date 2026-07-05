@@ -100,6 +100,12 @@ import {
 } from "./modules/capacity-templates/repository.js";
 import { validateCreateBookingHold } from "./modules/booking-holds/repository.js";
 import { emptyEvidenceSummary, validateCreateBookingEvidence } from "./modules/booking-evidence/repository.js";
+import {
+  InMemoryEvidenceStorageProvider,
+  maxEvidenceUploadBytes,
+  validateEvidenceUploadInput,
+  type EvidenceStorageProvider,
+} from "./modules/booking-evidence/storage.js";
 import { validateSchedulingConfig } from "./modules/scheduling/repository.js";
 import {
   canTransitionBookingStatus,
@@ -140,6 +146,7 @@ export interface CreateApiServerOptions {
   readonly authSessionSecret?: string;
   readonly authCodeDeliveryProvider?: AuthCodeDeliveryProvider;
   readonly stripeWebhookSecret?: string;
+  readonly evidenceStorageProvider?: EvidenceStorageProvider;
 }
 
 export function createApiServer(options: CreateApiServerOptions): Server {
@@ -151,6 +158,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     createAuthCodeDeliveryProvider("local", { exposeDevelopmentCode: process.env.SHOW_DEV_AUTH_CODE === "true" });
   const authSessionSecret =
     options.authSessionSecret ?? process.env.AUTH_SESSION_SECRET ?? "prima-wash-development-secret-change-before-production";
+  const evidenceStorageProvider = options.evidenceStorageProvider ?? new InMemoryEvidenceStorageProvider();
   const authService = new AuthService(
     authSessionSecret,
     authCodeDeliveryProvider,
@@ -2452,6 +2460,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
     const bookingEvidenceMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence$/);
+    const bookingEvidenceFileMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence-file$/);
     const bookingExceptionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/exception$/);
     const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
     const bookingPartnerDecisionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/partner-decision$/);
@@ -2511,6 +2520,95 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
 
           sendError(response, 400, "invalid_request", "Availability update request could not be processed", message);
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && bookingEvidenceFileMatch) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingEvidenceFileMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
+
+        const evidenceType = requestUrl.searchParams.get("evidenceType") ?? undefined;
+        const notes = requestUrl.searchParams.get("notes")?.trim() || undefined;
+        const fileName = requestUrl.searchParams.get("fileName")?.trim() || undefined;
+        const contentType = getHeaderValue(request.headers["content-type"])?.split(";")[0]?.trim().toLowerCase();
+        const body = await readRawBody(request, maxEvidenceUploadBytes);
+        const errors = validateEvidenceUploadInput({
+          byteLength: body.byteLength,
+          ...(evidenceType ? { evidenceType } : {}),
+          ...(contentType ? { contentType } : {}),
+        });
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking evidence file upload is invalid", errors);
+          return;
+        }
+
+        const stored = await evidenceStorageProvider.store({
+          bookingId: booking.id,
+          ...(fileName ? { fileName } : {}),
+          contentType: contentType ?? "application/octet-stream",
+          body,
+        });
+        const evidence = await options.repositories.bookingEvidence.create({
+          bookingId: booking.id,
+          actor,
+          evidenceType: evidenceType as NonNullable<CreateBookingEvidenceRequest["evidenceType"]>,
+          storageKey: stored.storageKey,
+          ...(stored.url ? { url: stored.url } : {}),
+          ...(notes ? { notes } : {}),
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.evidence_file_uploaded",
+          resourceType: "booking_evidence",
+          resourceId: evidence.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            bookingId: booking.id,
+            evidenceType: evidence.evidenceType,
+            partnerLocationId: booking.partnerLocationId,
+            contentType,
+            byteLength: body.byteLength,
+            storageKey: stored.storageKey,
+          },
+        });
+
+        sendJson(response, 201, { data: evidence });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "request_body_too_large") {
+            sendError(response, 413, message, "Evidence file is too large");
+            return;
+          }
+
+          if (message === "partner_booking_forbidden") {
+            sendError(response, 403, message, "Partner cannot access this booking");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Booking evidence file upload could not be processed", message);
         }
       }
 

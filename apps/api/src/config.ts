@@ -12,6 +12,8 @@ export interface ApiConfig {
   readonly paymentProvider: string;
   readonly stripeSecretKey?: string;
   readonly stripeWebhookSecret?: string;
+  readonly evidenceStorageDirectory: string;
+  readonly evidencePublicBaseUrl?: string;
 }
 
 const localDatabaseUrl = "postgres://postgres:postgres@127.0.0.1:5432/prima_wash";
@@ -70,6 +72,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
+    evidenceStorageDirectory: environment.EVIDENCE_STORAGE_DIRECTORY ?? "var/uploads",
+    ...(environment.EVIDENCE_PUBLIC_BASE_URL ? { evidencePublicBaseUrl: environment.EVIDENCE_PUBLIC_BASE_URL } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
   };
 }

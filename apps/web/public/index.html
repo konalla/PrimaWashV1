@@ -4016,8 +4016,8 @@
                   </select>
                 </label>
                 <label>
-                  URL or storage key
-                  <input name="evidenceLocation" placeholder="https://... or evidence://..." ${executionDisabled}>
+                  Evidence file
+                  <input name="evidenceFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" ${executionDisabled}>
                 </label>
               </div>
               <div class="field">
@@ -4778,6 +4778,29 @@
 
         if (!response.ok) {
           throw new Error(payload.message || "Evidence upload failed");
+        }
+
+        return payload.data;
+      }
+
+      async function uploadBookingEvidenceFile(bookingId, input) {
+        const params = new URLSearchParams({
+          evidenceType: input.evidenceType,
+          fileName: input.file.name,
+          ...(input.notes ? { notes: input.notes } : {}),
+        });
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/evidence-file?${params.toString()}`, {
+          method: "POST",
+          headers: {
+            ...workspaceHeaders("operations_write"),
+            "content-type": input.file.type || "application/octet-stream",
+          },
+          body: input.file,
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Evidence file upload failed");
         }
 
         return payload.data;
@@ -5671,26 +5694,20 @@
           try {
             const form = new FormData(bookingEvidenceForm);
             const bookingId = String(form.get("bookingId"));
-            const evidenceLocation = String(form.get("evidenceLocation") || "").trim();
+            const evidenceFile = form.get("evidenceFile");
 
-            if (!evidenceLocation) {
-              throw new Error("Add an evidence URL or storage key.");
+            if (!(evidenceFile instanceof File) || evidenceFile.size === 0) {
+              throw new Error("Choose an evidence file.");
             }
 
-            const evidenceInput = {
+            await uploadBookingEvidenceFile(bookingId, {
               evidenceType: String(form.get("evidenceType")),
               notes: String(form.get("notes") || "").trim(),
-              ...(evidenceLocation.startsWith("http://") ||
-              evidenceLocation.startsWith("https://") ||
-              evidenceLocation.startsWith("evidence://")
-                ? { url: evidenceLocation }
-                : { storageKey: evidenceLocation }),
-            };
-
-            await createBookingEvidence(bookingId, evidenceInput);
+              file: evidenceFile,
+            });
             await loadDashboard();
             await loadBookingEvidenceForDrawer(bookingId);
-            showToast("Evidence record added.");
+            showToast("Evidence file uploaded.");
           } catch (error) {
             showToast(error.message, "error");
           } finally {

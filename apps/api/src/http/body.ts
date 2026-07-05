@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 
 const maxBodyBytes = 1_000_000;
 
-export async function readRawBody(request: IncomingMessage): Promise<Buffer> {
+export async function readRawBody(request: IncomingMessage, limitBytes = maxBodyBytes): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
 
@@ -10,7 +10,7 @@ export async function readRawBody(request: IncomingMessage): Promise<Buffer> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buffer.byteLength;
 
-    if (totalBytes > maxBodyBytes) {
+    if (totalBytes > limitBytes) {
       throw new Error("request_body_too_large");
     }
 

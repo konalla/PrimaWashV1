@@ -126,6 +126,17 @@ Latest booking evidence productionization on 2026-07-05:
 - `npm run db:smoke` passed with 34 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest evidence file upload productionization on 2026-07-05:
+
+- Added an evidence-storage provider boundary with in-memory test storage and local development file storage.
+- Local/dev API runs now write uploaded evidence files under `var/uploads` by default, configurable with `EVIDENCE_STORAGE_DIRECTORY`.
+- Added `POST /v1/bookings/:id/evidence-file` for partner/internal operators to upload image/PDF evidence directly.
+- Evidence file uploads enforce booking access, evidence type, allowed content type, non-empty body, and 5 MB max size.
+- Successful uploads create append-only booking evidence records with storage keys and audit events.
+- Web operations drawer now uses a real file input for evidence uploads instead of asking operators to paste placeholder URLs.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 112 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -237,7 +248,7 @@ Payments and finance:
 
 Operations:
 
-- Booking lifecycle is mostly modeled, but the real-world service proof layer is still missing: photos, checklist completion, handover, pickup/return consent, issue reporting, technician assignment, and quality sign-off.
+- Booking lifecycle is mostly modeled, and real evidence file intake now exists. Remaining proof-layer work includes checklist completion, handover consent, pickup/return consent, richer issue reporting, quality sign-off, and production object storage integration.
 - Condo operations exist, but the standardized playbook/template system is still early.
 - HDB and landed-property operations need policy and configuration maturity before launch.
 

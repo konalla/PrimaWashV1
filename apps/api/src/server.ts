@@ -4,6 +4,7 @@ import { createApiServer } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createAuthCodeDeliveryProvider } from "./modules/auth/delivery.js";
 import { createPaymentProvider } from "./modules/payments/provider.js";
+import { createLocalEvidenceStorageProvider } from "./modules/booking-evidence/storage.js";
 import { createRepositories } from "./modules/repositories.js";
 
 const config = loadConfig();
@@ -18,10 +19,15 @@ const authCodeDeliveryProvider = createAuthCodeDeliveryProvider(config.authCodeD
 });
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(moduleDirectory, "../public");
+const evidenceStorageProvider = createLocalEvidenceStorageProvider({
+  rootDirectory: path.resolve(config.evidenceStorageDirectory),
+  ...(config.evidencePublicBaseUrl ? { publicBaseUrl: config.evidencePublicBaseUrl } : {}),
+});
 const server = createApiServer({
   repositories,
   paymentProvider,
   authCodeDeliveryProvider,
+  evidenceStorageProvider,
   publicDirectory,
   authSessionSecret: config.authSessionSecret,
   ...(config.stripeWebhookSecret ? { stripeWebhookSecret: config.stripeWebhookSecret } : {}),
@@ -39,6 +45,7 @@ server.listen(config.port, "0.0.0.0", () => {
       persistence: config.persistenceMode,
       paymentProvider: config.paymentProvider,
       authCodeDeliveryProvider: config.authCodeDeliveryProvider,
+      evidenceStorageDirectory: config.evidenceStorageDirectory,
     }),
   );
 });

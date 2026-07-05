@@ -5,6 +5,7 @@ dist/
 .expo/
 .next/
 coverage/
+var/uploads/
 .env
 .env.*
 !.env.example
