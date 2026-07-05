@@ -51,6 +51,7 @@ try {
   await assertTableExists("auth_rate_limit_events");
   await assertTableExists("auth_refresh_tokens");
   await assertTableExists("access_invitations");
+  await assertTableExists("booking_evidence");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -184,6 +185,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
   const suffix = crypto.randomUUID().slice(0, 8);
   const vehicleId = `veh_smoke_${suffix}`;
   const bookingId = `book_smoke_${suffix}`;
+  const beforeEvidenceId = `evidence_smoke_before_${suffix}`;
+  const afterEvidenceId = `evidence_smoke_after_${suffix}`;
   const threadId = `thread_smoke_${suffix}`;
   const messageId = `msg_smoke_${suffix}`;
 
@@ -218,6 +221,15 @@ async function assertTransactionalWriteRead(): Promise<void> {
       [threadId, bookingId],
     );
     await client.query(
+      `insert into booking_evidence (
+        id, booking_id, evidence_type, url, notes, uploaded_by_user_id, uploaded_by_role, created_at
+      )
+      values
+        ($1, $2, 'before', 'evidence://smoke/before', 'Smoke before evidence', 'partner_demo_001', 'partner', now()),
+        ($3, $2, 'after', 'evidence://smoke/after', 'Smoke after evidence', 'partner_demo_001', 'partner', now())`,
+      [beforeEvidenceId, bookingId, afterEvidenceId],
+    );
+    await client.query(
       `insert into communication_messages (id, thread_id, sender_user_id, sender_role, body, created_at)
        values ($1, $2, 'partner_demo_001', 'partner', 'Smoke test message', now())`,
       [messageId, threadId],
@@ -231,15 +243,20 @@ async function assertTransactionalWriteRead(): Promise<void> {
       assigned_technician_name: string | null;
       before_count: string;
       after_count: string;
+      evidence_before_count: string;
+      evidence_after_count: string;
       message_count: string;
     }>(
       `select v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
               b.assigned_technician_name,
               cardinality(b.before_service_photo_urls)::text as before_count,
               cardinality(b.after_service_photo_urls)::text as after_count,
-              count(cm.id)::text as message_count
+              count(distinct be.id) filter (where be.evidence_type = 'before')::text as evidence_before_count,
+              count(distinct be.id) filter (where be.evidence_type = 'after')::text as evidence_after_count,
+              count(distinct cm.id)::text as message_count
        from bookings b
        join vehicles v on v.id = b.vehicle_id
+       join booking_evidence be on be.booking_id = b.id
        join communication_threads ct on ct.resource_id = b.id
        join communication_messages cm on cm.thread_id = ct.id
        where b.id = $1
@@ -257,6 +274,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
       row.assigned_technician_name !== "Smoke Tech" ||
       Number(row.before_count) !== 1 ||
       Number(row.after_count) !== 1 ||
+      Number(row.evidence_before_count) !== 1 ||
+      Number(row.evidence_after_count) !== 1 ||
       Number(row.message_count) !== 1
     ) {
       throw new Error("transactional_write_read_failed");
@@ -270,6 +289,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
         assignedTechnicianName: row.assigned_technician_name,
         beforeEvidenceCount: Number(row.before_count),
         afterEvidenceCount: Number(row.after_count),
+        beforeEvidenceRecordCount: Number(row.evidence_before_count),
+        afterEvidenceRecordCount: Number(row.evidence_after_count),
         messageCount: Number(row.message_count),
       },
     });

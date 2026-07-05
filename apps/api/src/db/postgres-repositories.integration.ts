@@ -6,6 +6,7 @@ import { PostgresAvailabilityRepository } from "../modules/availability/reposito
 import { PostgresAccessControlRepository } from "../modules/access-control/repository.js";
 import { PostgresAuthRepository } from "../modules/auth/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
+import { PostgresBookingEvidenceRepository } from "../modules/booking-evidence/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
 import { PostgresInvitationRepository } from "../modules/invitations/repository.js";
@@ -20,6 +21,7 @@ describe("Postgres repository parity", () => {
   let accessControl: PostgresAccessControlRepository;
   let auth: PostgresAuthRepository;
   let bookings: PostgresBookingRepository;
+  let bookingEvidence: PostgresBookingEvidenceRepository;
   let communications: PostgresCommunicationRepository;
   let condoOperations: PostgresCondoOperationsRepository;
   let invitations: PostgresInvitationRepository;
@@ -33,6 +35,7 @@ describe("Postgres repository parity", () => {
     accessControl = new PostgresAccessControlRepository(pool);
     auth = new PostgresAuthRepository(pool);
     bookings = new PostgresBookingRepository(pool);
+    bookingEvidence = new PostgresBookingEvidenceRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
     condoOperations = new PostgresCondoOperationsRepository(pool);
     invitations = new PostgresInvitationRepository(pool);
@@ -108,6 +111,29 @@ describe("Postgres repository parity", () => {
       assert.deepEqual(updatedExecution.afterServicePhotoUrls, ["evidence://postgres/after-1"]);
       assert.equal(updatedExecution.technicianCheckedInAt, "2026-07-05T02:05:00.000Z");
       assert.equal(updatedExecution.technicianCheckedOutAt, "2026-07-05T02:35:00.000Z");
+
+      const beforeEvidence = await bookingEvidence.create({
+        bookingId: booking.id,
+        evidenceType: "before",
+        url: `evidence://${booking.id}/before-1`,
+        notes: "Before service condition.",
+        actor: { userId: "partner_demo_001", role: "partner", organizationId: "org_partner_001" },
+      });
+      const afterEvidence = await bookingEvidence.create({
+        bookingId: booking.id,
+        evidenceType: "after",
+        url: `evidence://${booking.id}/after-1`,
+        notes: "After service handover.",
+        actor: { userId: "partner_demo_001", role: "partner", organizationId: "org_partner_001" },
+      });
+      const listedEvidence = await bookingEvidence.list(booking.id);
+      const evidenceCounts = await bookingEvidence.countByBookingIds([booking.id]);
+
+      assert.equal(beforeEvidence.evidenceType, "before");
+      assert.equal(afterEvidence.evidenceType, "after");
+      assert.equal(listedEvidence.length, 2);
+      assert.equal(evidenceCounts.get(booking.id)?.beforeCount, 1);
+      assert.equal(evidenceCounts.get(booking.id)?.afterCount, 1);
 
       const exceptionBooking = await bookings.updateOperationalException(booking.id, {
         resolved: false,
@@ -691,6 +717,7 @@ async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
   }
 
   if (ids.bookingId) {
+    await pool.query("delete from booking_evidence where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from bookings where id = $1", [ids.bookingId]);
   }
 

@@ -18,6 +18,7 @@ import type {
   VerifyAuthCodeRequest,
   CancelBookingRequest,
   CapacityTemplate,
+  CreateBookingEvidenceRequest,
   CreateAvailabilitySlotRequest,
   CreateAccessInvitationRequest,
   CreateBookingHoldRequest,
@@ -43,6 +44,7 @@ import type {
   InternalPermission,
   ProductEventName,
   PartnerDashboardResponse,
+  BookingEvidenceSummary,
   PartnerAvailabilitySlot,
   PaymentHistoryItem,
   PaymentIntent,
@@ -97,6 +99,7 @@ import {
   validateUpdateCapacityTemplate,
 } from "./modules/capacity-templates/repository.js";
 import { validateCreateBookingHold } from "./modules/booking-holds/repository.js";
+import { emptyEvidenceSummary, validateCreateBookingEvidence } from "./modules/booking-evidence/repository.js";
 import { validateSchedulingConfig } from "./modules/scheduling/repository.js";
 import {
   canTransitionBookingStatus,
@@ -1040,8 +1043,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
         const vehicleById = await buildVehicleLookup(options.repositories, bookings);
         const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
+        const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
-          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId, vehicleById, partnerById),
+          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId, vehicleById, partnerById, evidenceByBookingId),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -1742,8 +1748,19 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
         const vehicleById = await buildVehicleLookup(options.repositories, bookings);
         const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
+        const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
-          data: buildPartnerDashboard(partnerLocationId, bookings, auditEvents, paymentByBookingId, vehicleById, partnerById),
+          data: buildPartnerDashboard(
+            partnerLocationId,
+            bookings,
+            auditEvents,
+            paymentByBookingId,
+            vehicleById,
+            partnerById,
+            evidenceByBookingId,
+          ),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -1761,8 +1778,19 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const paymentByBookingId = await buildPaymentLookup(options.repositories, bookings);
         const vehicleById = await buildVehicleLookup(options.repositories, bookings);
         const partnerById = await buildPartnerLocationLookup(options.repositories, bookings);
+        const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
-          data: buildPartnerDashboard(undefined, bookings, auditEvents, paymentByBookingId, vehicleById, partnerById),
+          data: buildPartnerDashboard(
+            undefined,
+            bookings,
+            auditEvents,
+            paymentByBookingId,
+            vehicleById,
+            partnerById,
+            evidenceByBookingId,
+          ),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -2423,6 +2451,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
+    const bookingEvidenceMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence$/);
     const bookingExceptionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/exception$/);
     const bookingCancelMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/cancel$/);
     const bookingPartnerDecisionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/partner-decision$/);
@@ -2482,6 +2511,85 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
 
           sendError(response, 400, "invalid_request", "Availability update request could not be processed", message);
+        }
+      }
+
+      return;
+    }
+
+    if ((request.method === "GET" || request.method === "POST") && bookingEvidenceMatch) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingEvidenceMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(
+          options.repositories,
+          actor,
+          booking,
+          request.method === "GET" ? "operations_read" : "operations_write",
+        );
+
+        if (request.method === "GET") {
+          sendJson(response, 200, { data: await options.repositories.bookingEvidence.list(booking.id) });
+          return;
+        }
+
+        const input = await readJsonBody<CreateBookingEvidenceRequest>(request);
+        const errors = validateCreateBookingEvidence(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking evidence payload is invalid", errors);
+          return;
+        }
+
+        const evidence = await options.repositories.bookingEvidence.create({
+          bookingId: booking.id,
+          actor,
+          evidenceType: input.evidenceType,
+          ...(input.storageKey ? { storageKey: input.storageKey } : {}),
+          ...(input.url ? { url: input.url } : {}),
+          ...(input.notes ? { notes: input.notes } : {}),
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.evidence_added",
+          resourceType: "booking_evidence",
+          resourceId: evidence.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            bookingId: booking.id,
+            evidenceType: evidence.evidenceType,
+            partnerLocationId: booking.partnerLocationId,
+            hasStorageKey: Boolean(evidence.storageKey),
+            hasUrl: Boolean(evidence.url),
+          },
+        });
+
+        sendJson(response, 201, { data: evidence });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "partner_booking_forbidden") {
+            sendError(response, 403, message, "Partner cannot access this booking");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Booking evidence request could not be processed", message);
         }
       }
 
@@ -3030,7 +3138,11 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             return;
           }
 
-          if (!booking.beforeServicePhotoUrls?.length || !booking.afterServicePhotoUrls?.length) {
+          const evidence = await options.repositories.bookingEvidence.list(booking.id);
+          const hasBeforeEvidence = evidence.some((item) => item.evidenceType === "before");
+          const hasAfterEvidence = evidence.some((item) => item.evidenceType === "after");
+
+          if (!hasBeforeEvidence || !hasAfterEvidence) {
             sendError(
               response,
               409,
@@ -3641,6 +3753,7 @@ function buildPartnerDashboard(
   paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
   vehicleById: ReadonlyMap<string, Vehicle>,
   partnerById: ReadonlyMap<string, PartnerLocation>,
+  evidenceByBookingId: ReadonlyMap<string, BookingEvidenceSummary>,
 ): PartnerDashboardResponse {
   const locationBookings = partnerLocationId
     ? bookings.filter((booking) => booking.partnerLocationId === partnerLocationId)
@@ -3683,6 +3796,7 @@ function buildPartnerDashboard(
       const payment = paymentByBookingId.get(booking.id);
       const vehicle = vehicleById.get(booking.vehicleId);
       const partner = partnerById.get(booking.partnerLocationId);
+      const evidenceSummary = evidenceByBookingId.get(booking.id) ?? emptyEvidenceSummary();
 
       return {
         bookingId: booking.id,
@@ -3700,6 +3814,7 @@ function buildPartnerDashboard(
         ...(booking.completionNotes ? { completionNotes: booking.completionNotes } : {}),
         ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
         ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
+        evidenceSummary,
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),
@@ -3841,6 +3956,7 @@ function buildPrimaWashDayBookingItems(
   paymentByBookingId: ReadonlyMap<string, PaymentIntent>,
   vehicleById: ReadonlyMap<string, Vehicle>,
   partnerById: ReadonlyMap<string, PartnerLocation>,
+  evidenceByBookingId: ReadonlyMap<string, BookingEvidenceSummary>,
 ): readonly PrimaWashDayBookingItem[] {
   return bookings
     .filter((booking): booking is Booking & { readonly primaWashDayId: string } => Boolean(booking.primaWashDayId))
@@ -3850,6 +3966,7 @@ function buildPrimaWashDayBookingItems(
       const payment = paymentByBookingId.get(booking.id);
       const vehicle = vehicleById.get(booking.vehicleId);
       const partner = partnerById.get(booking.partnerLocationId);
+      const evidenceSummary = evidenceByBookingId.get(booking.id) ?? emptyEvidenceSummary();
 
       return {
         bookingId: booking.id,
@@ -3867,6 +3984,7 @@ function buildPrimaWashDayBookingItems(
         ...(booking.completionNotes ? { completionNotes: booking.completionNotes } : {}),
         ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
         ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
+        evidenceSummary,
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),

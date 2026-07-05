@@ -15,6 +15,7 @@ import type {
   CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
+  BookingEvidence,
   BookingStatus,
   CapacityTemplate,
   GenerateCapacityTemplateSlotsResponse,
@@ -1880,6 +1881,50 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "partner_location_forbidden");
   });
 
+  it("lets partner actors add and list append-only booking evidence for their bookings", async () => {
+    const vehicle = await createVehicle("EVID01");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+
+    const before = await createBookingEvidence(booking.id, "before", `evidence://${booking.id}/before-1`);
+    const after = await createBookingEvidence(booking.id, "after", `evidence://${booking.id}/after-1`, "Cleaned and ready.");
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/evidence`, {
+      headers: partnerHeaders,
+    });
+    const payload = (await response.json()) as ApiResponse<BookingEvidence[]>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.length, 2);
+    assert.equal(payload.data[0]?.id, after.id);
+    assert.equal(payload.data[1]?.id, before.id);
+    assert.equal(payload.data[0]?.uploadedByRole, "partner");
+  });
+
+  it("prevents customers and competitor partners from writing booking evidence", async () => {
+    const vehicle = await createVehicle("EVID02");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const customerResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/evidence`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({ evidenceType: "before", url: `evidence://${booking.id}/customer` }),
+    });
+    const customerPayload = (await customerResponse.json()) as ApiErrorResponse;
+    const competitorResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/evidence`, {
+      method: "POST",
+      headers: {
+        ...partnerHeaders,
+        "x-prima-user-id": "partner_harbour_001",
+        "x-prima-organization-id": "org_partner_002",
+      },
+      body: JSON.stringify({ evidenceType: "before", url: `evidence://${booking.id}/competitor` }),
+    });
+    const competitorPayload = (await competitorResponse.json()) as ApiErrorResponse;
+
+    assert.equal(customerResponse.status, 403);
+    assert.equal(customerPayload.code, "partner_role_required");
+    assert.equal(competitorResponse.status, 403);
+    assert.equal(competitorPayload.code, "partner_booking_forbidden");
+  });
+
   it("hydrates partner scope from stored membership instead of trusting spoofed headers", async () => {
     const response = await fetch(`${baseUrl}/v1/partner/dashboard?partnerLocationId=loc_harbour_001`, {
       headers: {
@@ -3019,6 +3064,24 @@ describe("Prima Wash API", () => {
     return authorizePayment(payment.id);
   }
 
+  async function createBookingEvidence(
+    bookingId: string,
+    evidenceType: BookingEvidence["evidenceType"],
+    url: string,
+    notes?: string,
+    headers: Record<string, string> = partnerHeaders,
+  ): Promise<BookingEvidence> {
+    const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/evidence`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ evidenceType, url, ...(notes ? { notes } : {}) }),
+    });
+    const payload = (await response.json()) as ApiResponse<BookingEvidence>;
+
+    assert.equal(response.status, 201);
+    return payload.data;
+  }
+
   async function postStripeWebhook(event: unknown): Promise<Response> {
     const body = JSON.stringify(event);
     const timestamp = Math.floor(Date.now() / 1000);
@@ -3042,12 +3105,12 @@ describe("Prima Wash API", () => {
         body: JSON.stringify({
           assignedTechnicianName: "Amin Prima",
           completionNotes: "Service completed, vehicle checked, and handover area cleared.",
-          beforeServicePhotoUrls: [`evidence://${bookingId}/before-1`],
-          afterServicePhotoUrls: [`evidence://${bookingId}/after-1`],
           technicianCheckedOut: true,
         }),
       });
       assert.equal(executionResponse.status, 200);
+      await createBookingEvidence(bookingId, "before", `evidence://${bookingId}/before-1`);
+      await createBookingEvidence(bookingId, "after", `evidence://${bookingId}/after-1`);
     }
 
     const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/status`, {

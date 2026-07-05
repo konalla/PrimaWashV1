@@ -2171,6 +2171,7 @@
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "upcoming";
       let selectedBookingId = null;
+      const bookingEvidenceCache = new Map();
       let communicationDialogHeaders = null;
       let capacityTemplates = [];
       const authSessions = new Map();
@@ -3690,7 +3691,8 @@
           return "Completion notes are required before completing and capturing payment.";
         }
 
-        if (nextStatus === "completed" && (!item.beforeServicePhotoUrls?.length || !item.afterServicePhotoUrls?.length)) {
+        const evidenceSummary = getEvidenceSummary(item);
+        if (nextStatus === "completed" && (!evidenceSummary.beforeCount || !evidenceSummary.afterCount)) {
           return "Before and after service evidence is required before completing and capturing payment.";
         }
 
@@ -3701,6 +3703,7 @@
         selectedBookingId = bookingId;
         renderBookingDrawer();
         bookingDialog.showModal();
+        void loadBookingEvidenceForDrawer(bookingId);
       }
 
       function renderBookingDrawer() {
@@ -3777,6 +3780,7 @@
             ${renderServiceModeWorkOrder(item)}
             ${renderSiteInstructions(item)}
             ${renderOperationalExceptionPanel(item, executionDisabled)}
+            ${renderEvidencePanel(item, executionDisabled)}
 
             <section>
               <div class="section-heading compact-heading">
@@ -3813,16 +3817,6 @@
                 <div class="field">
                   <label for="booking-execution-notes">Execution notes</label>
                   <textarea id="booking-execution-notes" name="executionNotes" placeholder="Parking bay, owner access notes, temporary wash area constraints" ${executionDisabled}>${escapeHtml(item.executionNotes || "")}</textarea>
-                </div>
-                <div class="form-grid">
-                  <label>
-                    Before evidence URLs
-                    <input name="beforeServicePhotoUrls" placeholder="Comma-separated placeholder URLs" value="${escapeAttribute((item.beforeServicePhotoUrls || []).join(", "))}" ${executionDisabled}>
-                  </label>
-                  <label>
-                    After evidence URLs
-                    <input name="afterServicePhotoUrls" placeholder="Comma-separated placeholder URLs" value="${escapeAttribute((item.afterServicePhotoUrls || []).join(", "))}" ${executionDisabled}>
-                  </label>
                 </div>
                 <div class="field">
                   <label for="booking-completion-notes">Completion notes</label>
@@ -3949,10 +3943,119 @@
         `;
       }
 
+      function getEvidenceRecords(item) {
+        return bookingEvidenceCache.get(item.bookingId) || [];
+      }
+
+      function getEvidenceSummary(item) {
+        const records = getEvidenceRecords(item);
+
+        if (records.length) {
+          return records.reduce(
+            (summary, evidence) => ({
+              beforeCount: summary.beforeCount + (evidence.evidenceType === "before" ? 1 : 0),
+              afterCount: summary.afterCount + (evidence.evidenceType === "after" ? 1 : 0),
+              damageCount: summary.damageCount + (evidence.evidenceType === "damage" ? 1 : 0),
+              handoverCount: summary.handoverCount + (evidence.evidenceType === "handover" ? 1 : 0),
+              otherCount: summary.otherCount + (evidence.evidenceType === "other" ? 1 : 0),
+              totalCount: summary.totalCount + 1,
+            }),
+            { beforeCount: 0, afterCount: 0, damageCount: 0, handoverCount: 0, otherCount: 0, totalCount: 0 },
+          );
+        }
+
+        return item.evidenceSummary || {
+          beforeCount: item.beforeServicePhotoUrls?.length || 0,
+          afterCount: item.afterServicePhotoUrls?.length || 0,
+          damageCount: 0,
+          handoverCount: 0,
+          otherCount: 0,
+          totalCount: (item.beforeServicePhotoUrls?.length || 0) + (item.afterServicePhotoUrls?.length || 0),
+        };
+      }
+
+      function renderEvidencePanel(item, executionDisabled) {
+        const records = getEvidenceRecords(item);
+        const summary = getEvidenceSummary(item);
+        const evidenceRows = records.length
+          ? records
+              .map(
+                (record) => `
+                  <div class="work-order-line">
+                    <strong>${formatEvidenceType(record.evidenceType)}</strong>
+                    <span>${escapeHtml(record.url || record.storageKey || "Evidence stored")}</span>
+                    ${record.notes ? `<span>${escapeHtml(record.notes)}</span>` : ""}
+                    <small>${formatDateTime(record.createdAt)} - ${escapeHtml(record.uploadedByRole)}</small>
+                  </div>
+                `,
+              )
+              .join("")
+          : `<div class="empty">No evidence records loaded yet. Add before and after evidence before completion.</div>`;
+
+        return `
+          <section>
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Evidence records</p>
+                <h3>Before and after proof</h3>
+                <p class="section-description">${summary.beforeCount} before - ${summary.afterCount} after - ${summary.totalCount} total. Records are append-only.</p>
+              </div>
+            </div>
+            <div class="work-order-list">${evidenceRows}</div>
+            <form class="cluster" id="booking-evidence-form">
+              <input type="hidden" name="bookingId" value="${item.bookingId}">
+              <div class="form-grid">
+                <label>
+                  Evidence type
+                  <select name="evidenceType" ${executionDisabled}>
+                    <option value="before">Before service</option>
+                    <option value="after">After service</option>
+                    <option value="damage">Damage / exception</option>
+                    <option value="handover">Handover</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  URL or storage key
+                  <input name="evidenceLocation" placeholder="https://... or evidence://..." ${executionDisabled}>
+                </label>
+              </div>
+              <div class="field">
+                <label for="booking-evidence-notes">Evidence notes</label>
+                <textarea id="booking-evidence-notes" name="notes" placeholder="What this evidence shows" ${executionDisabled}></textarea>
+              </div>
+              <button class="action primary" type="submit" ${executionDisabled}>Add evidence record</button>
+            </form>
+          </section>
+        `;
+      }
+
+      function formatEvidenceType(type) {
+        return {
+          before: "Before service",
+          after: "After service",
+          damage: "Damage / exception",
+          handover: "Handover",
+          other: "Other",
+        }[type] || "Evidence";
+      }
+
+      function formatDateTime(value) {
+        try {
+          return new Intl.DateTimeFormat("en-SG", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(new Date(value));
+        } catch {
+          return value;
+        }
+      }
+
       function renderWorkOrderChecklist(item) {
         const checkedIn = Boolean(item.technicianCheckedInAt);
         const checkedOut = Boolean(item.technicianCheckedOutAt);
-        const hasEvidence = Boolean(item.beforeServicePhotoUrls?.length && item.afterServicePhotoUrls?.length);
+        const evidenceSummary = getEvidenceSummary(item);
+        const hasEvidence = Boolean(evidenceSummary.beforeCount && evidenceSummary.afterCount);
         const steps = [
           {
             done: item.status !== "pending_payment",
@@ -3993,7 +4096,7 @@
           {
             done: hasEvidence,
             label: "Evidence attached",
-            body: "Before and after evidence placeholders are saved.",
+            body: "Before and after evidence records are saved.",
           },
           {
             done: checkedOut || item.status === "completed",
@@ -4647,6 +4750,49 @@
         }
 
         return payload.data;
+      }
+
+      async function fetchBookingEvidence(bookingId) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/evidence`, {
+          headers: workspaceHeaders("operations_read"),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Evidence load failed");
+        }
+
+        return payload.data;
+      }
+
+      async function createBookingEvidence(bookingId, input) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/evidence`, {
+          method: "POST",
+          headers: {
+            ...workspaceHeaders("operations_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Evidence upload failed");
+        }
+
+        return payload.data;
+      }
+
+      async function loadBookingEvidenceForDrawer(bookingId) {
+        try {
+          const evidence = await fetchBookingEvidence(bookingId);
+          bookingEvidenceCache.set(bookingId, evidence);
+          if (selectedBookingId === bookingId) {
+            renderBookingDrawer();
+          }
+        } catch (error) {
+          showToast(error.message, "error");
+        }
       }
 
       async function updateBookingException(bookingId, input) {
@@ -5515,6 +5661,45 @@
           return;
         }
 
+        const bookingEvidenceForm = event.target.closest?.("#booking-evidence-form");
+
+        if (bookingEvidenceForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(bookingEvidenceForm);
+            const bookingId = String(form.get("bookingId"));
+            const evidenceLocation = String(form.get("evidenceLocation") || "").trim();
+
+            if (!evidenceLocation) {
+              throw new Error("Add an evidence URL or storage key.");
+            }
+
+            const evidenceInput = {
+              evidenceType: String(form.get("evidenceType")),
+              notes: String(form.get("notes") || "").trim(),
+              ...(evidenceLocation.startsWith("http://") ||
+              evidenceLocation.startsWith("https://") ||
+              evidenceLocation.startsWith("evidence://")
+                ? { url: evidenceLocation }
+                : { storageKey: evidenceLocation }),
+            };
+
+            await createBookingEvidence(bookingId, evidenceInput);
+            await loadDashboard();
+            await loadBookingEvidenceForDrawer(bookingId);
+            showToast("Evidence record added.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
+          return;
+        }
+
         const bookingExecutionForm = event.target.closest?.("#booking-execution-form");
 
         if (bookingExecutionForm) {
@@ -5531,8 +5716,6 @@
               executionNotes: String(form.get("executionNotes") || "").trim(),
               assignedTechnicianName: String(form.get("assignedTechnicianName") || "").trim(),
               completionNotes: String(form.get("completionNotes") || "").trim(),
-              beforeServicePhotoUrls: parseUrlList(form.get("beforeServicePhotoUrls")),
-              afterServicePhotoUrls: parseUrlList(form.get("afterServicePhotoUrls")),
             });
             await loadDashboard();
             renderBookingDrawer();

@@ -416,6 +416,36 @@ export interface PartnerQueueLocationSummary {
   readonly openingHours: string;
 }
 
+export type BookingEvidenceType = "before" | "after" | "damage" | "handover" | "other";
+
+export interface BookingEvidence {
+  readonly id: string;
+  readonly bookingId: string;
+  readonly evidenceType: BookingEvidenceType;
+  readonly storageKey?: string;
+  readonly url?: string;
+  readonly notes?: string;
+  readonly uploadedByUserId?: string;
+  readonly uploadedByRole: ActorRole;
+  readonly createdAt: string;
+}
+
+export interface CreateBookingEvidenceRequest {
+  readonly evidenceType: BookingEvidenceType;
+  readonly storageKey?: string;
+  readonly url?: string;
+  readonly notes?: string;
+}
+
+export interface BookingEvidenceSummary {
+  readonly beforeCount: number;
+  readonly afterCount: number;
+  readonly damageCount: number;
+  readonly handoverCount: number;
+  readonly otherCount: number;
+  readonly totalCount: number;
+}
+
 export interface PartnerQueueItem {
   readonly bookingId: string;
   readonly primaWashDayId?: string;
@@ -432,6 +462,7 @@ export interface PartnerQueueItem {
   readonly completionNotes?: string;
   readonly beforeServicePhotoUrls?: readonly string[];
   readonly afterServicePhotoUrls?: readonly string[];
+  readonly evidenceSummary?: BookingEvidenceSummary;
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
   readonly operationalExceptionCode?: BookingOperationalExceptionCode;

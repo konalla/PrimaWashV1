@@ -16,6 +16,11 @@ import {
   type BookingHoldRepository,
 } from "./booking-holds/repository.js";
 import {
+  InMemoryBookingEvidenceRepository,
+  PostgresBookingEvidenceRepository,
+  type BookingEvidenceRepository,
+} from "./booking-evidence/repository.js";
+import {
   InMemoryServiceRecordRepository,
   PostgresServiceRecordRepository,
   type ServiceRecordRepository,
@@ -87,6 +92,7 @@ export interface Repositories {
   readonly vehicles: VehicleRepository;
   readonly bookings: BookingRepository;
   readonly bookingHolds: BookingHoldRepository;
+  readonly bookingEvidence: BookingEvidenceRepository;
   readonly serviceRecords: ServiceRecordRepository;
   readonly productEvents: ProductEventRepository;
   readonly payments: PaymentRepository;
@@ -114,6 +120,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       vehicles: new InMemoryVehicleRepository(),
       bookings: new InMemoryBookingRepository(availability, condoOperations),
       bookingHolds: new InMemoryBookingHoldRepository(),
+      bookingEvidence: new InMemoryBookingEvidenceRepository(),
       serviceRecords: new InMemoryServiceRecordRepository(),
       productEvents: new InMemoryProductEventRepository(),
       payments: new InMemoryPaymentRepository(),
@@ -139,6 +146,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     vehicles: new PostgresVehicleRepository(databasePool),
     bookings: new PostgresBookingRepository(databasePool),
     bookingHolds: new PostgresBookingHoldRepository(databasePool),
+    bookingEvidence: new PostgresBookingEvidenceRepository(databasePool),
     serviceRecords: new PostgresServiceRecordRepository(databasePool),
     productEvents: new PostgresProductEventRepository(databasePool),
     payments: new PostgresPaymentRepository(databasePool),

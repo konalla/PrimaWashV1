@@ -110,6 +110,22 @@ Latest work-order accountability productionization on 2026-07-05:
 - `npm run db:smoke` passed with 33 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest booking evidence productionization on 2026-07-05:
+
+- Added `0034_booking_evidence.sql`.
+- Added append-only `booking_evidence` records with type, URL/storage key, notes, uploader role, uploader user, and timestamp.
+- Added memory and Postgres booking-evidence repositories with list, create, and count-by-booking summary support.
+- Added `GET /v1/bookings/:id/evidence` and `POST /v1/bookings/:id/evidence` for partner/internal operators with existing booking ownership and internal permission checks.
+- Customers and competitor partners cannot write evidence records for a booking.
+- Completion now requires persisted before and after evidence records instead of relying on mutable booking URL arrays.
+- Partner/internal dashboards now include evidence summaries for queue completion gates.
+- Web operations drawer now includes append-only evidence listing and evidence-add controls.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 110 API tests.
+- `npm run db:migrate` applied `0034_booking_evidence.sql`.
+- `npm run db:smoke` passed with 34 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -154,7 +170,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0032_booking_operational_exceptions.sql`.
+- Postgres migrations through `0034_booking_evidence.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -170,7 +186,7 @@ Backend foundations now include:
 - Booking holds, bookings, service modes, partner decisions, execution fields, status transitions, cancellations, audit events, and product events.
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
-- Work-order accountability metadata for assigned technician, completion notes, before-service evidence placeholders, after-service evidence placeholders, and completion quality gates.
+- Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
 - Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, and Stripe webhook reconciliation tests.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
