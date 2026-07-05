@@ -18,6 +18,7 @@ import type {
   VerifyAuthCodeRequest,
   CancelBookingRequest,
   CapacityTemplate,
+  CreateBookingConsentRequest,
   CreateBookingEvidenceRequest,
   CreateBookingHandoverRequest,
   CreateAvailabilitySlotRequest,
@@ -101,6 +102,7 @@ import {
   validateUpdateCapacityTemplate,
 } from "./modules/capacity-templates/repository.js";
 import { validateCreateBookingHold } from "./modules/booking-holds/repository.js";
+import { validateCreateBookingConsent } from "./modules/booking-consents/repository.js";
 import { emptyHandoverSummary, validateCreateBookingHandover } from "./modules/booking-handovers/repository.js";
 import { emptyEvidenceSummary, validateCreateBookingEvidence } from "./modules/booking-evidence/repository.js";
 import {
@@ -2270,6 +2272,31 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           assertPartnerOrInternal(actor);
         }
 
+        const consentSummary = await options.repositories.bookingConsents.summary(booking.id);
+
+        if (booking.onsiteServiceMode === "pickup_return" && !consentSummary.pickupReturnTermsAccepted) {
+          sendError(
+            response,
+            409,
+            "booking_consent_required",
+            "Pickup and return consent is required before payment authorization",
+          );
+          return;
+        }
+
+        if (
+          ["customer_property", "onsite"].includes(booking.onsiteServiceMode ?? "") &&
+          !consentSummary.propertyServiceTermsAccepted
+        ) {
+          sendError(
+            response,
+            409,
+            "booking_consent_required",
+            "On-property service consent is required before payment authorization",
+          );
+          return;
+        }
+
         const existingPayment = await options.repositories.payments.getByBookingId(booking.id);
         const ownerProfile = existingPayment ? undefined : await options.repositories.profiles.get(booking.ownerId);
         const billingCustomer = ownerProfile
@@ -2480,6 +2507,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
+    const bookingConsentMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/consents$/);
     const bookingHandoverMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/handovers$/);
     const bookingEvidenceMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence$/);
     const bookingEvidenceFileMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence-file$/);
@@ -2548,10 +2576,75 @@ export function createApiServer(options: CreateApiServerOptions): Server {
       return;
     }
 
+    if ((request.method === "GET" || request.method === "POST") && bookingConsentMatch) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        const bookingId = bookingConsentMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        assertOwnerAccess(actor, booking.ownerId);
+
+        if (request.method === "GET") {
+          sendJson(response, 200, { data: await options.repositories.bookingConsents.list(booking.id) });
+          return;
+        }
+
+        const input = await readJsonBody<CreateBookingConsentRequest>(request);
+        const errors = validateCreateBookingConsent(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking consent payload is invalid", errors);
+          return;
+        }
+
+        const consent = await options.repositories.bookingConsents.create({
+          bookingId: booking.id,
+          ownerId: booking.ownerId,
+          acceptedByUserId: actor.userId,
+          consentType: input.consentType,
+          termsVersion: input.termsVersion,
+          ...(input.acceptedText ? { acceptedText: input.acceptedText } : {}),
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.consent_recorded",
+          resourceType: "booking_consent",
+          resourceId: consent.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            bookingId: booking.id,
+            ownerId: booking.ownerId,
+            consentType: consent.consentType,
+            termsVersion: consent.termsVersion,
+            onsiteServiceMode: booking.onsiteServiceMode,
+          },
+        });
+
+        sendJson(response, 201, { data: consent });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Booking consent request could not be processed", String(error));
+        }
+      }
+
+      return;
+    }
+
     if ((request.method === "GET" || request.method === "POST") && bookingHandoverMatch) {
       try {
         const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
-        assertPartnerOrInternal(actor);
         const bookingId = bookingHandoverMatch[1];
 
         if (!bookingId) {
@@ -2566,6 +2659,13 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        if (request.method === "GET" && actor.role === "customer") {
+          assertOwnerAccess(actor, booking.ownerId);
+          sendJson(response, 200, { data: await options.repositories.bookingHandovers.list(booking.id) });
+          return;
+        }
+
+        assertPartnerOrInternal(actor);
         await assertPartnerBookingAccess(
           options.repositories,
           actor,

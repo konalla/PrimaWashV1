@@ -1,4 +1,14 @@
-import type { Booking, BookingOnsiteServiceMode, CommunicationMessage, CommunicationThread, PartnerLocation, PaymentIntent, Vehicle } from '@prima-wash/contracts';
+import type {
+  Booking,
+  BookingConsent,
+  BookingHandover,
+  BookingOnsiteServiceMode,
+  CommunicationMessage,
+  CommunicationThread,
+  PartnerLocation,
+  PaymentIntent,
+  Vehicle,
+} from '@prima-wash/contracts';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -57,6 +67,8 @@ export default function BookingDetailScreen() {
   const [payment, setPayment] = useState<PaymentIntent | null>();
   const [partner, setPartner] = useState<PartnerLocation>();
   const [vehicle, setVehicle] = useState<Vehicle>();
+  const [consents, setConsents] = useState<readonly BookingConsent[]>([]);
+  const [handovers, setHandovers] = useState<readonly BookingHandover[]>([]);
   const [communicationThread, setCommunicationThread] = useState<CommunicationThread>();
   const [messages, setMessages] = useState<readonly CommunicationMessage[]>([]);
   const [messageBody, setMessageBody] = useState('');
@@ -111,16 +123,20 @@ export default function BookingDetailScreen() {
 
     try {
       const nextBooking = await primaApi.booking(bookingId);
-      const [nextPayment, nextPartner, vehicles] = await Promise.all([
+      const [nextPayment, nextPartner, vehicles, nextConsents, nextHandovers] = await Promise.all([
         primaApi.paymentForBooking(nextBooking.id),
         primaApi.partner(nextBooking.partnerLocationId),
         primaApi.vehicles(),
+        primaApi.bookingConsents(nextBooking.id),
+        primaApi.bookingHandovers(nextBooking.id),
       ]);
 
       setBooking(nextBooking);
       setPayment(nextPayment);
       setPartner(nextPartner);
       setVehicle(vehicles.find((item) => item.id === nextBooking.vehicleId));
+      setConsents(nextConsents);
+      setHandovers(nextHandovers);
       await Promise.all([loadMessages(nextBooking.id), loadSupportMessages(nextBooking.ownerId)]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Booking could not be loaded.');
@@ -138,7 +154,11 @@ export default function BookingDetailScreen() {
   const status = booking ? getStatusCopy(booking, payment) : undefined;
   const canCancel = booking ? ['pending_payment', 'confirmed', 'checked_in'].includes(booking.status) : false;
   const needsPayment = booking?.status === 'pending_payment' && payment?.status !== 'authorized';
-  const activeIndex = useMemo(() => (booking ? timeline.findIndex((item) => item.status === booking.status) : -1), [booking]);
+  const bookingTimeline = useMemo(() => (booking ? buildTimeline(booking.onsiteServiceMode, handovers) : timeline), [booking, handovers]);
+  const activeIndex = useMemo(
+    () => (booking ? bookingTimeline.findIndex((item) => item.status === booking.status) : -1),
+    [booking, bookingTimeline],
+  );
 
   async function openCheckout() {
     if (!booking) {
@@ -314,7 +334,7 @@ export default function BookingDetailScreen() {
             {booking.status === 'cancelled' ? (
               <TimelineRow active complete label="Cancelled" body="Booking cancelled before completion." />
             ) : (
-              timeline.map((item, index) => (
+              bookingTimeline.map((item, index) => (
                 <TimelineRow
                   key={item.status}
                   active={index === activeIndex}
@@ -322,6 +342,37 @@ export default function BookingDetailScreen() {
                   complete={activeIndex >= index}
                   label={item.label}
                 />
+              ))
+            )}
+          </Surface>
+
+          <Surface>
+            <SectionHeading eyebrow="Consent" title="Accepted booking terms" />
+            {consents.length === 0 ? (
+              <Text style={styles.emptyMessage}>No special consent record is required or recorded for this booking.</Text>
+            ) : (
+              consents.map((consent) => (
+                <View key={consent.id} style={styles.messageItem}>
+                  <Text style={styles.messageMeta}>{formatConsentType(consent.consentType)} - {formatMessageTime(consent.acceptedAt)}</Text>
+                  <Text style={styles.messageText}>Terms version {consent.termsVersion}</Text>
+                  {consent.acceptedText ? <Text style={styles.body}>{consent.acceptedText}</Text> : null}
+                </View>
+              ))
+            )}
+          </Surface>
+
+          <Surface>
+            <SectionHeading eyebrow="Handover" title="Custody and release records" />
+            {handovers.length === 0 ? (
+              <Text style={styles.emptyMessage}>Handover records will appear here when the partner records pickup, receipt, return, or release.</Text>
+            ) : (
+              handovers.map((handover) => (
+                <View key={handover.id} style={styles.messageItem}>
+                  <Text style={styles.messageMeta}>{formatHandoverType(handover.handoverType)} - {formatMessageTime(handover.createdAt)}</Text>
+                  <Text style={styles.messageText}>{handover.contactName}</Text>
+                  <Text style={styles.body}>{handover.locationNotes}</Text>
+                  {handover.conditionNotes ? <Text style={styles.body}>{handover.conditionNotes}</Text> : null}
+                </View>
               ))
             )}
           </Surface>
@@ -476,6 +527,67 @@ function paymentBody(payment: PaymentIntent) {
   }
 
   return 'Payment authorization still needs attention.';
+}
+
+function buildTimeline(mode: BookingOnsiteServiceMode | undefined, handovers: readonly BookingHandover[]) {
+  const hasPickup = handovers.some((item) => item.handoverType === 'pickup');
+  const hasReturn = handovers.some((item) => item.handoverType === 'return');
+  const hasOnsiteReceipt = handovers.some((item) => item.handoverType === 'onsite_receipt');
+  const hasOnsiteRelease = handovers.some((item) => item.handoverType === 'onsite_release');
+
+  if (mode === 'pickup_return') {
+    return [
+      { status: 'pending_payment' as const, label: 'Payment secured', body: 'Payment authorization is ready for partner confirmation.' },
+      {
+        status: 'confirmed' as const,
+        label: hasPickup ? 'Pickup recorded' : 'Pickup scheduled',
+        body: hasPickup ? 'The partner has recorded vehicle pickup.' : 'The partner will record pickup before moving the vehicle.',
+      },
+      { status: 'checked_in' as const, label: 'Vehicle received', body: 'Vehicle custody is recorded for service.' },
+      { status: 'in_service' as const, label: 'In service', body: 'Care work is in progress.' },
+      {
+        status: 'completed' as const,
+        label: hasReturn ? 'Returned and completed' : 'Completed',
+        body: hasReturn ? 'Return handover is recorded and service is complete.' : 'Service complete and payment captured.',
+      },
+    ];
+  }
+
+  if (mode === 'customer_property' || mode === 'onsite') {
+    return [
+      { status: 'pending_payment' as const, label: 'Payment secured', body: 'Payment authorization is ready for partner confirmation.' },
+      { status: 'confirmed' as const, label: 'Confirmed', body: 'Partner confirmed the property service appointment.' },
+      {
+        status: 'checked_in' as const,
+        label: hasOnsiteReceipt ? 'Onsite receipt recorded' : 'Technician arriving',
+        body: hasOnsiteReceipt ? 'The partner recorded arrival and vehicle receipt onsite.' : 'The partner will record onsite receipt.',
+      },
+      { status: 'in_service' as const, label: 'In service', body: 'Care work is in progress at the approved area.' },
+      {
+        status: 'completed' as const,
+        label: hasOnsiteRelease ? 'Released and completed' : 'Completed',
+        body: hasOnsiteRelease ? 'Onsite release is recorded and service is complete.' : 'Service complete and payment captured.',
+      },
+    ];
+  }
+
+  return timeline;
+}
+
+function formatConsentType(type: BookingConsent['consentType']) {
+  if (type === 'pickup_return_terms') return 'Pickup-return consent';
+  return 'Property-service consent';
+}
+
+function formatHandoverType(type: BookingHandover['handoverType']) {
+  const labels: Record<BookingHandover['handoverType'], string> = {
+    pickup: 'Pickup',
+    return: 'Return',
+    onsite_receipt: 'Onsite receipt',
+    onsite_release: 'Onsite release',
+  };
+
+  return labels[type];
 }
 
 function formatSenderRole(role: CommunicationMessage['senderRole']) {

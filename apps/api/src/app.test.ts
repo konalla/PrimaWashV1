@@ -15,6 +15,7 @@ import type {
   CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
+  BookingConsent,
   BookingEvidence,
   BookingHandover,
   BookingStatus,
@@ -1920,12 +1921,18 @@ describe("Prima Wash API", () => {
       headers: partnerHeaders,
     });
     const payload = (await response.json()) as ApiResponse<BookingHandover[]>;
+    const customerResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/handovers`, {
+      headers: customerHeaders,
+    });
+    const customerPayload = (await customerResponse.json()) as ApiResponse<BookingHandover[]>;
 
     assert.equal(response.status, 200);
     assert.equal(payload.data.length, 2);
     assert.equal(payload.data[0]?.id, release.id);
     assert.equal(payload.data[1]?.id, pickup.id);
     assert.equal(payload.data[0]?.recordedByRole, "partner");
+    assert.equal(customerResponse.status, 200);
+    assert.equal(customerPayload.data.length, 2);
   });
 
   it("blocks customers and competitor partners from writing booking handovers", async () => {
@@ -2896,6 +2903,50 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "payment_authorization_required");
   });
 
+  it("requires customer consent before payment for pickup-return and property-service bookings", async () => {
+    const pickupVehicle = await createVehicle("CONS01");
+    const pickupBooking = await createBooking(pickupVehicle.id, "wash_basic", "slot_demo_1100", customerHeaders, {
+      onsiteServiceMode: "pickup_return",
+      executionNotes: "Pickup from lobby and return after service.",
+    });
+    const blockedPickupResponse = await fetch(`${baseUrl}/v1/payments/intents`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({ bookingId: pickupBooking.id }),
+    });
+    const blockedPickupPayload = (await blockedPickupResponse.json()) as ApiErrorResponse;
+
+    assert.equal(blockedPickupResponse.status, 409);
+    assert.equal(blockedPickupPayload.code, "booking_consent_required");
+
+    const pickupConsent = await createBookingConsent(pickupBooking.id, "pickup_return_terms");
+    const pickupPayment = await createPaymentIntent(pickupBooking.id);
+
+    assert.equal(pickupConsent.consentType, "pickup_return_terms");
+    assert.equal(pickupPayment.bookingId, pickupBooking.id);
+
+    const propertyVehicle = await createVehicle("CONS02");
+    const propertyBooking = await createBooking(propertyVehicle.id, "wash_basic", "slot_demo_1100", customerHeaders, {
+      onsiteServiceMode: "customer_property",
+      executionNotes: "Service at residence visitor bay.",
+    });
+    const blockedPropertyResponse = await fetch(`${baseUrl}/v1/payments/intents`, {
+      method: "POST",
+      headers: customerHeaders,
+      body: JSON.stringify({ bookingId: propertyBooking.id }),
+    });
+    const blockedPropertyPayload = (await blockedPropertyResponse.json()) as ApiErrorResponse;
+
+    assert.equal(blockedPropertyResponse.status, 409);
+    assert.equal(blockedPropertyPayload.code, "booking_consent_required");
+
+    const propertyConsent = await createBookingConsent(propertyBooking.id, "property_service_terms");
+    const propertyPayment = await createPaymentIntent(propertyBooking.id);
+
+    assert.equal(propertyConsent.consentType, "property_service_terms");
+    assert.equal(propertyPayment.bookingId, propertyBooking.id);
+  });
+
   it("reconciles Stripe payment authorization webhooks idempotently", async () => {
     const vehicle = await createVehicle("PAYHOOK1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -3210,12 +3261,60 @@ describe("Prima Wash API", () => {
     bookingId: string,
     headers: Record<string, string> = customerHeaders,
   ): Promise<PaymentIntent> {
+    await ensureRequiredBookingConsent(bookingId, headers);
     const response = await fetch(`${baseUrl}/v1/payments/intents`, {
       method: "POST",
       headers,
       body: JSON.stringify({ bookingId }),
     });
     const payload = (await response.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(response.status, 201);
+    return payload.data;
+  }
+
+  async function ensureRequiredBookingConsent(bookingId: string, headers: Record<string, string>): Promise<void> {
+    if (headers["x-prima-role"] !== "customer") {
+      return;
+    }
+
+    const bookingResponse = await fetch(`${baseUrl}/v1/bookings/${bookingId}`, { headers });
+
+    if (!bookingResponse.ok) {
+      return;
+    }
+
+    const bookingPayload = (await bookingResponse.json()) as ApiResponse<Booking>;
+
+    if (bookingPayload.data.onsiteServiceMode === "pickup_return") {
+      await createBookingConsent(bookingId, "pickup_return_terms", {}, headers);
+    }
+
+    if (["customer_property", "onsite"].includes(bookingPayload.data.onsiteServiceMode ?? "")) {
+      await createBookingConsent(bookingId, "property_service_terms", {}, headers);
+    }
+  }
+
+  async function createBookingConsent(
+    bookingId: string,
+    consentType: BookingConsent["consentType"],
+    overrides: Partial<Pick<BookingConsent, "termsVersion" | "acceptedText">> = {},
+    headers: Record<string, string> = customerHeaders,
+  ): Promise<BookingConsent> {
+    const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/consents`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        consentType,
+        termsVersion: overrides.termsVersion ?? "2026-07-05",
+        acceptedText:
+          overrides.acceptedText ??
+          (consentType === "pickup_return_terms"
+            ? "I authorize Prima Wash and its partner to coordinate vehicle pickup, care away, and return for this booking."
+            : "I authorize Prima Wash and its partner to coordinate service at my property or approved operating area."),
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<BookingConsent>;
 
     assert.equal(response.status, 201);
     return payload.data;

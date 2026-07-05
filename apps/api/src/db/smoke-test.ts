@@ -53,6 +53,7 @@ try {
   await assertTableExists("access_invitations");
   await assertTableExists("booking_evidence");
   await assertTableExists("booking_handovers");
+  await assertTableExists("booking_consents");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -190,6 +191,7 @@ async function assertTransactionalWriteRead(): Promise<void> {
   const afterEvidenceId = `evidence_smoke_after_${suffix}`;
   const pickupHandoverId = `handover_smoke_pickup_${suffix}`;
   const returnHandoverId = `handover_smoke_return_${suffix}`;
+  const pickupConsentId = `consent_smoke_pickup_${suffix}`;
   const threadId = `thread_smoke_${suffix}`;
   const messageId = `msg_smoke_${suffix}`;
 
@@ -248,6 +250,13 @@ async function assertTransactionalWriteRead(): Promise<void> {
       [pickupHandoverId, bookingId, returnHandoverId],
     );
     await client.query(
+      `insert into booking_consents (
+        id, booking_id, owner_id, consent_type, terms_version, accepted_text, accepted_by_user_id, accepted_at
+      )
+      values ($1, $2, 'usr_demo_001', 'pickup_return_terms', '2026-07-05', 'Smoke pickup-return terms accepted.', 'usr_demo_001', now())`,
+      [pickupConsentId, bookingId],
+    );
+    await client.query(
       `insert into communication_messages (id, thread_id, sender_user_id, sender_role, body, created_at)
        values ($1, $2, 'partner_demo_001', 'partner', 'Smoke test message', now())`,
       [messageId, threadId],
@@ -265,6 +274,7 @@ async function assertTransactionalWriteRead(): Promise<void> {
       evidence_after_count: string;
       pickup_handover_count: string;
       return_handover_count: string;
+      pickup_consent_count: string;
       message_count: string;
     }>(
       `select v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
@@ -275,11 +285,13 @@ async function assertTransactionalWriteRead(): Promise<void> {
               count(distinct be.id) filter (where be.evidence_type = 'after')::text as evidence_after_count,
               count(distinct bh.id) filter (where bh.handover_type = 'pickup')::text as pickup_handover_count,
               count(distinct bh.id) filter (where bh.handover_type = 'return')::text as return_handover_count,
+              count(distinct bc.id) filter (where bc.consent_type = 'pickup_return_terms')::text as pickup_consent_count,
               count(distinct cm.id)::text as message_count
        from bookings b
        join vehicles v on v.id = b.vehicle_id
        join booking_evidence be on be.booking_id = b.id
        join booking_handovers bh on bh.booking_id = b.id
+       join booking_consents bc on bc.booking_id = b.id
        join communication_threads ct on ct.resource_id = b.id
        join communication_messages cm on cm.thread_id = ct.id
        where b.id = $1
@@ -301,6 +313,7 @@ async function assertTransactionalWriteRead(): Promise<void> {
       Number(row.evidence_after_count) !== 1 ||
       Number(row.pickup_handover_count) !== 1 ||
       Number(row.return_handover_count) !== 1 ||
+      Number(row.pickup_consent_count) !== 1 ||
       Number(row.message_count) !== 1
     ) {
       throw new Error("transactional_write_read_failed");
@@ -318,6 +331,7 @@ async function assertTransactionalWriteRead(): Promise<void> {
         afterEvidenceRecordCount: Number(row.evidence_after_count),
         pickupHandoverCount: Number(row.pickup_handover_count),
         returnHandoverCount: Number(row.return_handover_count),
+        pickupConsentCount: Number(row.pickup_consent_count),
         messageCount: Number(row.message_count),
       },
     });

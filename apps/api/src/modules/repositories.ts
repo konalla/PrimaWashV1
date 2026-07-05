@@ -21,6 +21,11 @@ import {
   type BookingEvidenceRepository,
 } from "./booking-evidence/repository.js";
 import {
+  InMemoryBookingConsentRepository,
+  PostgresBookingConsentRepository,
+  type BookingConsentRepository,
+} from "./booking-consents/repository.js";
+import {
   InMemoryBookingHandoverRepository,
   PostgresBookingHandoverRepository,
   type BookingHandoverRepository,
@@ -97,6 +102,7 @@ export interface Repositories {
   readonly vehicles: VehicleRepository;
   readonly bookings: BookingRepository;
   readonly bookingHolds: BookingHoldRepository;
+  readonly bookingConsents: BookingConsentRepository;
   readonly bookingEvidence: BookingEvidenceRepository;
   readonly bookingHandovers: BookingHandoverRepository;
   readonly serviceRecords: ServiceRecordRepository;
@@ -126,6 +132,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       vehicles: new InMemoryVehicleRepository(),
       bookings: new InMemoryBookingRepository(availability, condoOperations),
       bookingHolds: new InMemoryBookingHoldRepository(),
+      bookingConsents: new InMemoryBookingConsentRepository(),
       bookingEvidence: new InMemoryBookingEvidenceRepository(),
       bookingHandovers: new InMemoryBookingHandoverRepository(),
       serviceRecords: new InMemoryServiceRecordRepository(),
@@ -153,6 +160,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     vehicles: new PostgresVehicleRepository(databasePool),
     bookings: new PostgresBookingRepository(databasePool),
     bookingHolds: new PostgresBookingHoldRepository(databasePool),
+    bookingConsents: new PostgresBookingConsentRepository(databasePool),
     bookingEvidence: new PostgresBookingEvidenceRepository(databasePool),
     bookingHandovers: new PostgresBookingHandoverRepository(databasePool),
     serviceRecords: new PostgresServiceRecordRepository(databasePool),

@@ -17,10 +17,19 @@ export default function ReviewScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<Booking>();
   const [pendingPayment, setPendingPayment] = useState<PaymentIntent>();
+  const [acceptedOperationalConsent, setAcceptedOperationalConsent] = useState(false);
   const [error, setError] = useState<string>();
   const locationName = draft.primaWashDay?.propertyName ?? draft.partner?.name;
   const onsiteServiceMode: BookingOnsiteServiceMode = draft.primaWashDay ? 'customer_property' : draft.onsiteServiceMode ?? 'partner_location';
-  const canSubmit = Boolean(draft.service && draft.slot && draft.vehicle && (draft.partner || draft.primaWashDay));
+  const consentType = requiredConsentType(onsiteServiceMode);
+  const consentRequired = Boolean(consentType);
+  const canSubmit = Boolean(
+    draft.service &&
+      draft.slot &&
+      draft.vehicle &&
+      (draft.partner || draft.primaWashDay) &&
+      (!consentRequired || acceptedOperationalConsent),
+  );
 
   async function confirmBooking() {
     if (!draft.service || !draft.slot || !draft.vehicle || (!draft.partner && !draft.primaWashDay)) {
@@ -50,6 +59,13 @@ export default function ReviewScreen() {
         ...(draft.executionNotes ? { executionNotes: draft.executionNotes } : {}),
       });
       setPendingBooking(booking);
+      if (consentType) {
+        await primaApi.createBookingConsent(booking.id, {
+          consentType,
+          termsVersion: '2026-07-05',
+          acceptedText: consentText(onsiteServiceMode),
+        });
+      }
       const existingPayment = pendingPayment ?? await primaApi.paymentForBooking(booking.id);
       const payment = existingPayment ?? await primaApi.createPaymentIntent({ bookingId: booking.id });
       setPendingPayment(payment);
@@ -130,6 +146,22 @@ export default function ReviewScreen() {
           </Text>
         </Surface>
       ) : null}
+      {consentRequired ? (
+        <Surface>
+          <SectionHeading eyebrow="Required consent" title={consentTitle(onsiteServiceMode)} />
+          <Text style={styles.payment}>{consentText(onsiteServiceMode)}</Text>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: acceptedOperationalConsent }}
+            onPress={() => setAcceptedOperationalConsent((current) => !current)}
+            style={[styles.consentRow, acceptedOperationalConsent && styles.consentRowAccepted]}>
+            <View style={[styles.checkbox, acceptedOperationalConsent && styles.checkboxAccepted]}>
+              <Text style={styles.checkboxMark}>{acceptedOperationalConsent ? '✓' : ''}</Text>
+            </View>
+            <Text style={styles.consentLabel}>I understand and agree for this booking.</Text>
+          </Pressable>
+        </Surface>
+      ) : null}
       <Surface>
         <SectionHeading eyebrow="Payment" title="Protected checkout" />
         <Text style={styles.payment}>
@@ -190,6 +222,25 @@ function formatServiceMode(mode: BookingOnsiteServiceMode) {
   return 'Drive to partner location';
 }
 
+function requiredConsentType(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'pickup_return_terms' as const;
+  if (mode === 'customer_property' || mode === 'onsite') return 'property_service_terms' as const;
+  return undefined;
+}
+
+function consentTitle(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') return 'Pickup, custody, and return';
+  return 'Property access and operating area';
+}
+
+function consentText(mode: BookingOnsiteServiceMode) {
+  if (mode === 'pickup_return') {
+    return 'I authorize Prima Wash and its verified partner to coordinate vehicle pickup, service away from the pickup point, and return for this booking. Handover records will be kept for pickup and return.';
+  }
+
+  return 'I confirm that Prima Wash and its verified partner may coordinate service at my property or approved operating area for this booking. I understand access, parking, and site rules may affect service.';
+}
+
 function firstInstructionLine(value: string) {
   return value.split('\n').find((line) => line.includes(':')) ?? 'Added';
 }
@@ -208,6 +259,29 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border },
   payment: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   errorTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    padding: spacing.md,
+    backgroundColor: colors.canvasRaised,
+  },
+  consentRowAccepted: { borderColor: colors.accent },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxAccepted: { borderColor: colors.accent, backgroundColor: colors.accent },
+  checkboxMark: { color: colors.surface, fontSize: 14, fontWeight: '900' },
+  consentLabel: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '800', lineHeight: 19 },
   recovery: { color: colors.warning, fontSize: 12, lineHeight: 18 },
   retry: { color: colors.accent, fontSize: 13, fontWeight: '800', paddingVertical: spacing.sm },
   policy: { color: colors.subtle, fontSize: 11, lineHeight: 17, textAlign: 'center' },

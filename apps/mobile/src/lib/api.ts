@@ -11,10 +11,13 @@ import type {
   CommunicationThreadWithMessages,
   CustomerProfile,
   Booking,
+  BookingConsent,
+  BookingHandover,
   CreateCommunicationMessageRequest,
   CreateCommunicationThreadRequest,
   CreateBookingHoldRequest,
   CreateBookingHoldResponse,
+  CreateBookingConsentRequest,
   CreateBookingRequest,
   CreatePaymentIntentRequest,
   CreatePropertyInterestRequest,
@@ -137,6 +140,10 @@ export const primaApi = {
   vehicles: () => request<readonly Vehicle[]>('/v1/vehicles'),
   bookings: () => request<readonly Booking[]>('/v1/bookings'),
   booking: (bookingId: string) => request<Booking>(`/v1/bookings/${bookingId}`),
+  bookingConsents: (bookingId: string) => request<readonly BookingConsent[]>(`/v1/bookings/${bookingId}/consents`),
+  createBookingConsent: (bookingId: string, input: CreateBookingConsentRequest) =>
+    request<BookingConsent>(`/v1/bookings/${bookingId}/consents`, { method: 'POST', body: JSON.stringify(input) }),
+  bookingHandovers: (bookingId: string) => request<readonly BookingHandover[]>(`/v1/bookings/${bookingId}/handovers`),
   communicationThreads: (input: { readonly resourceType: string; readonly resourceId: string }) =>
     request<readonly CommunicationThread[]>(
       `/v1/communication/threads?resourceType=${encodeURIComponent(input.resourceType)}&resourceId=${encodeURIComponent(

@@ -585,6 +585,30 @@ export type BookingStatus =
 
 export type BookingOnsiteServiceMode = "onsite" | "partner_location" | "customer_property" | "pickup_return";
 
+export type BookingConsentType = "pickup_return_terms" | "property_service_terms";
+
+export interface BookingConsent {
+  readonly id: string;
+  readonly bookingId: string;
+  readonly ownerId: string;
+  readonly consentType: BookingConsentType;
+  readonly termsVersion: string;
+  readonly acceptedText?: string;
+  readonly acceptedByUserId?: string;
+  readonly acceptedAt: string;
+}
+
+export interface CreateBookingConsentRequest {
+  readonly consentType: BookingConsentType;
+  readonly termsVersion: string;
+  readonly acceptedText?: string;
+}
+
+export interface BookingConsentSummary {
+  readonly pickupReturnTermsAccepted: boolean;
+  readonly propertyServiceTermsAccepted: boolean;
+}
+
 export interface UpdateBookingExecutionRequest {
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
   readonly valetRequested?: boolean;

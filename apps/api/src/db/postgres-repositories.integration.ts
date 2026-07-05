@@ -6,6 +6,7 @@ import { PostgresAvailabilityRepository } from "../modules/availability/reposito
 import { PostgresAccessControlRepository } from "../modules/access-control/repository.js";
 import { PostgresAuthRepository } from "../modules/auth/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
+import { PostgresBookingConsentRepository } from "../modules/booking-consents/repository.js";
 import { PostgresBookingEvidenceRepository } from "../modules/booking-evidence/repository.js";
 import { PostgresBookingHandoverRepository } from "../modules/booking-handovers/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
@@ -22,6 +23,7 @@ describe("Postgres repository parity", () => {
   let accessControl: PostgresAccessControlRepository;
   let auth: PostgresAuthRepository;
   let bookings: PostgresBookingRepository;
+  let bookingConsents: PostgresBookingConsentRepository;
   let bookingEvidence: PostgresBookingEvidenceRepository;
   let bookingHandovers: PostgresBookingHandoverRepository;
   let communications: PostgresCommunicationRepository;
@@ -37,6 +39,7 @@ describe("Postgres repository parity", () => {
     accessControl = new PostgresAccessControlRepository(pool);
     auth = new PostgresAuthRepository(pool);
     bookings = new PostgresBookingRepository(pool);
+    bookingConsents = new PostgresBookingConsentRepository(pool);
     bookingEvidence = new PostgresBookingEvidenceRepository(pool);
     bookingHandovers = new PostgresBookingHandoverRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
@@ -170,6 +173,22 @@ describe("Postgres repository parity", () => {
       assert.equal(listedHandovers.length, 2);
       assert.equal(handoverCounts.get(booking.id)?.pickupCount, 1);
       assert.equal(handoverCounts.get(booking.id)?.returnCount, 1);
+
+      const consent = await bookingConsents.create({
+        bookingId: booking.id,
+        ownerId: booking.ownerId,
+        consentType: "pickup_return_terms",
+        termsVersion: "2026-07-05",
+        acceptedText: "I authorize pickup, care away, and return for this booking.",
+        acceptedByUserId: booking.ownerId,
+      });
+      const listedConsents = await bookingConsents.list(booking.id);
+      const consentSummary = await bookingConsents.summary(booking.id);
+
+      assert.equal(consent.consentType, "pickup_return_terms");
+      assert.equal(listedConsents.length, 1);
+      assert.equal(consentSummary.pickupReturnTermsAccepted, true);
+      assert.equal(consentSummary.propertyServiceTermsAccepted, false);
 
       const exceptionBooking = await bookings.updateOperationalException(booking.id, {
         resolved: false,
@@ -753,6 +772,7 @@ async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
   }
 
   if (ids.bookingId) {
+    await pool.query("delete from booking_consents where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_handovers where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_evidence where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from bookings where id = $1", [ids.bookingId]);
