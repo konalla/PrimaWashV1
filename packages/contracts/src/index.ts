@@ -446,6 +446,43 @@ export interface BookingEvidenceSummary {
   readonly totalCount: number;
 }
 
+export type BookingHandoverType = "pickup" | "return" | "onsite_receipt" | "onsite_release";
+
+export interface BookingHandover {
+  readonly id: string;
+  readonly bookingId: string;
+  readonly handoverType: BookingHandoverType;
+  readonly contactName: string;
+  readonly locationNotes: string;
+  readonly keyHandoverMethod?: string;
+  readonly odometerReading?: string;
+  readonly fuelOrChargeLevel?: string;
+  readonly conditionNotes?: string;
+  readonly acknowledgedBy?: string;
+  readonly recordedByUserId?: string;
+  readonly recordedByRole: ActorRole;
+  readonly createdAt: string;
+}
+
+export interface CreateBookingHandoverRequest {
+  readonly handoverType: BookingHandoverType;
+  readonly contactName: string;
+  readonly locationNotes: string;
+  readonly keyHandoverMethod?: string;
+  readonly odometerReading?: string;
+  readonly fuelOrChargeLevel?: string;
+  readonly conditionNotes?: string;
+  readonly acknowledgedBy?: string;
+}
+
+export interface BookingHandoverSummary {
+  readonly pickupCount: number;
+  readonly returnCount: number;
+  readonly onsiteReceiptCount: number;
+  readonly onsiteReleaseCount: number;
+  readonly totalCount: number;
+}
+
 export interface PartnerQueueItem {
   readonly bookingId: string;
   readonly primaWashDayId?: string;
@@ -463,6 +500,7 @@ export interface PartnerQueueItem {
   readonly beforeServicePhotoUrls?: readonly string[];
   readonly afterServicePhotoUrls?: readonly string[];
   readonly evidenceSummary?: BookingEvidenceSummary;
+  readonly handoverSummary?: BookingHandoverSummary;
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
   readonly operationalExceptionCode?: BookingOperationalExceptionCode;

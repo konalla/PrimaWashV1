@@ -2172,6 +2172,7 @@
       let activeQueueFilter = "upcoming";
       let selectedBookingId = null;
       const bookingEvidenceCache = new Map();
+      const bookingHandoverCache = new Map();
       let communicationDialogHeaders = null;
       let capacityTemplates = [];
       const authSessions = new Map();
@@ -3696,6 +3697,23 @@
           return "Before and after service evidence is required before completing and capturing payment.";
         }
 
+        const handoverSummary = getHandoverSummary(item);
+        if (
+          nextStatus === "completed" &&
+          requiresPickupReturnHandover(item) &&
+          (!handoverSummary.pickupCount || !handoverSummary.returnCount)
+        ) {
+          return "Pickup and return handover records are required before completing and capturing payment.";
+        }
+
+        if (
+          nextStatus === "completed" &&
+          requiresOnsiteHandover(item) &&
+          (!handoverSummary.onsiteReceiptCount || !handoverSummary.onsiteReleaseCount)
+        ) {
+          return "Onsite receipt and release handover records are required before completing and capturing payment.";
+        }
+
         return "";
       }
 
@@ -3704,6 +3722,7 @@
         renderBookingDrawer();
         bookingDialog.showModal();
         void loadBookingEvidenceForDrawer(bookingId);
+        void loadBookingHandoversForDrawer(bookingId);
       }
 
       function renderBookingDrawer() {
@@ -3780,6 +3799,7 @@
             ${renderServiceModeWorkOrder(item)}
             ${renderSiteInstructions(item)}
             ${renderOperationalExceptionPanel(item, executionDisabled)}
+            ${renderHandoverPanel(item, executionDisabled)}
             ${renderEvidencePanel(item, executionDisabled)}
 
             <section>
@@ -3974,6 +3994,135 @@
         };
       }
 
+      function getHandoverRecords(item) {
+        return bookingHandoverCache.get(item.bookingId) || [];
+      }
+
+      function getHandoverSummary(item) {
+        const records = getHandoverRecords(item);
+
+        if (records.length) {
+          return records.reduce(
+            (summary, handover) => ({
+              pickupCount: summary.pickupCount + (handover.handoverType === "pickup" ? 1 : 0),
+              returnCount: summary.returnCount + (handover.handoverType === "return" ? 1 : 0),
+              onsiteReceiptCount: summary.onsiteReceiptCount + (handover.handoverType === "onsite_receipt" ? 1 : 0),
+              onsiteReleaseCount: summary.onsiteReleaseCount + (handover.handoverType === "onsite_release" ? 1 : 0),
+              totalCount: summary.totalCount + 1,
+            }),
+            { pickupCount: 0, returnCount: 0, onsiteReceiptCount: 0, onsiteReleaseCount: 0, totalCount: 0 },
+          );
+        }
+
+        return item.handoverSummary || {
+          pickupCount: 0,
+          returnCount: 0,
+          onsiteReceiptCount: 0,
+          onsiteReleaseCount: 0,
+          totalCount: 0,
+        };
+      }
+
+      function requiresPickupReturnHandover(item) {
+        return item.onsiteServiceMode === "pickup_return";
+      }
+
+      function requiresOnsiteHandover(item) {
+        return ["customer_property", "onsite"].includes(item.onsiteServiceMode || "");
+      }
+
+      function renderHandoverPanel(item, executionDisabled) {
+        const records = getHandoverRecords(item);
+        const summary = getHandoverSummary(item);
+        const rows = records.length
+          ? records
+              .map(
+                (record) => `
+                  <div class="work-order-line">
+                    <strong>${formatHandoverType(record.handoverType)}</strong>
+                    <span>${escapeHtml(record.contactName)} - ${escapeHtml(record.locationNotes)}</span>
+                    ${record.keyHandoverMethod ? `<span>Keys: ${escapeHtml(record.keyHandoverMethod)}</span>` : ""}
+                    ${
+                      record.odometerReading || record.fuelOrChargeLevel
+                        ? `<span>${escapeHtml([record.odometerReading, record.fuelOrChargeLevel].filter(Boolean).join(" - "))}</span>`
+                        : ""
+                    }
+                    ${record.conditionNotes ? `<span>${escapeHtml(record.conditionNotes)}</span>` : ""}
+                    <small>${formatDateTime(record.createdAt)} - ${escapeHtml(record.recordedByRole)}</small>
+                  </div>
+                `,
+              )
+              .join("")
+          : `<div class="empty">No handover records yet. Record pickup/receipt and return/release before completion when required.</div>`;
+
+        return `
+          <section>
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Handover records</p>
+                <h3>Vehicle custody and release</h3>
+                <p class="section-description">${summary.pickupCount} pickup - ${summary.returnCount} return - ${summary.onsiteReceiptCount} onsite receipt - ${summary.onsiteReleaseCount} onsite release. Records are append-only.</p>
+              </div>
+            </div>
+            <div class="work-order-list">${rows}</div>
+            <form class="cluster" id="booking-handover-form">
+              <input type="hidden" name="bookingId" value="${item.bookingId}">
+              <div class="form-grid">
+                <label>
+                  Handover type
+                  <select name="handoverType" ${executionDisabled}>
+                    <option value="pickup">Pickup</option>
+                    <option value="return">Return</option>
+                    <option value="onsite_receipt">Onsite receipt</option>
+                    <option value="onsite_release">Onsite release</option>
+                  </select>
+                </label>
+                <label>
+                  Contact name
+                  <input name="contactName" placeholder="Owner, concierge, guard, partner staff" ${executionDisabled}>
+                </label>
+              </div>
+              <div class="field">
+                <label for="booking-handover-location">Location notes</label>
+                <textarea id="booking-handover-location" name="locationNotes" placeholder="Exact bay, lobby, gate, garage, or return point" ${executionDisabled}></textarea>
+              </div>
+              <div class="form-grid">
+                <label>
+                  Key handover
+                  <input name="keyHandoverMethod" placeholder="Key pouch, owner present, concierge" ${executionDisabled}>
+                </label>
+                <label>
+                  Odometer
+                  <input name="odometerReading" placeholder="12000 km" ${executionDisabled}>
+                </label>
+                <label>
+                  Fuel / charge
+                  <input name="fuelOrChargeLevel" placeholder="80%" ${executionDisabled}>
+                </label>
+                <label>
+                  Acknowledged by
+                  <input name="acknowledgedBy" placeholder="Name of person acknowledging" ${executionDisabled}>
+                </label>
+              </div>
+              <div class="field">
+                <label for="booking-handover-condition">Condition notes</label>
+                <textarea id="booking-handover-condition" name="conditionNotes" placeholder="Condition, visible marks, return notes, exceptions" ${executionDisabled}></textarea>
+              </div>
+              <button class="action primary" type="submit" ${executionDisabled}>Add handover record</button>
+            </form>
+          </section>
+        `;
+      }
+
+      function formatHandoverType(type) {
+        return {
+          pickup: "Pickup",
+          return: "Return",
+          onsite_receipt: "Onsite receipt",
+          onsite_release: "Onsite release",
+        }[type] || "Handover";
+      }
+
       function renderEvidencePanel(item, executionDisabled) {
         const records = getEvidenceRecords(item);
         const summary = getEvidenceSummary(item);
@@ -4055,7 +4204,14 @@
         const checkedIn = Boolean(item.technicianCheckedInAt);
         const checkedOut = Boolean(item.technicianCheckedOutAt);
         const evidenceSummary = getEvidenceSummary(item);
+        const handoverSummary = getHandoverSummary(item);
         const hasEvidence = Boolean(evidenceSummary.beforeCount && evidenceSummary.afterCount);
+        const hasRequiredHandovers =
+          requiresPickupReturnHandover(item)
+            ? Boolean(handoverSummary.pickupCount && handoverSummary.returnCount)
+            : requiresOnsiteHandover(item)
+              ? Boolean(handoverSummary.onsiteReceiptCount && handoverSummary.onsiteReleaseCount)
+              : true;
         const steps = [
           {
             done: item.status !== "pending_payment",
@@ -4070,10 +4226,12 @@
               : "Assign a technician or partner staff member before completion.",
           },
           {
-            done: checkedIn || ["checked_in", "in_service", "completed"].includes(item.status),
+            done: requiresPickupReturnHandover(item)
+              ? Boolean(handoverSummary.pickupCount)
+              : checkedIn || ["checked_in", "in_service", "completed"].includes(item.status),
             label: item.onsiteServiceMode === "pickup_return" ? "Vehicle received or collected" : "Technician checked in",
             body: item.onsiteServiceMode === "pickup_return"
-              ? "Vehicle handover has been recorded before movement."
+              ? "Pickup custody is recorded before vehicle movement."
               : "Technician is present at the operating location.",
           },
           {
@@ -4087,6 +4245,15 @@
             body: item.onsiteServiceMode === "pickup_return"
               ? "Vehicle has been returned to the customer and payment can be captured."
               : "Work is complete, area is clear, and payment can be captured.",
+          },
+          {
+            done: hasRequiredHandovers,
+            label: "Required handovers recorded",
+            body: requiresPickupReturnHandover(item)
+              ? "Pickup and return records are saved before capture."
+              : requiresOnsiteHandover(item)
+                ? "Onsite receipt and release records are saved before capture."
+                : "No special handover record is required for partner-location service.",
           },
           {
             done: Boolean(item.completionNotes),
@@ -4765,6 +4932,19 @@
         return payload.data;
       }
 
+      async function fetchBookingHandovers(bookingId) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/handovers`, {
+          headers: workspaceHeaders("operations_read"),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Handover load failed");
+        }
+
+        return payload.data;
+      }
+
       async function createBookingEvidence(bookingId, input) {
         const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/evidence`, {
           method: "POST",
@@ -4778,6 +4958,24 @@
 
         if (!response.ok) {
           throw new Error(payload.message || "Evidence upload failed");
+        }
+
+        return payload.data;
+      }
+
+      async function createBookingHandover(bookingId, input) {
+        const response = await fetch(`${apiBase}/v1/bookings/${bookingId}/handovers`, {
+          method: "POST",
+          headers: {
+            ...workspaceHeaders("operations_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Handover record failed");
         }
 
         return payload.data;
@@ -4810,6 +5008,18 @@
         try {
           const evidence = await fetchBookingEvidence(bookingId);
           bookingEvidenceCache.set(bookingId, evidence);
+          if (selectedBookingId === bookingId) {
+            renderBookingDrawer();
+          }
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      }
+
+      async function loadBookingHandoversForDrawer(bookingId) {
+        try {
+          const handovers = await fetchBookingHandovers(bookingId);
+          bookingHandoverCache.set(bookingId, handovers);
           if (selectedBookingId === bookingId) {
             renderBookingDrawer();
           }
@@ -5675,6 +5885,46 @@
             await loadDashboard();
             renderBookingDrawer();
             showToast("Operational exception recorded and owner thread opened.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const bookingHandoverForm = event.target.closest?.("#booking-handover-form");
+
+        if (bookingHandoverForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(bookingHandoverForm);
+            const bookingId = String(form.get("bookingId"));
+            const contactName = String(form.get("contactName") || "").trim();
+            const locationNotes = String(form.get("locationNotes") || "").trim();
+
+            if (!contactName || !locationNotes) {
+              throw new Error("Contact name and location notes are required.");
+            }
+
+            await createBookingHandover(bookingId, {
+              handoverType: String(form.get("handoverType")),
+              contactName,
+              locationNotes,
+              keyHandoverMethod: String(form.get("keyHandoverMethod") || "").trim(),
+              odometerReading: String(form.get("odometerReading") || "").trim(),
+              fuelOrChargeLevel: String(form.get("fuelOrChargeLevel") || "").trim(),
+              acknowledgedBy: String(form.get("acknowledgedBy") || "").trim(),
+              conditionNotes: String(form.get("conditionNotes") || "").trim(),
+            });
+            bookingHandoverForm.reset();
+            await loadDashboard();
+            await loadBookingHandoversForDrawer(bookingId);
+            showToast("Handover record added.");
           } catch (error) {
             showToast(error.message, "error");
           } finally {

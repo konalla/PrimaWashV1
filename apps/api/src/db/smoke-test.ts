@@ -52,6 +52,7 @@ try {
   await assertTableExists("auth_refresh_tokens");
   await assertTableExists("access_invitations");
   await assertTableExists("booking_evidence");
+  await assertTableExists("booking_handovers");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");
@@ -187,6 +188,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
   const bookingId = `book_smoke_${suffix}`;
   const beforeEvidenceId = `evidence_smoke_before_${suffix}`;
   const afterEvidenceId = `evidence_smoke_after_${suffix}`;
+  const pickupHandoverId = `handover_smoke_pickup_${suffix}`;
+  const returnHandoverId = `handover_smoke_return_${suffix}`;
   const threadId = `thread_smoke_${suffix}`;
   const messageId = `msg_smoke_${suffix}`;
 
@@ -230,6 +233,21 @@ async function assertTransactionalWriteRead(): Promise<void> {
       [beforeEvidenceId, bookingId, afterEvidenceId],
     );
     await client.query(
+      `insert into booking_handovers (
+        id, booking_id, handover_type, contact_name, location_notes, key_handover_method,
+        odometer_reading, fuel_or_charge_level, condition_notes, acknowledged_by,
+        recorded_by_user_id, recorded_by_role, created_at
+      )
+      values
+        ($1, $2, 'pickup', 'Smoke Owner', 'Lobby pickup bay', 'Key card envelope',
+         '12000 km', '80%', 'No visible new damage at pickup.', 'Smoke Owner',
+         'partner_demo_001', 'partner', now()),
+        ($3, $2, 'return', 'Smoke Owner', 'Lobby return bay', 'Key returned to owner',
+         '12012 km', '78%', 'Returned clean with owner acknowledgement.', 'Smoke Owner',
+         'partner_demo_001', 'partner', now())`,
+      [pickupHandoverId, bookingId, returnHandoverId],
+    );
+    await client.query(
       `insert into communication_messages (id, thread_id, sender_user_id, sender_role, body, created_at)
        values ($1, $2, 'partner_demo_001', 'partner', 'Smoke test message', now())`,
       [messageId, threadId],
@@ -245,6 +263,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
       after_count: string;
       evidence_before_count: string;
       evidence_after_count: string;
+      pickup_handover_count: string;
+      return_handover_count: string;
       message_count: string;
     }>(
       `select v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
@@ -253,10 +273,13 @@ async function assertTransactionalWriteRead(): Promise<void> {
               cardinality(b.after_service_photo_urls)::text as after_count,
               count(distinct be.id) filter (where be.evidence_type = 'before')::text as evidence_before_count,
               count(distinct be.id) filter (where be.evidence_type = 'after')::text as evidence_after_count,
+              count(distinct bh.id) filter (where bh.handover_type = 'pickup')::text as pickup_handover_count,
+              count(distinct bh.id) filter (where bh.handover_type = 'return')::text as return_handover_count,
               count(distinct cm.id)::text as message_count
        from bookings b
        join vehicles v on v.id = b.vehicle_id
        join booking_evidence be on be.booking_id = b.id
+       join booking_handovers bh on bh.booking_id = b.id
        join communication_threads ct on ct.resource_id = b.id
        join communication_messages cm on cm.thread_id = ct.id
        where b.id = $1
@@ -276,6 +299,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
       Number(row.after_count) !== 1 ||
       Number(row.evidence_before_count) !== 1 ||
       Number(row.evidence_after_count) !== 1 ||
+      Number(row.pickup_handover_count) !== 1 ||
+      Number(row.return_handover_count) !== 1 ||
       Number(row.message_count) !== 1
     ) {
       throw new Error("transactional_write_read_failed");
@@ -291,6 +316,8 @@ async function assertTransactionalWriteRead(): Promise<void> {
         afterEvidenceCount: Number(row.after_count),
         beforeEvidenceRecordCount: Number(row.evidence_before_count),
         afterEvidenceRecordCount: Number(row.evidence_after_count),
+        pickupHandoverCount: Number(row.pickup_handover_count),
+        returnHandoverCount: Number(row.return_handover_count),
         messageCount: Number(row.message_count),
       },
     });

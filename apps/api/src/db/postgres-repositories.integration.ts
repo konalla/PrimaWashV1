@@ -7,6 +7,7 @@ import { PostgresAccessControlRepository } from "../modules/access-control/repos
 import { PostgresAuthRepository } from "../modules/auth/repository.js";
 import { PostgresBookingRepository } from "../modules/bookings/repository.js";
 import { PostgresBookingEvidenceRepository } from "../modules/booking-evidence/repository.js";
+import { PostgresBookingHandoverRepository } from "../modules/booking-handovers/repository.js";
 import { PostgresCommunicationRepository } from "../modules/communications/repository.js";
 import { PostgresCondoOperationsRepository } from "../modules/condo-operations/repository.js";
 import { PostgresInvitationRepository } from "../modules/invitations/repository.js";
@@ -22,6 +23,7 @@ describe("Postgres repository parity", () => {
   let auth: PostgresAuthRepository;
   let bookings: PostgresBookingRepository;
   let bookingEvidence: PostgresBookingEvidenceRepository;
+  let bookingHandovers: PostgresBookingHandoverRepository;
   let communications: PostgresCommunicationRepository;
   let condoOperations: PostgresCondoOperationsRepository;
   let invitations: PostgresInvitationRepository;
@@ -36,6 +38,7 @@ describe("Postgres repository parity", () => {
     auth = new PostgresAuthRepository(pool);
     bookings = new PostgresBookingRepository(pool);
     bookingEvidence = new PostgresBookingEvidenceRepository(pool);
+    bookingHandovers = new PostgresBookingHandoverRepository(pool);
     communications = new PostgresCommunicationRepository(pool);
     condoOperations = new PostgresCondoOperationsRepository(pool);
     invitations = new PostgresInvitationRepository(pool);
@@ -134,6 +137,39 @@ describe("Postgres repository parity", () => {
       assert.equal(listedEvidence.length, 2);
       assert.equal(evidenceCounts.get(booking.id)?.beforeCount, 1);
       assert.equal(evidenceCounts.get(booking.id)?.afterCount, 1);
+
+      const pickupHandover = await bookingHandovers.create({
+        bookingId: booking.id,
+        handoverType: "pickup",
+        contactName: "Nalla",
+        locationNotes: "Lobby pickup bay",
+        keyHandoverMethod: "Key pouch",
+        odometerReading: "12000 km",
+        fuelOrChargeLevel: "80%",
+        conditionNotes: "No visible new damage before pickup.",
+        acknowledgedBy: "Nalla",
+        actor: { userId: "partner_demo_001", role: "partner", organizationId: "org_partner_001" },
+      });
+      const returnHandover = await bookingHandovers.create({
+        bookingId: booking.id,
+        handoverType: "return",
+        contactName: "Nalla",
+        locationNotes: "Lobby return bay",
+        keyHandoverMethod: "Returned to owner",
+        odometerReading: "12014 km",
+        fuelOrChargeLevel: "78%",
+        conditionNotes: "Returned clean with owner acknowledgement.",
+        acknowledgedBy: "Nalla",
+        actor: { userId: "partner_demo_001", role: "partner", organizationId: "org_partner_001" },
+      });
+      const listedHandovers = await bookingHandovers.list(booking.id);
+      const handoverCounts = await bookingHandovers.countByBookingIds([booking.id]);
+
+      assert.equal(pickupHandover.handoverType, "pickup");
+      assert.equal(returnHandover.handoverType, "return");
+      assert.equal(listedHandovers.length, 2);
+      assert.equal(handoverCounts.get(booking.id)?.pickupCount, 1);
+      assert.equal(handoverCounts.get(booking.id)?.returnCount, 1);
 
       const exceptionBooking = await bookings.updateOperationalException(booking.id, {
         resolved: false,
@@ -717,6 +753,7 @@ async function cleanup(pool: DatabasePool, ids: CleanupIds): Promise<void> {
   }
 
   if (ids.bookingId) {
+    await pool.query("delete from booking_handovers where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from booking_evidence where booking_id = $1", [ids.bookingId]);
     await pool.query("delete from bookings where id = $1", [ids.bookingId]);
   }

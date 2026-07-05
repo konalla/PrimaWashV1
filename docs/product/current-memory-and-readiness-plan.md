@@ -137,6 +137,23 @@ Latest evidence file upload productionization on 2026-07-05:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 112 API tests.
 
+Latest booking handover productionization on 2026-07-05:
+
+- Added `0035_booking_handovers.sql`.
+- Added append-only `booking_handovers` records for pickup, return, onsite receipt, and onsite release.
+- Added memory and Postgres booking-handover repositories with list, create, and count-by-booking summary support.
+- Added `GET /v1/bookings/:id/handovers` and `POST /v1/bookings/:id/handovers` for partner/internal operators with existing booking ownership and internal permission checks.
+- Customers and competitor partners cannot write handover records for a booking.
+- Completion now requires pickup and return records for pickup-return bookings.
+- Completion now requires onsite receipt and onsite release records for customer-property and onsite bookings.
+- Partner/internal dashboards now include handover summaries for queue completion gates.
+- Web operations drawer now includes append-only handover listing and handover-add controls.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 115 API tests.
+- `npm run db:migrate` applied `0035_booking_handovers.sql`.
+- `npm run db:smoke` passed with 35 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -181,7 +198,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0034_booking_evidence.sql`.
+- Postgres migrations through `0035_booking_handovers.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -248,7 +265,7 @@ Payments and finance:
 
 Operations:
 
-- Booking lifecycle is mostly modeled, and real evidence file intake now exists. Remaining proof-layer work includes checklist completion, handover consent, pickup/return consent, richer issue reporting, quality sign-off, and production object storage integration.
+- Booking lifecycle is mostly modeled, real evidence file intake exists, and booking handover records now exist for pickup, return, onsite receipt, and onsite release. Remaining proof-layer work includes customer-visible signature/consent policy, richer issue reporting, quality sign-off, and production object storage integration.
 - Condo operations exist, but the standardized playbook/template system is still early.
 - HDB and landed-property operations need policy and configuration maturity before launch.
 
@@ -262,7 +279,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is applied and smoke-tested in the current local Postgres database as of 2026-07-04. Migrations must still be applied and smoke-tested whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0035_booking_handovers.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -341,7 +358,9 @@ Goal: make one complete workflow feel and behave like a real product.
 - Payment captures on completion.
 - Service record is generated.
 - Cancellation before check-in releases/voids payment.
-- Pickup-and-return requires explicit consent and handover notes.
+- Pickup-and-return requires handover records before completion. Completed for partner/internal API, dashboard queue summary, and operator drawer on 2026-07-05.
+- On-property service requires onsite receipt and release records before completion. Completed for partner/internal API, dashboard queue summary, and operator drawer on 2026-07-05.
+- Customer-visible consent/signature UX and legal text still need production policy.
 
 Exit criteria:
 

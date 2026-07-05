@@ -19,6 +19,7 @@ import type {
   CancelBookingRequest,
   CapacityTemplate,
   CreateBookingEvidenceRequest,
+  CreateBookingHandoverRequest,
   CreateAvailabilitySlotRequest,
   CreateAccessInvitationRequest,
   CreateBookingHoldRequest,
@@ -45,6 +46,7 @@ import type {
   ProductEventName,
   PartnerDashboardResponse,
   BookingEvidenceSummary,
+  BookingHandoverSummary,
   PartnerAvailabilitySlot,
   PaymentHistoryItem,
   PaymentIntent,
@@ -99,6 +101,7 @@ import {
   validateUpdateCapacityTemplate,
 } from "./modules/capacity-templates/repository.js";
 import { validateCreateBookingHold } from "./modules/booking-holds/repository.js";
+import { emptyHandoverSummary, validateCreateBookingHandover } from "./modules/booking-handovers/repository.js";
 import { emptyEvidenceSummary, validateCreateBookingEvidence } from "./modules/booking-evidence/repository.js";
 import {
   InMemoryEvidenceStorageProvider,
@@ -1054,8 +1057,18 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
           bookings.map((booking) => booking.id),
         );
+        const handoverByBookingId = await options.repositories.bookingHandovers.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
-          data: buildPrimaWashDayBookingItems(bookings, paymentByBookingId, vehicleById, partnerById, evidenceByBookingId),
+          data: buildPrimaWashDayBookingItems(
+            bookings,
+            paymentByBookingId,
+            vehicleById,
+            partnerById,
+            evidenceByBookingId,
+            handoverByBookingId,
+          ),
         });
       } catch (error) {
         sendAuthError(response, error);
@@ -1759,6 +1772,9 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
           bookings.map((booking) => booking.id),
         );
+        const handoverByBookingId = await options.repositories.bookingHandovers.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
           data: buildPartnerDashboard(
             partnerLocationId,
@@ -1768,6 +1784,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             vehicleById,
             partnerById,
             evidenceByBookingId,
+            handoverByBookingId,
           ),
         });
       } catch (error) {
@@ -1789,6 +1806,9 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         const evidenceByBookingId = await options.repositories.bookingEvidence.countByBookingIds(
           bookings.map((booking) => booking.id),
         );
+        const handoverByBookingId = await options.repositories.bookingHandovers.countByBookingIds(
+          bookings.map((booking) => booking.id),
+        );
         sendJson(response, 200, {
           data: buildPartnerDashboard(
             undefined,
@@ -1798,6 +1818,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             vehicleById,
             partnerById,
             evidenceByBookingId,
+            handoverByBookingId,
           ),
         });
       } catch (error) {
@@ -2459,6 +2480,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
     const bookingStatusMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/status$/);
     const bookingExecutionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/execution$/);
+    const bookingHandoverMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/handovers$/);
     const bookingEvidenceMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence$/);
     const bookingEvidenceFileMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/evidence-file$/);
     const bookingExceptionMatch = requestUrl.pathname.match(/^\/v1\/bookings\/([^/]+)\/exception$/);
@@ -2520,6 +2542,88 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
 
           sendError(response, 400, "invalid_request", "Availability update request could not be processed", message);
+        }
+      }
+
+      return;
+    }
+
+    if ((request.method === "GET" || request.method === "POST") && bookingHandoverMatch) {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertPartnerOrInternal(actor);
+        const bookingId = bookingHandoverMatch[1];
+
+        if (!bookingId) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        const booking = await options.repositories.bookings.get(bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(
+          options.repositories,
+          actor,
+          booking,
+          request.method === "GET" ? "operations_read" : "operations_write",
+        );
+
+        if (request.method === "GET") {
+          sendJson(response, 200, { data: await options.repositories.bookingHandovers.list(booking.id) });
+          return;
+        }
+
+        const input = await readJsonBody<CreateBookingHandoverRequest>(request);
+        const errors = validateCreateBookingHandover(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Booking handover payload is invalid", errors);
+          return;
+        }
+
+        const handover = await options.repositories.bookingHandovers.create({
+          bookingId: booking.id,
+          actor,
+          handoverType: input.handoverType,
+          contactName: input.contactName,
+          locationNotes: input.locationNotes,
+          ...(input.keyHandoverMethod ? { keyHandoverMethod: input.keyHandoverMethod } : {}),
+          ...(input.odometerReading ? { odometerReading: input.odometerReading } : {}),
+          ...(input.fuelOrChargeLevel ? { fuelOrChargeLevel: input.fuelOrChargeLevel } : {}),
+          ...(input.conditionNotes ? { conditionNotes: input.conditionNotes } : {}),
+          ...(input.acknowledgedBy ? { acknowledgedBy: input.acknowledgedBy } : {}),
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "booking.handover_recorded",
+          resourceType: "booking_handover",
+          resourceId: handover.id,
+          requestId: requestContext.requestId,
+          metadata: {
+            bookingId: booking.id,
+            handoverType: handover.handoverType,
+            partnerLocationId: booking.partnerLocationId,
+            onsiteServiceMode: booking.onsiteServiceMode,
+          },
+        });
+
+        sendJson(response, 201, { data: handover });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+
+          if (message === "partner_booking_forbidden") {
+            sendError(response, 403, message, "Partner cannot access this booking");
+            return;
+          }
+
+          sendError(response, 400, "invalid_request", "Booking handover request could not be processed", message);
         }
       }
 
@@ -3250,6 +3354,35 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             return;
           }
 
+          const handovers = await options.repositories.bookingHandovers.list(booking.id);
+          const hasPickupHandover = handovers.some((item) => item.handoverType === "pickup");
+          const hasReturnHandover = handovers.some((item) => item.handoverType === "return");
+          const hasOnsiteReceipt = handovers.some((item) => item.handoverType === "onsite_receipt");
+          const hasOnsiteRelease = handovers.some((item) => item.handoverType === "onsite_release");
+
+          if (booking.onsiteServiceMode === "pickup_return" && (!hasPickupHandover || !hasReturnHandover)) {
+            sendError(
+              response,
+              409,
+              "handover_required",
+              "Pickup and return handover records are required before completing a pickup-and-return booking",
+            );
+            return;
+          }
+
+          if (
+            ["customer_property", "onsite"].includes(booking.onsiteServiceMode ?? "") &&
+            (!hasOnsiteReceipt || !hasOnsiteRelease)
+          ) {
+            sendError(
+              response,
+              409,
+              "handover_required",
+              "Onsite receipt and release handover records are required before completing this booking",
+            );
+            return;
+          }
+
           const payment = await options.repositories.payments.getByBookingId(booking.id);
 
           if (!payment || payment.status !== "authorized") {
@@ -3852,6 +3985,7 @@ function buildPartnerDashboard(
   vehicleById: ReadonlyMap<string, Vehicle>,
   partnerById: ReadonlyMap<string, PartnerLocation>,
   evidenceByBookingId: ReadonlyMap<string, BookingEvidenceSummary>,
+  handoverByBookingId: ReadonlyMap<string, BookingHandoverSummary>,
 ): PartnerDashboardResponse {
   const locationBookings = partnerLocationId
     ? bookings.filter((booking) => booking.partnerLocationId === partnerLocationId)
@@ -3895,6 +4029,7 @@ function buildPartnerDashboard(
       const vehicle = vehicleById.get(booking.vehicleId);
       const partner = partnerById.get(booking.partnerLocationId);
       const evidenceSummary = evidenceByBookingId.get(booking.id) ?? emptyEvidenceSummary();
+      const handoverSummary = handoverByBookingId.get(booking.id) ?? emptyHandoverSummary();
 
       return {
         bookingId: booking.id,
@@ -3913,6 +4048,7 @@ function buildPartnerDashboard(
         ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
         ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
         evidenceSummary,
+        handoverSummary,
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),
@@ -4055,6 +4191,7 @@ function buildPrimaWashDayBookingItems(
   vehicleById: ReadonlyMap<string, Vehicle>,
   partnerById: ReadonlyMap<string, PartnerLocation>,
   evidenceByBookingId: ReadonlyMap<string, BookingEvidenceSummary>,
+  handoverByBookingId: ReadonlyMap<string, BookingHandoverSummary>,
 ): readonly PrimaWashDayBookingItem[] {
   return bookings
     .filter((booking): booking is Booking & { readonly primaWashDayId: string } => Boolean(booking.primaWashDayId))
@@ -4065,6 +4202,7 @@ function buildPrimaWashDayBookingItems(
       const vehicle = vehicleById.get(booking.vehicleId);
       const partner = partnerById.get(booking.partnerLocationId);
       const evidenceSummary = evidenceByBookingId.get(booking.id) ?? emptyEvidenceSummary();
+      const handoverSummary = handoverByBookingId.get(booking.id) ?? emptyHandoverSummary();
 
       return {
         bookingId: booking.id,
@@ -4083,6 +4221,7 @@ function buildPrimaWashDayBookingItems(
         ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
         ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
         evidenceSummary,
+        handoverSummary,
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),

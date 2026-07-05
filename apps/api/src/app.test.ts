@@ -16,6 +16,7 @@ import type {
   CustomerProfile,
   Booking,
   BookingEvidence,
+  BookingHandover,
   BookingStatus,
   CapacityTemplate,
   GenerateCapacityTemplateSlotsResponse,
@@ -1899,6 +1900,70 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data[0]?.uploadedByRole, "partner");
   });
 
+  it("lets partner actors add and list booking handover records for their bookings", async () => {
+    const vehicle = await createVehicle("HAND01");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+
+    const pickup = await createBookingHandover(booking.id, "pickup", {
+      locationNotes: "Lobby pickup bay",
+      keyHandoverMethod: "Key pouch",
+      odometerReading: "12000 km",
+      fuelOrChargeLevel: "80%",
+      conditionNotes: "No visible new damage.",
+      acknowledgedBy: "Nalla",
+    });
+    const release = await createBookingHandover(booking.id, "return", {
+      locationNotes: "Lobby return bay",
+      keyHandoverMethod: "Returned to owner",
+    });
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/handovers`, {
+      headers: partnerHeaders,
+    });
+    const payload = (await response.json()) as ApiResponse<BookingHandover[]>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.length, 2);
+    assert.equal(payload.data[0]?.id, release.id);
+    assert.equal(payload.data[1]?.id, pickup.id);
+    assert.equal(payload.data[0]?.recordedByRole, "partner");
+  });
+
+  it("blocks customers and competitor partners from writing booking handovers", async () => {
+    const vehicle = await createVehicle("HAND02");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+
+    const customerResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/handovers`, {
+      method: "POST",
+      headers: { ...customerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        handoverType: "pickup",
+        contactName: "Nalla",
+        locationNotes: "Lobby pickup bay",
+      }),
+    });
+    const customerPayload = (await customerResponse.json()) as ApiErrorResponse;
+    const competitorResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/handovers`, {
+      method: "POST",
+      headers: {
+        "x-prima-user-id": "partner_harbour_001",
+        "x-prima-role": "partner",
+        "x-prima-organization-id": "org_partner_002",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        handoverType: "pickup",
+        contactName: "Nalla",
+        locationNotes: "Lobby pickup bay",
+      }),
+    });
+    const competitorPayload = (await competitorResponse.json()) as ApiErrorResponse;
+
+    assert.equal(customerResponse.status, 403);
+    assert.equal(customerPayload.code, "partner_role_required");
+    assert.equal(competitorResponse.status, 403);
+    assert.equal(competitorPayload.code, "partner_booking_forbidden");
+  });
+
   it("lets partner actors upload evidence files for their bookings", async () => {
     const vehicle = await createVehicle("EVID03");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -2734,6 +2799,54 @@ describe("Prima Wash API", () => {
     assert.equal(missingEvidencePayload.code, "service_evidence_required");
   });
 
+  it("requires pickup and return handover records before completing pickup-return bookings", async () => {
+    const vehicle = await createVehicle("HAND03");
+    const booking = await createBooking(vehicle.id, "wash_basic", "slot_demo_1100", customerHeaders, {
+      onsiteServiceMode: "pickup_return",
+      executionNotes: "Pickup from lobby, clean away, and return.",
+    });
+    await authorizeBookingPayment(booking.id);
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+
+    const executionResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        assignedTechnicianName: "Amin Prima",
+        completionNotes: "Service complete and ready for return.",
+        technicianCheckedOut: true,
+      }),
+    });
+    assert.equal(executionResponse.status, 200);
+    await createBookingEvidence(booking.id, "before", `evidence://${booking.id}/before-1`);
+    await createBookingEvidence(booking.id, "after", `evidence://${booking.id}/after-1`);
+
+    const missingHandoversResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const missingHandoversPayload = (await missingHandoversResponse.json()) as ApiErrorResponse;
+
+    assert.equal(missingHandoversResponse.status, 409);
+    assert.equal(missingHandoversPayload.code, "handover_required");
+
+    await createBookingHandover(booking.id, "pickup");
+    await createBookingHandover(booking.id, "return");
+
+    const completedResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const completedPayload = (await completedResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(completedResponse.status, 200);
+    assert.equal(completedPayload.data.status, "completed");
+  });
+
   it("blocks forward booking movement while an operational exception is active", async () => {
     const vehicle = await createVehicle("EXCBLK1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -3055,6 +3168,10 @@ describe("Prima Wash API", () => {
     serviceCode: string,
     availabilitySlotId = "slot_demo_1100",
     headers: Record<string, string> = customerHeaders,
+    overrides: Partial<{
+      readonly onsiteServiceMode: Booking["onsiteServiceMode"];
+      readonly executionNotes: string;
+    }> = {},
   ): Promise<Booking> {
     const response = await fetch(`${baseUrl}/v1/bookings`, {
       method: "POST",
@@ -3063,6 +3180,7 @@ describe("Prima Wash API", () => {
         vehicleId,
         availabilitySlotId,
         serviceCode,
+        ...overrides,
       }),
     });
     const payload = (await response.json()) as ApiResponse<Booking>;
@@ -3137,6 +3255,32 @@ describe("Prima Wash API", () => {
     return payload.data;
   }
 
+  async function createBookingHandover(
+    bookingId: string,
+    handoverType: BookingHandover["handoverType"],
+    overrides: Partial<Omit<BookingHandover, "id" | "bookingId" | "recordedByRole" | "createdAt">> = {},
+    headers: Record<string, string> = partnerHeaders,
+  ): Promise<BookingHandover> {
+    const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/handovers`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        handoverType,
+        contactName: overrides.contactName ?? "Nalla",
+        locationNotes: overrides.locationNotes ?? "Lobby handover bay",
+        ...(overrides.keyHandoverMethod ? { keyHandoverMethod: overrides.keyHandoverMethod } : {}),
+        ...(overrides.odometerReading ? { odometerReading: overrides.odometerReading } : {}),
+        ...(overrides.fuelOrChargeLevel ? { fuelOrChargeLevel: overrides.fuelOrChargeLevel } : {}),
+        ...(overrides.conditionNotes ? { conditionNotes: overrides.conditionNotes } : {}),
+        ...(overrides.acknowledgedBy ? { acknowledgedBy: overrides.acknowledgedBy } : {}),
+      }),
+    });
+    const payload = (await response.json()) as ApiResponse<BookingHandover>;
+
+    assert.equal(response.status, 201);
+    return payload.data;
+  }
+
   async function postStripeWebhook(event: unknown): Promise<Response> {
     const body = JSON.stringify(event);
     const timestamp = Math.floor(Date.now() / 1000);
@@ -3166,6 +3310,10 @@ describe("Prima Wash API", () => {
       assert.equal(executionResponse.status, 200);
       await createBookingEvidence(bookingId, "before", `evidence://${bookingId}/before-1`);
       await createBookingEvidence(bookingId, "after", `evidence://${bookingId}/after-1`);
+      await createBookingHandover(bookingId, "pickup");
+      await createBookingHandover(bookingId, "return");
+      await createBookingHandover(bookingId, "onsite_receipt");
+      await createBookingHandover(bookingId, "onsite_release");
     }
 
     const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/status`, {
