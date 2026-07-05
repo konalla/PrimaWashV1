@@ -60,6 +60,10 @@ try {
   await assertColumnExists("bookings", "operational_exception_notes");
   await assertColumnExists("bookings", "operational_exception_reported_at");
   await assertColumnExists("bookings", "operational_exception_resolved_at");
+  await assertColumnExists("bookings", "assigned_technician_name");
+  await assertColumnExists("bookings", "completion_notes");
+  await assertColumnExists("bookings", "before_service_photo_urls");
+  await assertColumnExists("bookings", "after_service_photo_urls");
   await assertColumnExists("payment_intents", "provider");
   await assertColumnExists("payment_intents", "provider_reference");
   await assertColumnExists("payment_intents", "client_secret");
@@ -194,13 +198,15 @@ async function assertTransactionalWriteRead(): Promise<void> {
       `insert into bookings (
         id, owner_id, vehicle_id, partner_location_id, service_code, status, scheduled_start_at, scheduled_end_at,
         accepted_price_amount_minor, accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
-        operational_exception_code, operational_exception_notes, operational_exception_reported_at
+        operational_exception_code, operational_exception_notes, operational_exception_reported_at,
+        assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls
       )
       values (
         $1, 'usr_demo_001', $2, 'loc_demo_001', 'wash_basic', 'pending_payment',
         '2026-07-04T06:00:00.000Z', '2026-07-04T06:30:00.000Z', 2500, 'USD',
         'pickup_return', true, 'Smoke test pickup and return persistence.',
-        'pickup_return_issue', 'Smoke test exception persistence.', now()
+        'pickup_return_issue', 'Smoke test exception persistence.', now(),
+        'Smoke Tech', 'Smoke completion notes.', array['evidence://before'], array['evidence://after']
       )`,
       [bookingId, vehicleId],
     );
@@ -222,16 +228,23 @@ async function assertTransactionalWriteRead(): Promise<void> {
       onsite_service_mode: string;
       valet_requested: boolean;
       operational_exception_code: string | null;
+      assigned_technician_name: string | null;
+      before_count: string;
+      after_count: string;
       message_count: string;
     }>(
       `select v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
+              b.assigned_technician_name,
+              cardinality(b.before_service_photo_urls)::text as before_count,
+              cardinality(b.after_service_photo_urls)::text as after_count,
               count(cm.id)::text as message_count
        from bookings b
        join vehicles v on v.id = b.vehicle_id
        join communication_threads ct on ct.resource_id = b.id
        join communication_messages cm on cm.thread_id = ct.id
        where b.id = $1
-       group by v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code`,
+       group by v.plate_number, b.onsite_service_mode, b.valet_requested, b.operational_exception_code,
+                b.assigned_technician_name, b.before_service_photo_urls, b.after_service_photo_urls`,
       [bookingId],
     );
 
@@ -241,6 +254,9 @@ async function assertTransactionalWriteRead(): Promise<void> {
       row.onsite_service_mode !== "pickup_return" ||
       !row.valet_requested ||
       row.operational_exception_code !== "pickup_return_issue" ||
+      row.assigned_technician_name !== "Smoke Tech" ||
+      Number(row.before_count) !== 1 ||
+      Number(row.after_count) !== 1 ||
       Number(row.message_count) !== 1
     ) {
       throw new Error("transactional_write_read_failed");
@@ -251,6 +267,9 @@ async function assertTransactionalWriteRead(): Promise<void> {
       details: {
         bookingServiceMode: row.onsite_service_mode,
         operationalExceptionCode: row.operational_exception_code,
+        assignedTechnicianName: row.assigned_technician_name,
+        beforeEvidenceCount: Number(row.before_count),
+        afterEvidenceCount: Number(row.after_count),
         messageCount: Number(row.message_count),
       },
     });

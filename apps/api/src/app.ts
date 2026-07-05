@@ -2608,6 +2608,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           ...(input.onsiteServiceMode !== undefined ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
           ...(input.valetRequested !== undefined ? { valetRequested: input.valetRequested } : {}),
           ...(input.executionNotes !== undefined ? { executionNotes: input.executionNotes.trim() } : {}),
+          ...(input.assignedTechnicianName !== undefined
+            ? { assignedTechnicianName: input.assignedTechnicianName.trim() }
+            : {}),
+          ...(input.completionNotes !== undefined ? { completionNotes: input.completionNotes.trim() } : {}),
+          ...(input.beforeServicePhotoUrls !== undefined
+            ? { beforeServicePhotoUrls: input.beforeServicePhotoUrls.map((url) => url.trim()) }
+            : {}),
+          ...(input.afterServicePhotoUrls !== undefined
+            ? { afterServicePhotoUrls: input.afterServicePhotoUrls.map((url) => url.trim()) }
+            : {}),
           ...(input.technicianCheckedIn ? { technicianCheckedInAt: booking.technicianCheckedInAt ?? now } : {}),
           ...(input.technicianCheckedOut ? { technicianCheckedOutAt: booking.technicianCheckedOutAt ?? now } : {}),
         });
@@ -2622,6 +2632,10 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             partnerLocationId: updatedBooking.partnerLocationId,
             onsiteServiceMode: updatedBooking.onsiteServiceMode ?? null,
             valetRequested: updatedBooking.valetRequested,
+            assignedTechnicianName: updatedBooking.assignedTechnicianName ?? null,
+            completionNotesPresent: Boolean(updatedBooking.completionNotes),
+            beforeEvidenceCount: updatedBooking.beforeServicePhotoUrls?.length ?? 0,
+            afterEvidenceCount: updatedBooking.afterServicePhotoUrls?.length ?? 0,
             technicianCheckedInAt: updatedBooking.technicianCheckedInAt ?? null,
             technicianCheckedOutAt: updatedBooking.technicianCheckedOutAt ?? null,
           },
@@ -2976,12 +2990,52 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         let capturedPayment: { readonly payment: PaymentIntent; readonly providerResult: PaymentProviderResult } | undefined;
 
         if (input.status === "completed") {
+          if (!booking.technicianCheckedInAt) {
+            sendError(
+              response,
+              409,
+              "technician_checkin_required",
+              "Technician check-in is required before completing and capturing payment",
+            );
+            return;
+          }
+
           if (!booking.technicianCheckedOutAt) {
             sendError(
               response,
               409,
               "technician_checkout_required",
               "Technician check-out is required before completing and capturing payment",
+            );
+            return;
+          }
+
+          if (!booking.assignedTechnicianName) {
+            sendError(
+              response,
+              409,
+              "technician_assignment_required",
+              "Assign a technician before completing this booking",
+            );
+            return;
+          }
+
+          if (!booking.completionNotes?.trim()) {
+            sendError(
+              response,
+              409,
+              "completion_notes_required",
+              "Completion notes are required before completing and capturing payment",
+            );
+            return;
+          }
+
+          if (!booking.beforeServicePhotoUrls?.length || !booking.afterServicePhotoUrls?.length) {
+            sendError(
+              response,
+              409,
+              "service_evidence_required",
+              "Before and after service evidence is required before completing and capturing payment",
             );
             return;
           }
@@ -3642,6 +3696,10 @@ function buildPartnerDashboard(
         ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
         valetRequested: booking.valetRequested,
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
+        ...(booking.assignedTechnicianName ? { assignedTechnicianName: booking.assignedTechnicianName } : {}),
+        ...(booking.completionNotes ? { completionNotes: booking.completionNotes } : {}),
+        ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
+        ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),
@@ -3805,6 +3863,10 @@ function buildPrimaWashDayBookingItems(
         ...(booking.onsiteServiceMode ? { onsiteServiceMode: booking.onsiteServiceMode } : {}),
         valetRequested: booking.valetRequested,
         ...(booking.executionNotes ? { executionNotes: booking.executionNotes } : {}),
+        ...(booking.assignedTechnicianName ? { assignedTechnicianName: booking.assignedTechnicianName } : {}),
+        ...(booking.completionNotes ? { completionNotes: booking.completionNotes } : {}),
+        ...(booking.beforeServicePhotoUrls?.length ? { beforeServicePhotoUrls: booking.beforeServicePhotoUrls } : {}),
+        ...(booking.afterServicePhotoUrls?.length ? { afterServicePhotoUrls: booking.afterServicePhotoUrls } : {}),
         ...(booking.technicianCheckedInAt ? { technicianCheckedInAt: booking.technicianCheckedInAt } : {}),
         ...(booking.technicianCheckedOutAt ? { technicianCheckedOutAt: booking.technicianCheckedOutAt } : {}),
         ...(booking.operationalExceptionCode ? { operationalExceptionCode: booking.operationalExceptionCode } : {}),

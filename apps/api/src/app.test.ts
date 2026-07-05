@@ -1570,6 +1570,10 @@ describe("Prima Wash API", () => {
         onsiteServiceMode: "pickup_return",
         valetRequested: true,
         executionNotes: "Owner approved handover at lobby concierge.",
+        assignedTechnicianName: "Amin Prima",
+        completionNotes: "Vehicle cleaned and returned to concierge.",
+        beforeServicePhotoUrls: ["evidence://exec123/before-1"],
+        afterServicePhotoUrls: ["evidence://exec123/after-1"],
         technicianCheckedIn: true,
       }),
     });
@@ -1579,6 +1583,10 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.onsiteServiceMode, "pickup_return");
     assert.equal(payload.data.valetRequested, true);
     assert.equal(payload.data.executionNotes, "Owner approved handover at lobby concierge.");
+    assert.equal(payload.data.assignedTechnicianName, "Amin Prima");
+    assert.equal(payload.data.completionNotes, "Vehicle cleaned and returned to concierge.");
+    assert.deepEqual(payload.data.beforeServicePhotoUrls, ["evidence://exec123/before-1"]);
+    assert.deepEqual(payload.data.afterServicePhotoUrls, ["evidence://exec123/after-1"]);
     assert.ok(payload.data.technicianCheckedInAt);
 
     const checkoutResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
@@ -2580,6 +2588,52 @@ describe("Prima Wash API", () => {
     assert.equal(payload.code, "technician_checkout_required");
   });
 
+  it("requires assignment, completion notes, and evidence before completing a booking", async () => {
+    const vehicle = await createVehicle("QAGATE1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+
+    const checkoutResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ technicianCheckedOut: true }),
+    });
+    assert.equal(checkoutResponse.status, 200);
+
+    const missingAssignmentResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const missingAssignmentPayload = (await missingAssignmentResponse.json()) as ApiErrorResponse;
+
+    assert.equal(missingAssignmentResponse.status, 409);
+    assert.equal(missingAssignmentPayload.code, "technician_assignment_required");
+
+    const missingEvidenceSetupResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/execution`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        assignedTechnicianName: "Amin Prima",
+        completionNotes: "Service complete, but evidence not attached yet.",
+      }),
+    });
+    assert.equal(missingEvidenceSetupResponse.status, 200);
+
+    const missingEvidenceResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const missingEvidencePayload = (await missingEvidenceResponse.json()) as ApiErrorResponse;
+
+    assert.equal(missingEvidenceResponse.status, 409);
+    assert.equal(missingEvidencePayload.code, "service_evidence_required");
+  });
+
   it("blocks forward booking movement while an operational exception is active", async () => {
     const vehicle = await createVehicle("EXCBLK1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -2985,7 +3039,13 @@ describe("Prima Wash API", () => {
       const executionResponse = await fetch(`${baseUrl}/v1/bookings/${bookingId}/execution`, {
         method: "PATCH",
         headers: { ...partnerHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ technicianCheckedOut: true }),
+        body: JSON.stringify({
+          assignedTechnicianName: "Amin Prima",
+          completionNotes: "Service completed, vehicle checked, and handover area cleared.",
+          beforeServicePhotoUrls: [`evidence://${bookingId}/before-1`],
+          afterServicePhotoUrls: [`evidence://${bookingId}/after-1`],
+          technicianCheckedOut: true,
+        }),
       });
       assert.equal(executionResponse.status, 200);
     }

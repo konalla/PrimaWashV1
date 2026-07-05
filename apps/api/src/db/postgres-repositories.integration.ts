@@ -91,6 +91,10 @@ describe("Postgres repository parity", () => {
         onsiteServiceMode: "customer_property",
         valetRequested: false,
         executionNotes: "Customer changed to home service.",
+        assignedTechnicianName: "Amin Prima",
+        completionNotes: "Completed at customer property with owner handover.",
+        beforeServicePhotoUrls: ["evidence://postgres/before-1"],
+        afterServicePhotoUrls: ["evidence://postgres/after-1"],
         technicianCheckedInAt: "2026-07-05T02:05:00.000Z",
         technicianCheckedOutAt: "2026-07-05T02:35:00.000Z",
       });
@@ -98,6 +102,10 @@ describe("Postgres repository parity", () => {
       assert.equal(updatedExecution.onsiteServiceMode, "customer_property");
       assert.equal(updatedExecution.valetRequested, false);
       assert.equal(updatedExecution.executionNotes, "Customer changed to home service.");
+      assert.equal(updatedExecution.assignedTechnicianName, "Amin Prima");
+      assert.equal(updatedExecution.completionNotes, "Completed at customer property with owner handover.");
+      assert.deepEqual(updatedExecution.beforeServicePhotoUrls, ["evidence://postgres/before-1"]);
+      assert.deepEqual(updatedExecution.afterServicePhotoUrls, ["evidence://postgres/after-1"]);
       assert.equal(updatedExecution.technicianCheckedInAt, "2026-07-05T02:05:00.000Z");
       assert.equal(updatedExecution.technicianCheckedOutAt, "2026-07-05T02:35:00.000Z");
 

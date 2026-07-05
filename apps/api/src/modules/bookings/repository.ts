@@ -207,6 +207,7 @@ export class PostgresBookingRepository implements BookingRepository {
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                   technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                   operational_exception_notes, operational_exception_reported_at,
                   operational_exception_resolved_at, created_at
@@ -219,6 +220,7 @@ export class PostgresBookingRepository implements BookingRepository {
           `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                   technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                   operational_exception_notes, operational_exception_reported_at,
                   operational_exception_resolved_at, created_at
@@ -234,6 +236,7 @@ export class PostgresBookingRepository implements BookingRepository {
       `select id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
               scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
               accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+              assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
               technician_checked_in_at, technician_checked_out_at, operational_exception_code,
               operational_exception_notes, operational_exception_reported_at,
               operational_exception_resolved_at, created_at
@@ -323,6 +326,7 @@ export class PostgresBookingRepository implements BookingRepository {
           returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                     scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                     accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                    assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                     technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                     operational_exception_notes, operational_exception_reported_at,
                     operational_exception_resolved_at, created_at`,
@@ -435,6 +439,7 @@ export class PostgresBookingRepository implements BookingRepository {
         returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                   scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                   accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                  assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                   technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                   operational_exception_notes, operational_exception_reported_at,
                   operational_exception_resolved_at, created_at`,
@@ -480,6 +485,7 @@ export class PostgresBookingRepository implements BookingRepository {
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                  operational_exception_notes, operational_exception_reported_at,
                  operational_exception_resolved_at, created_at`,
@@ -502,11 +508,16 @@ export class PostgresBookingRepository implements BookingRepository {
            valet_requested = coalesce($3, valet_requested),
            execution_notes = coalesce($4, execution_notes),
            technician_checked_in_at = coalesce($5, technician_checked_in_at),
-           technician_checked_out_at = coalesce($6, technician_checked_out_at)
+           technician_checked_out_at = coalesce($6, technician_checked_out_at),
+           assigned_technician_name = coalesce($7, assigned_technician_name),
+           completion_notes = coalesce($8, completion_notes),
+           before_service_photo_urls = coalesce($9, before_service_photo_urls),
+           after_service_photo_urls = coalesce($10, after_service_photo_urls)
        where id = $1
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                  operational_exception_notes, operational_exception_reported_at,
                  operational_exception_resolved_at, created_at`,
@@ -517,6 +528,10 @@ export class PostgresBookingRepository implements BookingRepository {
         input.executionNotes ?? null,
         input.technicianCheckedInAt ?? null,
         input.technicianCheckedOutAt ?? null,
+        input.assignedTechnicianName ?? null,
+        input.completionNotes ?? null,
+        input.beforeServicePhotoUrls ?? null,
+        input.afterServicePhotoUrls ?? null,
       ],
     );
 
@@ -543,6 +558,7 @@ export class PostgresBookingRepository implements BookingRepository {
        returning id, owner_id, vehicle_id, partner_location_id, prima_wash_day_id, service_code, status,
                  scheduled_start_at, scheduled_end_at, accepted_price_amount_minor,
                  accepted_price_currency, onsite_service_mode, valet_requested, execution_notes,
+                 assigned_technician_name, completion_notes, before_service_photo_urls, after_service_photo_urls,
                  technician_checked_in_at, technician_checked_out_at, operational_exception_code,
                  operational_exception_notes, operational_exception_reported_at,
                  operational_exception_resolved_at, created_at`,
@@ -603,6 +619,27 @@ export function validateCreateBooking(input: Partial<CreateBookingRequest>): str
   return errors;
 }
 
+function validateEvidenceUrls(input: readonly string[], fieldName: string): string[] {
+  const errors: string[] = [];
+
+  if (!Array.isArray(input)) {
+    return [`${fieldName} must be an array`];
+  }
+
+  if (input.length > 12) {
+    errors.push(`${fieldName} must contain 12 URLs or fewer`);
+  }
+
+  for (const url of input) {
+    if (typeof url !== "string" || url.trim().length < 3 || url.trim().length > 500) {
+      errors.push(`${fieldName} entries must be 3 to 500 characters`);
+      break;
+    }
+  }
+
+  return errors;
+}
+
 export function canTransitionBookingStatus(from: BookingStatus, to: BookingStatus): boolean {
   if (from === to) {
     return true;
@@ -658,6 +695,22 @@ export function validateUpdateBookingExecution(input: Partial<UpdateBookingExecu
 
   if (input.executionNotes !== undefined && input.executionNotes.length > 2000) {
     errors.push("executionNotes must be 2000 characters or fewer");
+  }
+
+  if (input.assignedTechnicianName !== undefined && input.assignedTechnicianName.trim().length > 120) {
+    errors.push("assignedTechnicianName must be 120 characters or fewer");
+  }
+
+  if (input.completionNotes !== undefined && input.completionNotes.trim().length > 2000) {
+    errors.push("completionNotes must be 2000 characters or fewer");
+  }
+
+  if (input.beforeServicePhotoUrls !== undefined) {
+    errors.push(...validateEvidenceUrls(input.beforeServicePhotoUrls, "beforeServicePhotoUrls"));
+  }
+
+  if (input.afterServicePhotoUrls !== undefined) {
+    errors.push(...validateEvidenceUrls(input.afterServicePhotoUrls, "afterServicePhotoUrls"));
   }
 
   return errors;
@@ -779,6 +832,10 @@ interface BookingRow {
   readonly onsite_service_mode: BookingOnsiteServiceMode | null;
   readonly valet_requested: boolean;
   readonly execution_notes: string | null;
+  readonly assigned_technician_name: string | null;
+  readonly completion_notes: string | null;
+  readonly before_service_photo_urls: readonly string[] | null;
+  readonly after_service_photo_urls: readonly string[] | null;
   readonly technician_checked_in_at: Date | string | null;
   readonly technician_checked_out_at: Date | string | null;
   readonly operational_exception_code: BookingOperationalExceptionCode | null;
@@ -818,6 +875,10 @@ function mergeBookingExecution(booking: Booking, input: NormalizedBookingExecuti
     ...(input.onsiteServiceMode !== undefined ? { onsiteServiceMode: input.onsiteServiceMode } : {}),
     ...(input.valetRequested !== undefined ? { valetRequested: input.valetRequested } : {}),
     ...(input.executionNotes !== undefined ? { executionNotes: input.executionNotes } : {}),
+    ...(input.assignedTechnicianName !== undefined ? { assignedTechnicianName: input.assignedTechnicianName } : {}),
+    ...(input.completionNotes !== undefined ? { completionNotes: input.completionNotes } : {}),
+    ...(input.beforeServicePhotoUrls !== undefined ? { beforeServicePhotoUrls: input.beforeServicePhotoUrls } : {}),
+    ...(input.afterServicePhotoUrls !== undefined ? { afterServicePhotoUrls: input.afterServicePhotoUrls } : {}),
     ...(input.technicianCheckedInAt !== undefined && input.technicianCheckedInAt !== null
       ? { technicianCheckedInAt: input.technicianCheckedInAt }
       : {}),
@@ -870,6 +931,10 @@ function mapBookingRow(row: BookingRow): Booking {
     ...(row.onsite_service_mode ? { onsiteServiceMode: row.onsite_service_mode } : {}),
     valetRequested: row.valet_requested,
     ...(row.execution_notes ? { executionNotes: row.execution_notes } : {}),
+    ...(row.assigned_technician_name ? { assignedTechnicianName: row.assigned_technician_name } : {}),
+    ...(row.completion_notes ? { completionNotes: row.completion_notes } : {}),
+    ...(row.before_service_photo_urls?.length ? { beforeServicePhotoUrls: row.before_service_photo_urls } : {}),
+    ...(row.after_service_photo_urls?.length ? { afterServicePhotoUrls: row.after_service_photo_urls } : {}),
     ...(row.technician_checked_in_at ? { technicianCheckedInAt: new Date(row.technician_checked_in_at).toISOString() } : {}),
     ...(row.technician_checked_out_at ? { technicianCheckedOutAt: new Date(row.technician_checked_out_at).toISOString() } : {}),
     ...(row.operational_exception_code ? { operationalExceptionCode: row.operational_exception_code } : {}),

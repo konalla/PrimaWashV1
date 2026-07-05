@@ -3625,6 +3625,13 @@
         return escapeHtml(value);
       }
 
+      function parseUrlList(value) {
+        return String(value || "")
+          .split(",")
+          .map((url) => url.trim())
+          .filter(Boolean);
+      }
+
       function renderActionButton(item) {
         if (!canUseAdmin("operations_write")) {
           return permissionBlockedButton("Ops write required", "operations_write");
@@ -3673,6 +3680,18 @@
 
         if (nextStatus === "completed" && !item.technicianCheckedOutAt) {
           return "Technician check-out is required before completing and capturing payment.";
+        }
+
+        if (nextStatus === "completed" && !item.assignedTechnicianName) {
+          return "Assign a technician before completing and capturing payment.";
+        }
+
+        if (nextStatus === "completed" && !item.completionNotes) {
+          return "Completion notes are required before completing and capturing payment.";
+        }
+
+        if (nextStatus === "completed" && (!item.beforeServicePhotoUrls?.length || !item.afterServicePhotoUrls?.length)) {
+          return "Before and after service evidence is required before completing and capturing payment.";
         }
 
         return "";
@@ -3750,6 +3769,7 @@
               <div class="detail-item"><span>Hours</span><strong>${escapeHtml(item.partnerLocation?.openingHours || "Not configured")}</strong></div>
               <div class="detail-item"><span>Owner</span><strong>${item.ownerId}</strong></div>
               <div class="detail-item"><span>Vehicle ID</span><strong>${item.vehicleId}</strong></div>
+              <div class="detail-item"><span>Assigned tech</span><strong>${escapeHtml(item.assignedTechnicianName || "Unassigned")}</strong></div>
               <div class="detail-item"><span>Technician</span><strong>${formatTechnicianState(item)}</strong></div>
               <div class="detail-item"><span>Ref</span><strong>${item.bookingId.slice(-8).toUpperCase()}</strong></div>
             </section>
@@ -3787,8 +3807,26 @@
                   </label>
                 </div>
                 <div class="field">
+                  <label for="booking-assigned-technician">Assigned technician</label>
+                  <input id="booking-assigned-technician" name="assignedTechnicianName" placeholder="Technician or partner staff name" value="${escapeAttribute(item.assignedTechnicianName || "")}" ${executionDisabled}>
+                </div>
+                <div class="field">
                   <label for="booking-execution-notes">Execution notes</label>
                   <textarea id="booking-execution-notes" name="executionNotes" placeholder="Parking bay, owner access notes, temporary wash area constraints" ${executionDisabled}>${escapeHtml(item.executionNotes || "")}</textarea>
+                </div>
+                <div class="form-grid">
+                  <label>
+                    Before evidence URLs
+                    <input name="beforeServicePhotoUrls" placeholder="Comma-separated placeholder URLs" value="${escapeAttribute((item.beforeServicePhotoUrls || []).join(", "))}" ${executionDisabled}>
+                  </label>
+                  <label>
+                    After evidence URLs
+                    <input name="afterServicePhotoUrls" placeholder="Comma-separated placeholder URLs" value="${escapeAttribute((item.afterServicePhotoUrls || []).join(", "))}" ${executionDisabled}>
+                  </label>
+                </div>
+                <div class="field">
+                  <label for="booking-completion-notes">Completion notes</label>
+                  <textarea id="booking-completion-notes" name="completionNotes" placeholder="Work completed, handover notes, any follow-up needed" ${executionDisabled}>${escapeHtml(item.completionNotes || "")}</textarea>
                 </div>
                 <div class="dialog-actions">
                   <button class="action" type="button" data-technician-check-in="${item.bookingId}" ${executionDisabled || item.technicianCheckedInAt ? "disabled" : ""}>Technician check-in</button>
@@ -3914,11 +3952,19 @@
       function renderWorkOrderChecklist(item) {
         const checkedIn = Boolean(item.technicianCheckedInAt);
         const checkedOut = Boolean(item.technicianCheckedOutAt);
+        const hasEvidence = Boolean(item.beforeServicePhotoUrls?.length && item.afterServicePhotoUrls?.length);
         const steps = [
           {
             done: item.status !== "pending_payment",
             label: "Booking accepted",
             body: "Payment is authorized and partner acceptance is recorded.",
+          },
+          {
+            done: Boolean(item.assignedTechnicianName),
+            label: "Technician assigned",
+            body: item.assignedTechnicianName
+              ? `${item.assignedTechnicianName} owns this work order.`
+              : "Assign a technician or partner staff member before completion.",
           },
           {
             done: checkedIn || ["checked_in", "in_service", "completed"].includes(item.status),
@@ -3938,6 +3984,16 @@
             body: item.onsiteServiceMode === "pickup_return"
               ? "Vehicle has been returned to the customer and payment can be captured."
               : "Work is complete, area is clear, and payment can be captured.",
+          },
+          {
+            done: Boolean(item.completionNotes),
+            label: "Completion notes saved",
+            body: "Final work notes are saved before capture.",
+          },
+          {
+            done: hasEvidence,
+            label: "Evidence attached",
+            body: "Before and after evidence placeholders are saved.",
           },
           {
             done: checkedOut || item.status === "completed",
@@ -5473,6 +5529,10 @@
               onsiteServiceMode: String(form.get("onsiteServiceMode")),
               valetRequested: String(form.get("valetRequested")) === "true",
               executionNotes: String(form.get("executionNotes") || "").trim(),
+              assignedTechnicianName: String(form.get("assignedTechnicianName") || "").trim(),
+              completionNotes: String(form.get("completionNotes") || "").trim(),
+              beforeServicePhotoUrls: parseUrlList(form.get("beforeServicePhotoUrls")),
+              afterServicePhotoUrls: parseUrlList(form.get("afterServicePhotoUrls")),
             });
             await loadDashboard();
             renderBookingDrawer();

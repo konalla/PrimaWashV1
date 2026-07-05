@@ -428,6 +428,10 @@ export interface PartnerQueueItem {
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
   readonly valetRequested: boolean;
   readonly executionNotes?: string;
+  readonly assignedTechnicianName?: string;
+  readonly completionNotes?: string;
+  readonly beforeServicePhotoUrls?: readonly string[];
+  readonly afterServicePhotoUrls?: readonly string[];
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
   readonly operationalExceptionCode?: BookingOperationalExceptionCode;
@@ -516,6 +520,10 @@ export interface UpdateBookingExecutionRequest {
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
   readonly valetRequested?: boolean;
   readonly executionNotes?: string;
+  readonly assignedTechnicianName?: string;
+  readonly completionNotes?: string;
+  readonly beforeServicePhotoUrls?: readonly string[];
+  readonly afterServicePhotoUrls?: readonly string[];
   readonly technicianCheckedIn?: boolean;
   readonly technicianCheckedOut?: boolean;
 }
@@ -796,6 +804,10 @@ export interface Booking {
   readonly onsiteServiceMode?: BookingOnsiteServiceMode;
   readonly valetRequested: boolean;
   readonly executionNotes?: string;
+  readonly assignedTechnicianName?: string;
+  readonly completionNotes?: string;
+  readonly beforeServicePhotoUrls?: readonly string[];
+  readonly afterServicePhotoUrls?: readonly string[];
   readonly technicianCheckedInAt?: string;
   readonly technicianCheckedOutAt?: string;
   readonly operationalExceptionCode?: BookingOperationalExceptionCode;

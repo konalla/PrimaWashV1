@@ -96,6 +96,20 @@ Latest booking lifecycle productionization on 2026-07-05:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 107 API tests.
 
+Latest work-order accountability productionization on 2026-07-05:
+
+- Added `0033_booking_work_order_accountability.sql`.
+- Bookings now persist assigned technician name, completion notes, before-service evidence URLs, and after-service evidence URLs.
+- Completion now requires technician check-in, technician checkout, assigned technician, completion notes, before evidence, after evidence, no active operational exception, and authorized payment.
+- Execution updates validate assignment length, completion-note length, and evidence URL list size/entry length.
+- Partner and internal dashboards now receive the work-order accountability fields in queue items.
+- Web operations drawer now includes assigned technician, before/after evidence placeholders, completion notes, and checklist gates.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 108 API tests.
+- `npm run db:migrate` applied `0033_booking_work_order_accountability.sql`.
+- `npm run db:smoke` passed with 33 applied migrations.
+- `npm run test:postgres` passed with 9 Postgres repository integration tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -156,6 +170,7 @@ Backend foundations now include:
 - Booking holds, bookings, service modes, partner decisions, execution fields, status transitions, cancellations, audit events, and product events.
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
+- Work-order accountability metadata for assigned technician, completion notes, before-service evidence placeholders, after-service evidence placeholders, and completion quality gates.
 - Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, and Stripe webhook reconciliation tests.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
