@@ -1,6 +1,6 @@
 # Prima Wash Current Memory and Readiness Plan
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
@@ -84,6 +84,18 @@ Latest booking-operations verification on 2026-07-04:
 - `npm run db:smoke` passed with 32 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest booking lifecycle productionization on 2026-07-05:
+
+- Booking status movement now enforces the operational sequence through the API.
+- Active operational exceptions block forward booking movement until resolved.
+- Moving a confirmed booking to checked-in automatically records technician check-in when missing.
+- Completion now requires technician checkout before payment capture and service-record creation.
+- Direct payment capture now requires booking access and a completed booking.
+- Partner acceptance also respects active operational exception blockers.
+- Web operations queue and drawer controls now show disabled blockers for unresolved exceptions, payment authorization, and missing checkout instead of offering unsafe actions.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 107 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -143,6 +155,7 @@ Backend foundations now include:
 - Property records, property interests, condo activation pipeline, condo operational profiles, and Prima Wash Days.
 - Booking holds, bookings, service modes, partner decisions, execution fields, status transitions, cancellations, audit events, and product events.
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
+- Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, and Stripe webhook reconciliation tests.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.

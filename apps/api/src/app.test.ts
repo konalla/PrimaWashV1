@@ -2361,6 +2361,18 @@ describe("Prima Wash API", () => {
     assert.equal(completionStatusEvent?.metadata.toStatus, "completed");
   });
 
+  it("records technician check-in when a booking moves to checked in", async () => {
+    const vehicle = await createVehicle("FLOWCHK");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    await updateBookingStatus(booking.id, "confirmed");
+
+    const checkedIn = await updateBookingStatus(booking.id, "checked_in");
+
+    assert.equal(checkedIn.status, "checked_in");
+    assert.ok(checkedIn.technicianCheckedInAt);
+  });
+
   it("shows partner status updates in the customer booking list", async () => {
     const vehicle = await createVehicle("VISIBLE1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -2547,6 +2559,59 @@ describe("Prima Wash API", () => {
 
     assert.equal(response.status, 409);
     assert.equal(payload.code, "invalid_booking_status_transition");
+  });
+
+  it("requires technician checkout before completing a booking", async () => {
+    const vehicle = await createVehicle("CHKOUT1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+
+    const response = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 409);
+    assert.equal(payload.code, "technician_checkout_required");
+  });
+
+  it("blocks forward booking movement while an operational exception is active", async () => {
+    const vehicle = await createVehicle("EXCBLK1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    await updateBookingStatus(booking.id, "confirmed");
+
+    const exceptionResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/exception`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ code: "access_denied", notes: "Security would not allow vehicle access." }),
+    });
+    assert.equal(exceptionResponse.status, 200);
+
+    const blockedResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/status`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "checked_in" }),
+    });
+    const blockedPayload = (await blockedResponse.json()) as ApiErrorResponse;
+
+    assert.equal(blockedResponse.status, 409);
+    assert.equal(blockedPayload.code, "booking_operational_exception_active");
+
+    const resolveResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/exception`, {
+      method: "PATCH",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ resolved: true }),
+    });
+    assert.equal(resolveResponse.status, 200);
+
+    const checkedIn = await updateBookingStatus(booking.id, "checked_in");
+    assert.equal(checkedIn.status, "checked_in");
   });
 
   it("requires payment authorization before partner confirmation", async () => {
@@ -2916,6 +2981,15 @@ describe("Prima Wash API", () => {
   }
 
   async function updateBookingStatus(bookingId: string, status: BookingStatus): Promise<Booking> {
+    if (status === "completed") {
+      const executionResponse = await fetch(`${baseUrl}/v1/bookings/${bookingId}/execution`, {
+        method: "PATCH",
+        headers: { ...partnerHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ technicianCheckedOut: true }),
+      });
+      assert.equal(executionResponse.status, 200);
+    }
+
     const response = await fetch(`${baseUrl}/v1/bookings/${bookingId}/status`, {
       method: "PATCH",
       headers: { ...partnerHeaders, "content-type": "application/json" },

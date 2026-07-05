@@ -3631,6 +3631,7 @@
         }
 
         const next = nextStatusByStatus[item.status];
+        const actionBlocker = next ? getBookingActionBlocker(item, next.status) : "";
         const cancelButton = cancellableStatuses.has(item.status)
           ? `<button class="action danger" data-cancel-booking-id="${item.bookingId}">Cancel</button>`
           : "";
@@ -3643,10 +3644,9 @@
             ? `<button class="action danger" data-partner-decision="${item.bookingId}" data-decision="reject_mode">Cannot service mode</button>`
             : "";
 
-        if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
-          const label = item.paymentStatus === "requires_authorization" ? "Needs authorization" : "No payment hold";
+        if (actionBlocker) {
           return `
-            <div class="blocker-card">${label}. Ask the customer to authorize payment before confirming.</div>
+            <div class="blocker-card">${actionBlocker}</div>
             ${clarificationButton}
             ${rejectButton}
             ${cancelButton}
@@ -3660,6 +3660,22 @@
           : "";
 
         return `${nextButton}${clarificationButton}${rejectButton}${cancelButton}`;
+      }
+
+      function getBookingActionBlocker(item, nextStatus) {
+        if (item.status === "pending_payment" && item.paymentStatus !== "authorized") {
+          return `${item.paymentStatus === "requires_authorization" ? "Needs authorization" : "No payment hold"}. Ask the customer to authorize payment before confirming.`;
+        }
+
+        if (nextStatus && nextStatus !== "cancelled" && item.operationalExceptionCode) {
+          return `Resolve the active operational exception before moving this booking forward: ${formatOperationalException(item.operationalExceptionCode)}.`;
+        }
+
+        if (nextStatus === "completed" && !item.technicianCheckedOutAt) {
+          return "Technician check-out is required before completing and capturing payment.";
+        }
+
+        return "";
       }
 
       function openBookingDrawer(bookingId) {
@@ -3682,8 +3698,9 @@
 
         const next = nextStatusByStatus[item.status];
         const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
-        const nextAction = paymentBlocked
-          ? "Customer payment authorization is required before partner confirmation."
+        const actionBlocker = next ? getBookingActionBlocker(item, next.status) : "";
+        const nextAction = actionBlocker
+          ? actionBlocker
           : next
             ? `Recommended next action: ${next.label}.`
             : item.status === "completed"
@@ -4105,6 +4122,7 @@
       function renderDrawerActions(item) {
         const next = nextStatusByStatus[item.status];
         const paymentBlocked = item.status === "pending_payment" && item.paymentStatus !== "authorized";
+        const actionBlocker = next ? getBookingActionBlocker(item, next.status) : "";
         const canWriteOps = canUseAdmin("operations_write");
         const canRefund = canUseAdmin("finance_write");
         const refundButton =
@@ -4114,14 +4132,14 @@
               : permissionBlockedButton("Finance write required", "finance_write")
             : "";
         const nextButton =
-          next && !paymentBlocked && canWriteOps
+          next && !paymentBlocked && !actionBlocker && canWriteOps
             ? next.status === "confirmed"
               ? `<button class="action primary-command" type="button" data-drawer-partner-decision="accept">Accept booking</button>`
               : `<button class="action primary-command" type="button" data-drawer-next-status="${next.status}">${next.label}</button>`
             : "";
         const blockedButton =
-          next && paymentBlocked
-            ? `<button class="action" type="button" disabled>Payment authorization required</button>`
+          next && (paymentBlocked || actionBlocker)
+            ? `<button class="action" type="button" disabled>${escapeHtml(actionBlocker || "Payment authorization required")}</button>`
             : next && !canWriteOps
               ? permissionBlockedButton("Ops write required", "operations_write")
             : "";

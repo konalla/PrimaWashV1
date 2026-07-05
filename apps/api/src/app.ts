@@ -2338,6 +2338,25 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
+        const booking = await options.repositories.bookings.get(payment.bookingId);
+
+        if (!booking) {
+          sendError(response, 404, "booking_not_found", "Booking does not exist");
+          return;
+        }
+
+        await assertPartnerBookingAccess(options.repositories, actor, booking);
+
+        if (booking.status !== "completed") {
+          sendError(
+            response,
+            409,
+            "booking_completion_required",
+            "Payment capture requires a completed booking",
+          );
+          return;
+        }
+
         assertPaymentTransition(payment.status, "captured");
         const providerResult = await paymentProvider.capture(payment);
         const capturedPayment = await options.repositories.payments.captureByBookingId(payment.bookingId);
@@ -2725,6 +2744,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         await assertPartnerBookingAccess(options.repositories, actor, booking);
 
         if (input.decision === "accept") {
+          if (booking.operationalExceptionCode) {
+            sendError(
+              response,
+              409,
+              "booking_operational_exception_active",
+              "Resolve the active operational exception before accepting this booking",
+            );
+            return;
+          }
+
           if (!canTransitionBookingStatus(booking.status, "confirmed")) {
             sendError(response, 409, "invalid_booking_status_transition", `Cannot accept booking from ${booking.status}`);
             return;
@@ -2882,7 +2911,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
-        const booking = await options.repositories.bookings.get(bookingId);
+        let booking = await options.repositories.bookings.get(bookingId);
 
         if (!booking) {
           sendError(response, 404, "booking_not_found", "Booking does not exist");
@@ -2896,6 +2925,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             409,
             "invalid_booking_status_transition",
             `Cannot transition booking from ${booking.status} to ${input.status}`,
+          );
+          return;
+        }
+
+        if (input.status !== "cancelled" && booking.operationalExceptionCode) {
+          sendError(
+            response,
+            409,
+            "booking_operational_exception_active",
+            "Resolve the active operational exception before moving this booking forward",
           );
           return;
         }
@@ -2914,9 +2953,39 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           }
         }
 
+        if (input.status === "checked_in" && !booking.technicianCheckedInAt) {
+          const checkedInAt = new Date().toISOString();
+          booking = await options.repositories.bookings.updateExecution(booking.id, {
+            technicianCheckedInAt: checkedInAt,
+          });
+
+          await options.repositories.audit.record({
+            actor,
+            action: "booking.execution_updated",
+            resourceType: "booking",
+            resourceId: booking.id,
+            requestId: requestContext.requestId,
+            metadata: {
+              partnerLocationId: booking.partnerLocationId,
+              technicianCheckedInAt: checkedInAt,
+              autoRecordedByStatusTransition: true,
+            },
+          });
+        }
+
         let capturedPayment: { readonly payment: PaymentIntent; readonly providerResult: PaymentProviderResult } | undefined;
 
         if (input.status === "completed") {
+          if (!booking.technicianCheckedOutAt) {
+            sendError(
+              response,
+              409,
+              "technician_checkout_required",
+              "Technician check-out is required before completing and capturing payment",
+            );
+            return;
+          }
+
           const payment = await options.repositories.payments.getByBookingId(booking.id);
 
           if (!payment || payment.status !== "authorized") {
