@@ -2414,9 +2414,40 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         assertOwnerAccess(actor, payment.ownerId);
 
-        assertPaymentTransition(payment.status, "authorized");
-        const providerResult = await paymentProvider.authorize(payment);
-        const authorizedPayment = await options.repositories.payments.authorize(payment.id);
+        const idempotencyKey = getPaymentIdempotencyKey(request);
+        const idempotentPayment = await getIdempotentPaymentForOperation(options.repositories, {
+          operation: "authorize",
+          bookingId: payment.bookingId,
+          idempotencyKey,
+        });
+
+        if (idempotentPayment) {
+          sendJson(response, 200, { data: idempotentPayment });
+          return;
+        }
+
+        let providerResult: PaymentProviderResult | undefined;
+        let authorizedPayment: PaymentIntent;
+
+        try {
+          assertPaymentTransition(payment.status, "authorized");
+          providerResult = await paymentProvider.authorize(payment);
+          authorizedPayment = await options.repositories.payments.authorize(payment.id);
+        } catch (error) {
+          await recordPaymentOperationFailure(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "authorize",
+            payment,
+            providerResult,
+            idempotencyKey,
+            error,
+            metadata: {
+              source: "payment_authorize_request",
+            },
+          });
+          throw error;
+        }
 
         await recordPaymentAudit(
           options.repositories,
@@ -2432,6 +2463,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           operation: "authorize",
           payment: authorizedPayment,
           providerResult,
+          idempotencyKey,
           metadata: {
             source: "payment_authorize_request",
           },
@@ -2504,9 +2536,41 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
-        assertPaymentTransition(payment.status, "captured");
-        const providerResult = await paymentProvider.capture(payment);
-        const capturedPayment = await options.repositories.payments.captureByBookingId(payment.bookingId);
+        const idempotencyKey = getPaymentIdempotencyKey(request);
+        const idempotentPayment = await getIdempotentPaymentForOperation(options.repositories, {
+          operation: "capture",
+          bookingId: payment.bookingId,
+          idempotencyKey,
+        });
+
+        if (idempotentPayment) {
+          sendJson(response, 200, { data: idempotentPayment });
+          return;
+        }
+
+        let providerResult: PaymentProviderResult | undefined;
+        let capturedPayment: PaymentIntent;
+
+        try {
+          assertPaymentTransition(payment.status, "captured");
+          providerResult = await paymentProvider.capture(payment);
+          capturedPayment = await options.repositories.payments.captureByBookingId(payment.bookingId);
+        } catch (error) {
+          await recordPaymentOperationFailure(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "capture",
+            payment,
+            providerResult,
+            idempotencyKey,
+            error,
+            metadata: {
+              source: "payment_capture_request",
+              bookingStatus: booking.status,
+            },
+          });
+          throw error;
+        }
 
         await recordPaymentAudit(
           options.repositories,
@@ -2522,6 +2586,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           operation: "capture",
           payment: capturedPayment,
           providerResult,
+          idempotencyKey,
           metadata: {
             source: "payment_capture_request",
           },
@@ -2555,9 +2620,40 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           return;
         }
 
-        assertPaymentTransition(payment.status, "refunded");
-        const providerResult = await paymentProvider.refund(payment);
-        const refundedPayment = await options.repositories.payments.refund(paymentIntentId);
+        const idempotencyKey = getPaymentIdempotencyKey(request);
+        const idempotentPayment = await getIdempotentPaymentForOperation(options.repositories, {
+          operation: "refund",
+          bookingId: payment.bookingId,
+          idempotencyKey,
+        });
+
+        if (idempotentPayment) {
+          sendJson(response, 200, { data: idempotentPayment });
+          return;
+        }
+
+        let providerResult: PaymentProviderResult | undefined;
+        let refundedPayment: PaymentIntent;
+
+        try {
+          assertPaymentTransition(payment.status, "refunded");
+          providerResult = await paymentProvider.refund(payment);
+          refundedPayment = await options.repositories.payments.refund(paymentIntentId);
+        } catch (error) {
+          await recordPaymentOperationFailure(options.repositories, {
+            actor,
+            requestId: requestContext.requestId,
+            operation: "refund",
+            payment,
+            providerResult,
+            idempotencyKey,
+            error,
+            metadata: {
+              source: "payment_refund_request",
+            },
+          });
+          throw error;
+        }
 
         await recordPaymentAudit(
           options.repositories,
@@ -2573,6 +2669,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           operation: "refund",
           payment: refundedPayment,
           providerResult,
+          idempotencyKey,
           metadata: {
             source: "payment_refund_request",
           },
@@ -4671,6 +4768,8 @@ async function recordPaymentOperation(
     readonly payment: PaymentIntent;
     readonly providerResult?: PaymentProviderResult | undefined;
     readonly idempotencyKey?: string | undefined;
+    readonly status?: "succeeded" | "failed" | undefined;
+    readonly errorMessage?: string | undefined;
     readonly metadata?: Record<string, unknown> | undefined;
   },
 ): Promise<void> {
@@ -4679,17 +4778,69 @@ async function recordPaymentOperation(
     bookingId: input.payment.bookingId,
     ownerId: input.payment.ownerId,
     operation: input.operation,
-    status: "succeeded",
+    status: input.status ?? "succeeded",
     providerResult: input.providerResult,
     idempotencyKey: input.idempotencyKey,
     actor: input.actor,
     requestId: input.requestId,
+    errorMessage: input.errorMessage,
     metadata: {
       paymentStatus: input.payment.status,
       amount: input.payment.amount,
       ...(input.metadata ?? {}),
     },
   });
+}
+
+async function recordPaymentOperationFailure(
+  repositories: Repositories,
+  input: {
+    readonly actor?: Parameters<typeof assertOwnerAccess>[0] | undefined;
+    readonly requestId?: string | undefined;
+    readonly operation: PaymentOperationName;
+    readonly payment: PaymentIntent;
+    readonly providerResult?: PaymentProviderResult | undefined;
+    readonly idempotencyKey?: string | undefined;
+    readonly error: unknown;
+    readonly metadata?: Record<string, unknown> | undefined;
+  },
+): Promise<void> {
+  await recordPaymentOperation(repositories, {
+    actor: input.actor,
+    requestId: input.requestId,
+    operation: input.operation,
+    payment: input.payment,
+    providerResult: input.providerResult,
+    idempotencyKey: input.idempotencyKey,
+    status: "failed",
+    errorMessage: errorMessageForLedger(input.error),
+    metadata: input.metadata,
+  });
+}
+
+async function getIdempotentPaymentForOperation(
+  repositories: Repositories,
+  input: {
+    readonly operation: PaymentOperationName;
+    readonly bookingId: string;
+    readonly idempotencyKey?: string | undefined;
+  },
+): Promise<PaymentIntent | undefined> {
+  if (!input.idempotencyKey) {
+    return undefined;
+  }
+
+  const operation = await repositories.paymentOperations.findSucceededByIdempotencyKey({
+    operation: input.operation,
+    bookingId: input.bookingId,
+    idempotencyKey: input.idempotencyKey,
+  });
+
+  if (!operation?.paymentIntentId) {
+    return undefined;
+  }
+
+  return repositories.payments.get(operation.paymentIntentId);
 }
 
 async function voidAuthorizedPaymentByBooking(
@@ -4721,6 +4872,11 @@ function getPaymentIdempotencyKey(request: IncomingMessage): string | undefined 
   const value = Array.isArray(raw) ? raw[0] : raw;
   const normalized = value?.trim();
   return normalized ? normalized.slice(0, 160) : undefined;
+}
+
+function errorMessageForLedger(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.slice(0, 500);
 }
 
 function sendPaymentError(

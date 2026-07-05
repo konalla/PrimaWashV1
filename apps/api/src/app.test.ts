@@ -3084,6 +3084,33 @@ describe("Prima Wash API", () => {
     assert.equal(operationsPayload.data[0]?.idempotencyKey, headers["idempotency-key"]);
   });
 
+  it("reuses payment authorization when the same idempotency key is replayed", async () => {
+    const vehicle = await createVehicle("PAYIDEM2");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await createPaymentIntent(booking.id);
+    const operationCount = paymentProviderOperations.length;
+    const headers = { ...customerHeaders, "idempotency-key": `payment-authorize-${booking.id}` };
+
+    const firstResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/authorize`, {
+      method: "POST",
+      headers,
+    });
+    const firstPayload = (await firstResponse.json()) as ApiResponse<PaymentIntent>;
+
+    const replayResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/authorize`, {
+      method: "POST",
+      headers,
+    });
+    const replayPayload = (await replayResponse.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(firstResponse.status, 200);
+    assert.equal(replayResponse.status, 200);
+    assert.equal(firstPayload.data.status, "authorized");
+    assert.equal(replayPayload.data.id, firstPayload.data.id);
+    assert.equal(replayPayload.data.status, "authorized");
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["authorize"]);
+  });
+
   it("captures authorized payment when booking completes", async () => {
     const vehicle = await createVehicle("PAYCAP1");
     const booking = await createBooking(vehicle.id, "wash_basic");
@@ -3104,6 +3131,36 @@ describe("Prima Wash API", () => {
     assert.equal(payload.data.id, payment.id);
     assert.equal(payload.data.status, "captured");
     assert.ok(payload.data.capturedAt);
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["capture"]);
+  });
+
+  it("reuses direct payment capture when the same idempotency key is replayed", async () => {
+    const vehicle = await createVehicle("PAYIDEM3");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await authorizeBookingPayment(booking.id);
+
+    await repositories.bookings.updateStatus(booking.id, "completed");
+
+    const operationCount = paymentProviderOperations.length;
+    const headers = { ...partnerHeaders, "idempotency-key": `payment-capture-${booking.id}` };
+
+    const firstResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/capture`, {
+      method: "POST",
+      headers,
+    });
+    const firstPayload = (await firstResponse.json()) as ApiResponse<PaymentIntent>;
+
+    const replayResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/capture`, {
+      method: "POST",
+      headers,
+    });
+    const replayPayload = (await replayResponse.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(firstResponse.status, 200);
+    assert.equal(replayResponse.status, 200);
+    assert.equal(firstPayload.data.status, "captured");
+    assert.equal(replayPayload.data.id, firstPayload.data.id);
+    assert.equal(replayPayload.data.status, "captured");
     assert.deepEqual(paymentProviderOperations.slice(operationCount), ["capture"]);
   });
 
@@ -3141,6 +3198,39 @@ describe("Prima Wash API", () => {
     assert.equal(historyItem?.amount.amountMinor, booking.acceptedPrice.amountMinor);
     assert.ok(historyItem?.capturedAt);
     assert.ok(historyItem?.refundedAt);
+  });
+
+  it("reuses payment refund when the same idempotency key is replayed", async () => {
+    const vehicle = await createVehicle("PAYIDEM4");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const payment = await authorizeBookingPayment(booking.id);
+
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+    await updateBookingStatus(booking.id, "completed");
+
+    const operationCount = paymentProviderOperations.length;
+    const headers = { ...internalHeaders, "idempotency-key": `payment-refund-${booking.id}` };
+
+    const firstResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
+      method: "POST",
+      headers,
+    });
+    const firstPayload = (await firstResponse.json()) as ApiResponse<PaymentIntent>;
+
+    const replayResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
+      method: "POST",
+      headers,
+    });
+    const replayPayload = (await replayResponse.json()) as ApiResponse<PaymentIntent>;
+
+    assert.equal(firstResponse.status, 200);
+    assert.equal(replayResponse.status, 200);
+    assert.equal(firstPayload.data.status, "refunded");
+    assert.equal(replayPayload.data.id, firstPayload.data.id);
+    assert.equal(replayPayload.data.status, "refunded");
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["refund"]);
   });
 
   it("lists append-only payment operation records for internal finance review", async () => {
@@ -3181,12 +3271,22 @@ describe("Prima Wash API", () => {
 
     const response = await fetch(`${baseUrl}/v1/payments/${payment.id}/refund`, {
       method: "POST",
-      headers: internalHeaders,
+      headers: { ...internalHeaders, "idempotency-key": `failed-refund-${booking.id}` },
     });
     const payload = (await response.json()) as ApiErrorResponse;
 
     assert.equal(response.status, 409);
     assert.equal(payload.code, "invalid_payment_status_transition");
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const failedRefund = operationsPayload.data.find((operation) => operation.operation === "refund");
+
+    assert.equal(failedRefund?.status, "failed");
+    assert.equal(failedRefund?.idempotencyKey, `failed-refund-${booking.id}`);
+    assert.equal(failedRefund?.errorMessage, "invalid_payment_status_transition");
   });
 
   it("voids authorized payment when customer cancels before service starts", async () => {
