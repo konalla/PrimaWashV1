@@ -56,6 +56,11 @@ import {
   type PaymentReconciliationCaseRepository,
 } from "./payment-reconciliation-cases/repository.js";
 import {
+  InMemoryPaymentProviderReconciliationRunRepository,
+  PostgresPaymentProviderReconciliationRunRepository,
+  type PaymentProviderReconciliationRunRepository,
+} from "./payment-reconciliation-runs/repository.js";
+import {
   InMemoryVehicleRepository,
   PostgresVehicleRepository,
   type VehicleRepository,
@@ -120,6 +125,7 @@ export interface Repositories {
   readonly payments: PaymentRepository;
   readonly paymentOperations: PaymentOperationRepository;
   readonly paymentReconciliationCases: PaymentReconciliationCaseRepository;
+  readonly paymentProviderReconciliationRuns: PaymentProviderReconciliationRunRepository;
   readonly audit: AuditRepository;
   readonly profiles: ProfileRepository;
   readonly partners: PartnerRepository;
@@ -152,6 +158,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
       payments: new InMemoryPaymentRepository(),
       paymentOperations: new InMemoryPaymentOperationRepository(),
       paymentReconciliationCases: new InMemoryPaymentReconciliationCaseRepository(),
+      paymentProviderReconciliationRuns: new InMemoryPaymentProviderReconciliationRunRepository(),
       audit: new InMemoryAuditRepository(),
       profiles: new InMemoryProfileRepository(),
       partners: new InMemoryPartnerRepository(),
@@ -182,6 +189,7 @@ export function createRepositories(databaseUrl?: string): Repositories {
     payments: new PostgresPaymentRepository(databasePool),
     paymentOperations: new PostgresPaymentOperationRepository(databasePool),
     paymentReconciliationCases: new PostgresPaymentReconciliationCaseRepository(databasePool),
+    paymentProviderReconciliationRuns: new PostgresPaymentProviderReconciliationRunRepository(databasePool),
     audit: new PostgresAuditRepository(databasePool),
     profiles: new PostgresProfileRepository(databasePool),
     partners: new PostgresPartnerRepository(databasePool),

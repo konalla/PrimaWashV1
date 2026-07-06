@@ -1881,6 +1881,7 @@
         </div>
         <div class="finance-summary-grid" id="finance-summary"></div>
         <div id="finance-reconciliation-result"></div>
+        <div id="finance-reconciliation-history"></div>
         <div class="finance-toolbar" aria-label="Payment operation filters">
           <input id="finance-search" type="search" placeholder="Search booking, provider ref, request id" />
           <select id="finance-status-filter" aria-label="Payment operation status">
@@ -2324,6 +2325,7 @@
       const runProviderReconciliationButton = document.querySelector("#run-provider-reconciliation");
       const financeReconciliationProviderSelect = document.querySelector("#finance-reconciliation-provider");
       const financeReconciliationResultEl = document.querySelector("#finance-reconciliation-result");
+      const financeReconciliationHistoryEl = document.querySelector("#finance-reconciliation-history");
       const queueEl = document.querySelector("#queue");
       const auditEl = document.querySelector("#audit");
       const availabilityEl = document.querySelector("#availability");
@@ -2378,6 +2380,7 @@
       let accessMembershipsCache = [];
       let paymentOperationsCache = [];
       let paymentReconciliationCasesCache = [];
+      let paymentProviderReconciliationRunsCache = [];
       let paymentProviderReconciliationResult = null;
       let selectedPaymentOperationId = null;
       let selectedPrimaWashDayQueueId = null;
@@ -3038,6 +3041,9 @@
         const paymentReconciliationCases = isAdminMode && hasAdminPermission("finance_read")
           ? await requestJson(`/v1/internal/payment-reconciliation-cases?limit=200`, adminHeaders("finance_read"))
           : [];
+        const paymentProviderReconciliationRuns = isAdminMode && hasAdminPermission("finance_read")
+          ? await requestJson(`/v1/internal/payment-provider-reconciliation-runs?limit=8`, adminHeaders("finance_read"))
+          : [];
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
@@ -3046,6 +3052,7 @@
         accessMembershipsCache = accessMemberships.memberships || [];
         paymentOperationsCache = paymentOperations;
         paymentReconciliationCasesCache = paymentReconciliationCases;
+        paymentProviderReconciliationRunsCache = paymentProviderReconciliationRuns;
         renderDashboard(dashboard, mavo);
         renderFinance(paymentOperationsCache);
         syncInvitationForm();
@@ -3593,16 +3600,19 @@
         if (!isAdminMode || !hasAdminPermission("finance_read")) {
           paymentOperationsCache = [];
           paymentReconciliationCasesCache = [];
+          paymentProviderReconciliationRunsCache = [];
           renderFinance(paymentOperationsCache);
           return;
         }
 
-        const [operations, cases] = await Promise.all([
+        const [operations, cases, runs] = await Promise.all([
           requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read")),
           requestJson(`/v1/internal/payment-reconciliation-cases?limit=200`, adminHeaders("finance_read")),
+          requestJson(`/v1/internal/payment-provider-reconciliation-runs?limit=8`, adminHeaders("finance_read")),
         ]);
         paymentOperationsCache = operations;
         paymentReconciliationCasesCache = cases;
+        paymentProviderReconciliationRunsCache = runs;
         renderFinance(paymentOperationsCache);
       }
 
@@ -3675,6 +3685,7 @@
           financeReconciliationProviderSelect.disabled = true;
           financeSummaryEl.innerHTML = "";
           financeReconciliationResultEl.innerHTML = "";
+          financeReconciliationHistoryEl.innerHTML = "";
           financeLedgerEl.innerHTML = `<div class="empty">Finance reconciliation requires finance_read permission.</div>`;
           financeDetailEl.innerHTML = `
             <p class="eyebrow">Restricted</p>
@@ -3710,6 +3721,7 @@
           )
           .join("");
         financeReconciliationResultEl.innerHTML = renderProviderReconciliationResult();
+        financeReconciliationHistoryEl.innerHTML = renderProviderReconciliationHistory();
 
         if (!selectedPaymentOperationId || !filteredOperations.some((operation) => operation.id === selectedPaymentOperationId)) {
           selectedPaymentOperationId = filteredOperations[0]?.id || null;
@@ -3752,6 +3764,36 @@
           <p class="section-description">
             Last reconciliation ${formatRelativeTime(result.ranAt)}. Matched ${escapeHtml(String(result.matched))}; provider read failures ${escapeHtml(String(result.failed))}.
           </p>
+        `;
+      }
+
+      function renderProviderReconciliationHistory() {
+        if (!paymentProviderReconciliationRunsCache.length) {
+          return "";
+        }
+
+        return `
+          <div class="finance-detail-meta">Recent provider reconciliation runs</div>
+          <div class="finance-ledger">
+            ${paymentProviderReconciliationRunsCache
+              .slice(0, 5)
+              .map(
+                (run) => `
+                  <article class="finance-row">
+                    <span class="finance-row-main">
+                      <strong>${escapeHtml(formatStatus(run.provider))} - ${escapeHtml(formatStatus(run.status))}</strong>
+                      <span class="finance-row-meta">${escapeHtml(String(run.checked))} checked - ${escapeHtml(String(run.mismatched))} mismatches - ${escapeHtml(String(run.casesOpened))} cases opened</span>
+                      ${run.errorMessage ? `<span class="finance-row-meta">${escapeHtml(run.errorMessage)}</span>` : ""}
+                    </span>
+                    <span class="finance-row-side">
+                      <span class="payment-chip ${run.status === "failed" ? "is-blocked" : run.mismatched > 0 ? "is-refunded" : "is-authorized"}">${escapeHtml(formatStatus(run.status))}</span>
+                      <span class="finance-row-meta">${formatRelativeTime(run.completedAt || run.startedAt)}</span>
+                    </span>
+                  </article>
+                `,
+              )
+              .join("")}
+          </div>
         `;
       }
 

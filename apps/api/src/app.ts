@@ -138,8 +138,8 @@ import {
   type PaymentCustomer,
   type PaymentProvider,
   type PaymentProviderResult,
-  type PaymentProviderState,
 } from "./modules/payments/provider.js";
+import { runPaymentProviderReconciliation } from "./modules/payment-reconciliation-runs/service.js";
 import { validateCreateVehicle } from "./modules/vehicles/repository.js";
 import { validateUpdateVehicle } from "./modules/vehicles/repository.js";
 import { validateProfileUpdate } from "./modules/profiles/repository.js";
@@ -2287,12 +2287,32 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           readonly provider?: string;
           readonly limit?: number;
         }>(request);
-        const result = await runPaymentProviderReconciliation(options.repositories, paymentProvider, actor, requestContext.requestId, {
+        const result = await runPaymentProviderReconciliation(options.repositories, paymentProvider, {
+          actor,
+          requestId: requestContext.requestId,
           provider: input.provider?.trim() || "stripe",
           limit: typeof input.limit === "number" ? input.limit : Number.parseInt(String(input.limit ?? "100"), 10),
         });
 
         sendJson(response, 201, { data: result });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/payment-provider-reconciliation-runs") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "20", 10);
+        const runs = await options.repositories.paymentProviderReconciliationRuns.list({
+          provider: requestUrl.searchParams.get("provider") ?? undefined,
+          limit,
+        });
+
+        sendJson(response, 200, { data: runs });
       } catch (error) {
         sendAuthError(response, error);
       }
@@ -6018,118 +6038,6 @@ async function openAutomatedPaymentReconciliationCase(
     summary: input.summary,
     note: input.note,
   });
-}
-
-async function runPaymentProviderReconciliation(
-  repositories: Repositories,
-  paymentProvider: PaymentProvider,
-  actor: Actor,
-  requestId: string,
-  input: {
-    readonly provider: string;
-    readonly limit: number;
-  },
-): Promise<{
-  readonly provider: string;
-  readonly checked: number;
-  readonly matched: number;
-  readonly mismatched: number;
-  readonly failed: number;
-  readonly casesOpened: number;
-}> {
-  const payments = await repositories.payments.list({
-    provider: input.provider,
-    limit: normalizeReconciliationRunLimit(input.limit),
-  });
-  let matched = 0;
-  let mismatched = 0;
-  let failed = 0;
-  let casesOpened = 0;
-
-  for (const payment of payments) {
-    if (!payment.providerReference) {
-      continue;
-    }
-
-    try {
-      const providerState = await paymentProvider.retrieveState(payment);
-
-      if (isPaymentProviderStateMatched(payment.status, providerState)) {
-        matched += 1;
-        continue;
-      }
-
-      mismatched += 1;
-      const operation = await recordPaymentOperation(repositories, {
-        actor,
-        requestId,
-        operation: "reconcile",
-        payment,
-        status: "skipped",
-        metadata: {
-          source: "provider_reconciliation",
-          outcome: "provider_mismatch",
-          provider: providerState.provider,
-          providerReference: providerState.providerReference,
-          providerStatus: providerState.providerStatus,
-          providerNormalizedStatus: providerState.normalizedStatus,
-          localStatus: payment.status,
-          providerEventType: "provider_reconciliation",
-        },
-      });
-      const existingCase = await repositories.paymentReconciliationCases.findOpenByProviderEvent({
-        caseType: "provider_mismatch",
-        providerReference: providerState.providerReference,
-        providerEventType: "provider_reconciliation",
-      });
-
-      await openAutomatedPaymentReconciliationCase(repositories, operation, {
-        caseType: "provider_mismatch",
-        summary: `Provider status mismatch for ${providerState.providerReference}.`,
-        note: `Local status is ${payment.status}; provider status is ${providerState.providerStatus} (${providerState.normalizedStatus}).`,
-      });
-
-      if (!existingCase) {
-        casesOpened += 1;
-      }
-    } catch (error) {
-      failed += 1;
-      await recordPaymentOperationFailure(repositories, {
-        actor,
-        requestId,
-        operation: "reconcile",
-        payment,
-        error,
-        metadata: {
-          source: "provider_reconciliation",
-          outcome: "provider_state_read_failed",
-          provider: payment.provider,
-          providerReference: payment.providerReference,
-        },
-      });
-    }
-  }
-
-  return {
-    provider: input.provider,
-    checked: payments.length,
-    matched,
-    mismatched,
-    failed,
-    casesOpened,
-  };
-}
-
-function isPaymentProviderStateMatched(localStatus: PaymentStatus, providerState: PaymentProviderState): boolean {
-  return providerState.normalizedStatus !== "unknown" && providerState.normalizedStatus === localStatus;
-}
-
-function normalizeReconciliationRunLimit(limit: number): number {
-  if (!Number.isFinite(limit)) {
-    return 100;
-  }
-
-  return Math.max(1, Math.min(Math.trunc(limit), 500));
 }
 
 function caseTypeForStripeReview(reviewCode: string): PaymentReconciliationCaseType {

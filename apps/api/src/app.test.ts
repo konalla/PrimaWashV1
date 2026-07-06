@@ -35,6 +35,7 @@ import type {
   PaymentOperation,
   PaymentReconciliationCase,
   PaymentReconciliationCaseDetail,
+  PaymentProviderReconciliationRun,
   PrimaWashDayBookingItem,
   Property,
   PropertyManagementDashboardResponse,
@@ -3687,6 +3688,15 @@ describe("Prima Wash API", () => {
 
     assert.equal(secondRunResponse.status, 201);
     assert.equal(secondRunPayload.data.casesOpened, 0);
+
+    const runsResponse = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs?provider=recording`, {
+      headers: internalHeaders,
+    });
+    const runsPayload = (await runsResponse.json()) as ApiResponse<readonly PaymentProviderReconciliationRun[]>;
+
+    assert.equal(runsResponse.status, 200);
+    assert.equal(runsPayload.data[0]?.status, "completed");
+    assert.equal(runsPayload.data[0]?.provider, "recording");
 
     const detailResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${mismatchCase?.id}`, {
       headers: internalHeaders,

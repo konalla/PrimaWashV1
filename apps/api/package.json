@@ -11,6 +11,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "db:smoke": "tsx src/db/smoke-test.ts",
     "auth:cleanup": "tsx src/db/auth-cleanup.ts",
+    "reconcile:payments": "tsx src/jobs/reconcile-payments.ts",
     "test:postgres": "tsx --test \"src/**/*.integration.ts\"",
     "test": "tsx --test \"src/**/*.test.ts\""
   },

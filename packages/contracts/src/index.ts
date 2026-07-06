@@ -1041,6 +1041,24 @@ export interface PaymentReconciliationCaseDetail {
   readonly events: readonly PaymentReconciliationCaseEvent[];
 }
 
+export type PaymentProviderReconciliationRunStatus = "running" | "completed" | "failed";
+
+export interface PaymentProviderReconciliationRun {
+  readonly id: string;
+  readonly provider: string;
+  readonly status: PaymentProviderReconciliationRunStatus;
+  readonly actorUserId?: string;
+  readonly requestId?: string;
+  readonly checked: number;
+  readonly matched: number;
+  readonly mismatched: number;
+  readonly failed: number;
+  readonly casesOpened: number;
+  readonly errorMessage?: string;
+  readonly startedAt: string;
+  readonly completedAt?: string;
+}
+
 export interface BillingSession {
   readonly provider: string;
   readonly providerCustomerId: string;

@@ -57,6 +57,7 @@ try {
   await assertTableExists("payment_operations");
   await assertTableExists("payment_reconciliation_cases");
   await assertTableExists("payment_reconciliation_case_events");
+  await assertTableExists("payment_provider_reconciliation_runs");
 
   await assertColumnExists("vehicles", "is_primary");
   await assertColumnExists("bookings", "onsite_service_mode");

@@ -280,6 +280,19 @@ Latest provider reconciliation dashboard control on 2026-07-06:
 - `npm run check --workspace @prima-wash/web` passed.
 - `npm run check` passed.
 
+Latest operational provider reconciliation runs on 2026-07-06:
+
+- Added `0041_payment_provider_reconciliation_runs.sql`.
+- Provider reconciliation runs now persist run history with provider, status, actor, request id, checked/matched/mismatched/failed/cases-opened counts, error message, and timestamps.
+- Added memory and Postgres repositories for provider reconciliation run history.
+- Moved provider mismatch reconciliation into a reusable service used by both API and CLI entry points.
+- Added `GET /v1/internal/payment-provider-reconciliation-runs` for finance-read history review.
+- Added root and API package command `npm run reconcile:payments` for scheduled jobs/cron-style execution.
+- The web Finance dashboard now shows recent provider reconciliation runs below the run summary.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 133 API tests.
+- Inline web script parse check passed with `node -e`.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -324,7 +337,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0040_payment_reconciliation_case_uniqueness.sql`.
+- Postgres migrations through `0041_payment_provider_reconciliation_runs.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -368,7 +381,7 @@ Web portal currently includes:
 - Condo activation lead management.
 - Condo operational profile and Prima Wash Day management.
 - Property-management scoped dashboard.
-- Internal finance reconciliation dashboard for payment-operation ledger review, finance case workflow, and manual provider reconciliation runs.
+- Internal finance reconciliation dashboard for payment-operation ledger review, finance case workflow, manual provider reconciliation runs, and recent provider reconciliation run history.
 - Booking drawer, work-order instructions, partner decisions, status actions, and communications.
 
 ## Important Current Gaps
@@ -409,7 +422,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is now `0040_payment_reconciliation_case_uniqueness.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0041_payment_provider_reconciliation_runs.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -467,7 +480,7 @@ Goal: make booking payment safe enough for real customers.
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, invalid transition auditability, and automated finance case creation for webhook review work. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, automated webhook-triggered finance cases on 2026-07-06, provider mismatch reconciliation run on 2026-07-06, and web run control on 2026-07-06; scheduled execution and deeper finance reporting remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, automated webhook-triggered finance cases on 2026-07-06, provider mismatch reconciliation run on 2026-07-06, web run control on 2026-07-06, persisted run history on 2026-07-06, and CLI/scheduled-job entry point on 2026-07-06; deployment scheduler wiring and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 
