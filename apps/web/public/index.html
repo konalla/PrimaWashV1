@@ -241,13 +241,18 @@
       }
 
       .finance-toolbar input,
-      .finance-toolbar select {
+      .finance-toolbar select,
+      #finance-reconciliation-provider {
         min-height: 42px;
         border: 1px solid var(--line);
         border-radius: var(--radius-sm);
         background: #ffffff;
         color: var(--ink);
         padding: 0 12px;
+      }
+
+      #finance-reconciliation-result:not(:empty) {
+        margin: -4px 0 16px;
       }
 
       .finance-board {
@@ -1865,9 +1870,17 @@
             <h2>Payment operation center</h2>
             <p class="section-description">Read-only payment ledger for authorization, capture, void, refund, and Stripe webhook review work.</p>
           </div>
-          <button class="action" type="button" id="refresh-finance">Refresh ledger</button>
+          <div class="dialog-actions">
+            <select id="finance-reconciliation-provider" aria-label="Provider reconciliation target">
+              <option value="stripe">Stripe</option>
+              <option value="local">Local</option>
+            </select>
+            <button class="action" type="button" id="run-provider-reconciliation">Run provider reconciliation</button>
+            <button class="action" type="button" id="refresh-finance">Refresh ledger</button>
+          </div>
         </div>
         <div class="finance-summary-grid" id="finance-summary"></div>
+        <div id="finance-reconciliation-result"></div>
         <div class="finance-toolbar" aria-label="Payment operation filters">
           <input id="finance-search" type="search" placeholder="Search booking, provider ref, request id" />
           <select id="finance-status-filter" aria-label="Payment operation status">
@@ -2308,6 +2321,9 @@
       const financeOperationFilter = document.querySelector("#finance-operation-filter");
       const financeProviderFilter = document.querySelector("#finance-provider-filter");
       const refreshFinanceButton = document.querySelector("#refresh-finance");
+      const runProviderReconciliationButton = document.querySelector("#run-provider-reconciliation");
+      const financeReconciliationProviderSelect = document.querySelector("#finance-reconciliation-provider");
+      const financeReconciliationResultEl = document.querySelector("#finance-reconciliation-result");
       const queueEl = document.querySelector("#queue");
       const auditEl = document.querySelector("#audit");
       const availabilityEl = document.querySelector("#availability");
@@ -2362,6 +2378,7 @@
       let accessMembershipsCache = [];
       let paymentOperationsCache = [];
       let paymentReconciliationCasesCache = [];
+      let paymentProviderReconciliationResult = null;
       let selectedPaymentOperationId = null;
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "upcoming";
@@ -2480,6 +2497,24 @@
           showToast(error.message, "error");
         } finally {
           refreshFinanceButton.disabled = false;
+        }
+      });
+
+      runProviderReconciliationButton.addEventListener("click", async () => {
+        if (!canUseAdmin("finance_write")) {
+          showToast("Finance write permission is required.", "error");
+          return;
+        }
+
+        runProviderReconciliationButton.disabled = true;
+        try {
+          paymentProviderReconciliationResult = await runProviderReconciliation(financeReconciliationProviderSelect.value);
+          await refreshFinanceOperations();
+          showToast("Provider reconciliation completed.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          runProviderReconciliationButton.disabled = false;
         }
       });
 
@@ -3607,6 +3642,27 @@
         return payload.data;
       }
 
+      async function runProviderReconciliation(provider) {
+        const response = await fetch(`${apiBase}/v1/internal/payment-provider-reconciliation-runs`, {
+          method: "POST",
+          headers: {
+            ...adminHeaders("finance_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ provider, limit: 200 }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Provider reconciliation could not be completed");
+        }
+
+        return {
+          ...payload.data,
+          ranAt: new Date().toISOString(),
+        };
+      }
+
       function renderFinance(operations) {
         if (!isAdminMode) {
           return;
@@ -3615,7 +3671,10 @@
         if (!hasAdminPermission("finance_read")) {
           financeSectionEl.hidden = false;
           refreshFinanceButton.disabled = true;
+          runProviderReconciliationButton.disabled = true;
+          financeReconciliationProviderSelect.disabled = true;
           financeSummaryEl.innerHTML = "";
+          financeReconciliationResultEl.innerHTML = "";
           financeLedgerEl.innerHTML = `<div class="empty">Finance reconciliation requires finance_read permission.</div>`;
           financeDetailEl.innerHTML = `
             <p class="eyebrow">Restricted</p>
@@ -3627,6 +3686,8 @@
 
         financeSectionEl.hidden = false;
         refreshFinanceButton.disabled = false;
+        runProviderReconciliationButton.disabled = !canUseAdmin("finance_write");
+        financeReconciliationProviderSelect.disabled = !canUseAdmin("finance_write");
         const filteredOperations = filterFinanceOperations(operations);
         const reviewCount = operations.filter(isReviewRequiredOperation).length;
         const failedCount = operations.filter((operation) => operation.status === "failed").length;
@@ -3648,6 +3709,7 @@
             `,
           )
           .join("");
+        financeReconciliationResultEl.innerHTML = renderProviderReconciliationResult();
 
         if (!selectedPaymentOperationId || !filteredOperations.some((operation) => operation.id === selectedPaymentOperationId)) {
           selectedPaymentOperationId = filteredOperations[0]?.id || null;
@@ -3659,6 +3721,38 @@
             : filteredOperations.map(renderFinanceRow).join("");
 
         renderFinanceDetail(filteredOperations.find((operation) => operation.id === selectedPaymentOperationId) || filteredOperations[0]);
+      }
+
+      function renderProviderReconciliationResult() {
+        if (!paymentProviderReconciliationResult) {
+          return canUseAdmin("finance_write")
+            ? ""
+            : `<div class="empty">Provider reconciliation runs require finance_write permission.</div>`;
+        }
+
+        const result = paymentProviderReconciliationResult;
+        return `
+          <div class="finance-summary-grid">
+            ${[
+              ["Provider", formatStatus(result.provider)],
+              ["Checked", result.checked],
+              ["Mismatches", result.mismatched],
+              ["Cases opened", result.casesOpened],
+            ]
+              .map(
+                ([label, value]) => `
+                  <article class="finance-summary-card">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(String(value))}</strong>
+                  </article>
+                `,
+              )
+              .join("")}
+          </div>
+          <p class="section-description">
+            Last reconciliation ${formatRelativeTime(result.ranAt)}. Matched ${escapeHtml(String(result.matched))}; provider read failures ${escapeHtml(String(result.failed))}.
+          </p>
+        `;
       }
 
       function filterFinanceOperations(operations) {

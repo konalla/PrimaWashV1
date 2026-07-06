@@ -271,6 +271,15 @@ Latest provider mismatch reconciliation automation on 2026-07-06:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 133 API tests.
 
+Latest provider reconciliation dashboard control on 2026-07-06:
+
+- The web Finance dashboard now exposes a finance-write-only provider reconciliation run control.
+- Finance users can choose a provider, run the reconciliation scan, see checked/matched/mismatched/failed/cases-opened summary metrics, and immediately refresh into the generated ledger rows/cases.
+- Internal profiles without `finance_write` can still read the ledger when allowed, but the provider reconciliation control is disabled.
+- Inline web script parse check passed with `node -e`.
+- `npm run check --workspace @prima-wash/web` passed.
+- `npm run check` passed.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -359,7 +368,7 @@ Web portal currently includes:
 - Condo activation lead management.
 - Condo operational profile and Prima Wash Day management.
 - Property-management scoped dashboard.
-- Internal finance reconciliation dashboard for payment-operation ledger review and finance case workflow.
+- Internal finance reconciliation dashboard for payment-operation ledger review, finance case workflow, and manual provider reconciliation runs.
 - Booking drawer, work-order instructions, partner decisions, status actions, and communications.
 
 ## Important Current Gaps
@@ -458,7 +467,7 @@ Goal: make booking payment safe enough for real customers.
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, invalid transition auditability, and automated finance case creation for webhook review work. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, automated webhook-triggered finance cases on 2026-07-06, and provider mismatch reconciliation run on 2026-07-06; scheduled execution and deeper finance reporting remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, automated webhook-triggered finance cases on 2026-07-06, provider mismatch reconciliation run on 2026-07-06, and web run control on 2026-07-06; scheduled execution and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 
