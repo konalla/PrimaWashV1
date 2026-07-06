@@ -205,6 +205,142 @@
         letter-spacing: 0;
       }
 
+      .finance-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .finance-summary-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--panel-2);
+        padding: 14px;
+      }
+
+      .finance-summary-card span,
+      .finance-row-meta,
+      .finance-detail-meta {
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .finance-summary-card strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 24px;
+      }
+
+      .finance-toolbar {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(150px, 0.55fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .finance-toolbar input,
+      .finance-toolbar select {
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: #ffffff;
+        color: var(--ink);
+        padding: 0 12px;
+      }
+
+      .finance-board {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .finance-ledger {
+        display: grid;
+        gap: 10px;
+      }
+
+      .finance-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--panel-2);
+        padding: 14px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .finance-row.is-selected {
+        border-color: rgba(11, 79, 90, 0.48);
+        background: #e7efed;
+      }
+
+      .finance-row.is-review {
+        border-color: rgba(176, 138, 60, 0.44);
+      }
+
+      .finance-row.is-failed {
+        border-color: rgba(185, 71, 71, 0.36);
+      }
+
+      .finance-row-main {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      .finance-row-main strong,
+      .finance-detail-card strong {
+        color: var(--ink);
+      }
+
+      .finance-row-meta {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .finance-row-side {
+        display: grid;
+        justify-items: end;
+        gap: 8px;
+      }
+
+      .finance-detail-card {
+        position: sticky;
+        top: 92px;
+        display: grid;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: #ffffff;
+        padding: 16px;
+      }
+
+      .finance-detail-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .finance-detail-item {
+        display: grid;
+        gap: 2px;
+        border-top: 1px solid var(--line);
+        padding-top: 8px;
+      }
+
+      .finance-detail-item code {
+        overflow-wrap: anywhere;
+        color: var(--green-2);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
       .split {
         grid-template-columns: 1.45fr 0.55fr;
       }
@@ -1555,11 +1691,14 @@
 
         .hero,
         .split,
-        .access-grid {
+        .access-grid,
+        .finance-board,
+        .finance-toolbar {
           grid-template-columns: 1fr;
         }
 
-        .metric-grid {
+        .metric-grid,
+        .finance-summary-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
@@ -1580,6 +1719,8 @@
         }
 
         .metric-grid,
+        .finance-summary-grid,
+        .finance-toolbar,
         .dialog-grid,
         .access-form,
         .access-permission-list {
@@ -1654,6 +1795,7 @@
           <a class="nav-item" href="#availability-section"><span class="nav-icon">◫</span>Availability</a>
           <a class="nav-item" href="#activity-section"><span class="nav-icon">↻</span>Activity</a>
           <a class="nav-item" href="#condo-leads-section"><span class="nav-icon">CL</span>Condo leads</a>
+          <a class="nav-item" href="#finance-section"><span class="nav-icon">$</span>Finance</a>
           <a class="nav-item" href="#access-section"><span class="nav-icon">A</span>Access</a>
         </nav>
         <div class="sidebar-footer">
@@ -1715,6 +1857,47 @@
 
       <section class="metric-grid" id="metrics"></section>
       <div class="secondary-metrics" id="secondary-metrics" aria-label="Secondary business metrics"></div>
+
+      <section class="card availability-card" id="finance-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Finance reconciliation</p>
+            <h2>Payment operation center</h2>
+            <p class="section-description">Read-only payment ledger for authorization, capture, void, refund, and Stripe webhook review work.</p>
+          </div>
+          <button class="action" type="button" id="refresh-finance">Refresh ledger</button>
+        </div>
+        <div class="finance-summary-grid" id="finance-summary"></div>
+        <div class="finance-toolbar" aria-label="Payment operation filters">
+          <input id="finance-search" type="search" placeholder="Search booking, provider ref, request id" />
+          <select id="finance-status-filter" aria-label="Payment operation status">
+            <option value="all">All statuses</option>
+            <option value="review">Needs review</option>
+            <option value="failed">Failed</option>
+            <option value="skipped">Skipped</option>
+            <option value="succeeded">Succeeded</option>
+          </select>
+          <select id="finance-operation-filter" aria-label="Payment operation type">
+            <option value="all">All operations</option>
+            <option value="create">Create</option>
+            <option value="authorize">Authorize</option>
+            <option value="capture">Capture</option>
+            <option value="void">Void</option>
+            <option value="refund">Refund</option>
+            <option value="reconcile">Reconcile</option>
+          </select>
+          <select id="finance-provider-filter" aria-label="Payment provider">
+            <option value="all">All providers</option>
+            <option value="stripe">Stripe</option>
+            <option value="local">Local</option>
+            <option value="none">No provider</option>
+          </select>
+        </div>
+        <div class="finance-board">
+          <div class="finance-ledger" id="finance-ledger"></div>
+          <aside class="finance-detail-card" id="finance-detail"></aside>
+        </div>
+      </section>
 
       <section class="card availability-card" id="access-section">
         <div class="section-heading">
@@ -2116,6 +2299,15 @@
 
       const metricsEl = document.querySelector("#metrics");
       const secondaryMetricsEl = document.querySelector("#secondary-metrics");
+      const financeSectionEl = document.querySelector("#finance-section");
+      const financeSummaryEl = document.querySelector("#finance-summary");
+      const financeLedgerEl = document.querySelector("#finance-ledger");
+      const financeDetailEl = document.querySelector("#finance-detail");
+      const financeSearchInput = document.querySelector("#finance-search");
+      const financeStatusFilter = document.querySelector("#finance-status-filter");
+      const financeOperationFilter = document.querySelector("#finance-operation-filter");
+      const financeProviderFilter = document.querySelector("#finance-provider-filter");
+      const refreshFinanceButton = document.querySelector("#refresh-finance");
       const queueEl = document.querySelector("#queue");
       const auditEl = document.querySelector("#audit");
       const availabilityEl = document.querySelector("#availability");
@@ -2168,6 +2360,8 @@
       let primaWashDayBookingsCache = [];
       let accessInvitationsCache = [];
       let accessMembershipsCache = [];
+      let paymentOperationsCache = [];
+      let selectedPaymentOperationId = null;
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "upcoming";
       let selectedBookingId = null;
@@ -2219,6 +2413,7 @@
       if (!isAdminMode) {
         condoLeadsSectionEl.hidden = true;
         accessSectionEl.hidden = true;
+        financeSectionEl.hidden = true;
       }
 
       adminPermissionSelect.addEventListener("change", async () => {
@@ -2268,6 +2463,23 @@
 
       document.querySelectorAll(".nav-item").forEach((item) => {
         item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
+      });
+
+      [financeSearchInput, financeStatusFilter, financeOperationFilter, financeProviderFilter].forEach((control) => {
+        control.addEventListener("input", () => renderFinance(paymentOperationsCache));
+        control.addEventListener("change", () => renderFinance(paymentOperationsCache));
+      });
+
+      refreshFinanceButton.addEventListener("click", async () => {
+        refreshFinanceButton.disabled = true;
+        try {
+          await refreshFinanceOperations();
+          showToast("Finance ledger refreshed.");
+        } catch (error) {
+          showToast(error.message, "error");
+        } finally {
+          refreshFinanceButton.disabled = false;
+        }
       });
 
       async function requestAuthSession(identifier) {
@@ -2784,13 +2996,18 @@
         const accessMemberships = isAdminMode && canListAccessInvitations()
           ? await requestJson(`/v1/internal/access-memberships`, adminHeaders())
           : { memberships: [] };
+        const paymentOperations = isAdminMode && hasAdminPermission("finance_read")
+          ? await requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read"))
+          : [];
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
         condoLeadsCache = condoLeads;
         accessInvitationsCache = accessInvitations.invitations || [];
         accessMembershipsCache = accessMemberships.memberships || [];
+        paymentOperationsCache = paymentOperations;
         renderDashboard(dashboard, mavo);
+        renderFinance(paymentOperationsCache);
         syncInvitationForm();
         renderAccessInvitations(accessInvitationsCache);
         renderAccessMemberships(accessMembershipsCache);
@@ -3330,6 +3547,279 @@
                   `,
                 )
                 .join("");
+      }
+
+      async function refreshFinanceOperations() {
+        if (!isAdminMode || !hasAdminPermission("finance_read")) {
+          paymentOperationsCache = [];
+          renderFinance(paymentOperationsCache);
+          return;
+        }
+
+        paymentOperationsCache = await requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read"));
+        renderFinance(paymentOperationsCache);
+      }
+
+      function renderFinance(operations) {
+        if (!isAdminMode) {
+          return;
+        }
+
+        if (!hasAdminPermission("finance_read")) {
+          financeSectionEl.hidden = false;
+          refreshFinanceButton.disabled = true;
+          financeSummaryEl.innerHTML = "";
+          financeLedgerEl.innerHTML = `<div class="empty">Finance reconciliation requires finance_read permission.</div>`;
+          financeDetailEl.innerHTML = `
+            <p class="eyebrow">Restricted</p>
+            <h3>${escapeHtml(activeAdminProfile().label)}</h3>
+            <p class="section-description">Switch to a finance or super-admin profile to review payment operation records.</p>
+          `;
+          return;
+        }
+
+        financeSectionEl.hidden = false;
+        refreshFinanceButton.disabled = false;
+        const filteredOperations = filterFinanceOperations(operations);
+        const reviewCount = operations.filter(isReviewRequiredOperation).length;
+        const failedCount = operations.filter((operation) => operation.status === "failed").length;
+        const capturedCount = operations.filter((operation) => operation.operation === "capture" && operation.status === "succeeded").length;
+        const refundedCount = operations.filter((operation) => operation.operation === "refund" && operation.status === "succeeded").length;
+
+        financeSummaryEl.innerHTML = [
+          ["Needs review", reviewCount],
+          ["Failed operations", failedCount],
+          ["Captured", capturedCount],
+          ["Refunded", refundedCount],
+        ]
+          .map(
+            ([label, value]) => `
+              <article class="finance-summary-card">
+                <span>${label}</span>
+                <strong>${value}</strong>
+              </article>
+            `,
+          )
+          .join("");
+
+        if (!selectedPaymentOperationId || !filteredOperations.some((operation) => operation.id === selectedPaymentOperationId)) {
+          selectedPaymentOperationId = filteredOperations[0]?.id || null;
+        }
+
+        financeLedgerEl.innerHTML =
+          filteredOperations.length === 0
+            ? `<div class="empty">No payment operations match the current filters.</div>`
+            : filteredOperations.map(renderFinanceRow).join("");
+
+        renderFinanceDetail(filteredOperations.find((operation) => operation.id === selectedPaymentOperationId) || filteredOperations[0]);
+      }
+
+      function filterFinanceOperations(operations) {
+        const search = financeSearchInput.value.trim().toLowerCase();
+        const status = financeStatusFilter.value;
+        const operationFilter = financeOperationFilter.value;
+        const providerFilter = financeProviderFilter.value;
+
+        return operations.filter((operation) => {
+          const searchable = [
+            operation.id,
+            operation.bookingId,
+            operation.paymentIntentId,
+            operation.ownerId,
+            operation.provider,
+            operation.providerOperation,
+            operation.providerReference,
+            operation.providerStatus,
+            operation.idempotencyKey,
+            operation.requestId,
+            operation.errorMessage,
+            operation.metadata?.stripeEventId,
+            operation.metadata?.stripeEventType,
+            operation.metadata?.reviewCode,
+            operation.metadata?.reason,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+          if (search && !searchable.includes(search)) {
+            return false;
+          }
+
+          if (status === "review" && !isReviewRequiredOperation(operation)) {
+            return false;
+          }
+
+          if (status !== "all" && status !== "review" && operation.status !== status) {
+            return false;
+          }
+
+          if (operationFilter !== "all" && operation.operation !== operationFilter) {
+            return false;
+          }
+
+          if (providerFilter === "none" && operation.provider) {
+            return false;
+          }
+
+          if (providerFilter !== "all" && providerFilter !== "none" && operation.provider !== providerFilter) {
+            return false;
+          }
+
+          return true;
+        });
+      }
+
+      function renderFinanceRow(operation) {
+        const reviewRequired = isReviewRequiredOperation(operation);
+        const className = [
+          "finance-row",
+          selectedPaymentOperationId === operation.id ? "is-selected" : "",
+          reviewRequired ? "is-review" : "",
+          operation.status === "failed" ? "is-failed" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return `
+          <button class="${className}" type="button" data-payment-operation-id="${operation.id}">
+            <span class="finance-row-main">
+              <strong>${formatPaymentOperation(operation)}</strong>
+              <span class="finance-row-meta">Booking ${operation.bookingId.slice(-8).toUpperCase()} - ${escapeHtml(operation.providerReference || operation.paymentIntentId || "No provider reference")}</span>
+              <span class="finance-row-meta">${escapeHtml(financeOperationReason(operation))}</span>
+            </span>
+            <span class="finance-row-side">
+              <span class="payment-chip ${financeOperationTone(operation)}">${reviewRequired ? "review required" : formatStatus(operation.status)}</span>
+              <span class="finance-row-meta">${formatRelativeTime(operation.createdAt)}</span>
+            </span>
+          </button>
+        `;
+      }
+
+      function renderFinanceDetail(operation) {
+        if (!operation) {
+          financeDetailEl.innerHTML = `
+            <p class="eyebrow">Ledger detail</p>
+            <h3>No payment operation selected</h3>
+            <p class="section-description">Recent payment operations will appear here once bookings create payment activity.</p>
+          `;
+          return;
+        }
+
+        const metadataRows = Object.entries(operation.metadata || {})
+          .filter(([, value]) => value !== undefined && value !== null && value !== "")
+          .slice(0, 12)
+          .map(([key, value]) => `<div class="finance-detail-item"><span>${escapeHtml(key)}</span><code>${escapeHtml(formatMetadataValue(value))}</code></div>`)
+          .join("");
+
+        financeDetailEl.innerHTML = `
+          <p class="eyebrow">Ledger detail</p>
+          <div>
+            <h3>${formatPaymentOperation(operation)}</h3>
+            <p class="section-description">${escapeHtml(financeRunbookAction(operation))}</p>
+          </div>
+          <div class="finance-detail-grid">
+            <div class="finance-detail-item"><span>Status</span><strong>${isReviewRequiredOperation(operation) ? "Review required" : formatStatus(operation.status)}</strong></div>
+            <div class="finance-detail-item"><span>Booking</span><code>${escapeHtml(operation.bookingId)}</code></div>
+            <div class="finance-detail-item"><span>Payment intent</span><code>${escapeHtml(operation.paymentIntentId || "Not linked")}</code></div>
+            <div class="finance-detail-item"><span>Provider</span><strong>${escapeHtml(operation.provider || "No provider")}</strong></div>
+            <div class="finance-detail-item"><span>Provider reference</span><code>${escapeHtml(operation.providerReference || "Not provided")}</code></div>
+            <div class="finance-detail-item"><span>Request id</span><code>${escapeHtml(operation.requestId || "Not captured")}</code></div>
+            <div class="finance-detail-item"><span>Idempotency key</span><code>${escapeHtml(operation.idempotencyKey || "Not provided")}</code></div>
+            <div class="finance-detail-item"><span>Actor</span><strong>${escapeHtml([operation.actorRole, operation.actorUserId].filter(Boolean).join(" - ") || "System/webhook")}</strong></div>
+            <div class="finance-detail-item"><span>Created</span><strong>${formatDateTime(operation.createdAt)}</strong></div>
+            ${operation.errorMessage ? `<div class="finance-detail-item"><span>Error</span><code>${escapeHtml(operation.errorMessage)}</code></div>` : ""}
+            ${metadataRows ? `<div class="finance-detail-meta">Metadata</div>${metadataRows}` : ""}
+          </div>
+          <div class="dialog-actions">
+            <button class="action" type="button" data-finance-booking-id="${operation.bookingId}">Find booking in queue</button>
+          </div>
+        `;
+      }
+
+      function isReviewRequiredOperation(operation) {
+        return operation.status === "skipped" && operation.metadata?.outcome === "review_required";
+      }
+
+      function financeOperationTone(operation) {
+        if (isReviewRequiredOperation(operation)) {
+          return "is-blocked";
+        }
+
+        if (operation.status === "succeeded") {
+          return "is-authorized";
+        }
+
+        if (operation.status === "failed") {
+          return "is-blocked";
+        }
+
+        return "";
+      }
+
+      function formatPaymentOperation(operation) {
+        return `${formatStatus(operation.operation)} - ${formatStatus(operation.status)}`;
+      }
+
+      function financeOperationReason(operation) {
+        if (operation.errorMessage) {
+          return operation.errorMessage;
+        }
+
+        if (operation.metadata?.reviewCode) {
+          return `Review: ${operation.metadata.reviewCode}`;
+        }
+
+        if (operation.metadata?.reason) {
+          return String(operation.metadata.reason);
+        }
+
+        if (operation.providerStatus) {
+          return `Provider status: ${operation.providerStatus}`;
+        }
+
+        return operation.metadata?.source ? `Source: ${operation.metadata.source}` : "No extra provider detail";
+      }
+
+      function financeRunbookAction(operation) {
+        if (isReviewRequiredOperation(operation)) {
+          const code = String(operation.metadata?.reviewCode || operation.metadata?.stripeEventType || "");
+          if (code.includes("dispute")) {
+            return "Open Stripe dispute evidence, contact operations for service proof, and do not refund or capture manually until finance resolves the dispute path.";
+          }
+
+          if (code.includes("payment_failed") || code.includes("card_declined")) {
+            return "Ask the customer to authorize another payment method before partner confirmation. Keep the booking blocked until payment is authorized.";
+          }
+
+          return "Review the provider event and reconcile the booking manually before taking money-moving action.";
+        }
+
+        if (operation.status === "failed") {
+          return "Review the error, provider reference, and booking state. Retry only with a new idempotency key after the underlying issue is fixed.";
+        }
+
+        if (operation.status === "skipped") {
+          return "No state changed. Confirm whether this was a duplicate webhook, invalid transition, or intentionally ignored provider event.";
+        }
+
+        if (operation.operation === "capture" && operation.status === "succeeded") {
+          return "Captured payment should match a completed booking and a generated service record.";
+        }
+
+        if (operation.operation === "refund" && operation.status === "succeeded") {
+          return "Refund is recorded. Confirm customer-facing payment history and provider settlement status if needed.";
+        }
+
+        return "Operation is recorded for audit. Use the booking and provider references for reconciliation.";
+      }
+
+      function formatMetadataValue(value) {
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+          return String(value);
+        }
+
+        return JSON.stringify(value);
       }
 
       function applyAdminPermissionUi() {
@@ -5532,6 +6022,31 @@
 
         if (primaWashDayQueueButton) {
           renderPrimaWashDayQueue(primaWashDayQueueButton.dataset.primaWashDayQueue);
+          return;
+        }
+
+        const financeRowButton = event.target.closest("button[data-payment-operation-id]");
+
+        if (financeRowButton) {
+          selectedPaymentOperationId = financeRowButton.dataset.paymentOperationId;
+          renderFinance(paymentOperationsCache);
+          return;
+        }
+
+        const financeBookingButton = event.target.closest("button[data-finance-booking-id]");
+
+        if (financeBookingButton) {
+          const bookingId = financeBookingButton.dataset.financeBookingId;
+          const booking = findQueueItem(bookingId);
+
+          if (booking) {
+            openBookingDrawer(bookingId);
+            return;
+          }
+
+          financeSearchInput.value = bookingId.slice(-8);
+          showToast("Booking is not in the current operations queue. Filtering the finance ledger instead.");
+          renderFinance(paymentOperationsCache);
           return;
         }
 

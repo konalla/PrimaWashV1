@@ -228,6 +228,16 @@ Latest Stripe webhook reconciliation hardening on 2026-07-06:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 128 API tests.
 
+Latest finance reconciliation dashboard on 2026-07-06:
+
+- Added a read-only Finance section to the web portal for internal users with `finance_read`.
+- Finance users can review recent payment-operation ledger rows, filter by search/status/operation/provider, and inspect booking id, payment intent, provider reference, request id, idempotency key, actor, metadata, and recommended follow-up.
+- Review-required Stripe webhook outcomes and failed/skipped operations are surfaced as finance work instead of being hidden in backend-only records.
+- Partner portal mode does not show the Finance section, and internal profiles without `finance_read` see a restricted state.
+- `npm run check --workspace @prima-wash/web` passed.
+- `npm run check` passed.
+- Inline web script parse check passed with `node -e`.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -316,6 +326,7 @@ Web portal currently includes:
 - Condo activation lead management.
 - Condo operational profile and Prima Wash Day management.
 - Property-management scoped dashboard.
+- Read-only internal finance reconciliation dashboard for payment-operation ledger review.
 - Booking drawer, work-order instructions, partner decisions, status actions, and communications.
 
 ## Important Current Gaps
@@ -334,8 +345,9 @@ Auth and identity:
 Payments and finance:
 
 - Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
+- A first internal web finance dashboard now exposes ledger review, filters, detail metadata, and recommended follow-up text.
 - Production config now refuses to start with local payments, missing Stripe secret key, or missing Stripe webhook secret.
-- Production operation still needs Stripe charge-ID-only dispute mapping, reconciliation runbooks, capture/refund runbooks, provider mismatch workflows, receipt/tax logic, and finance dashboards.
+- Production operation still needs Stripe charge-ID-only dispute mapping, formal reconciliation runbooks, capture/refund runbooks, provider mismatch workflows, receipt/tax logic, and deeper finance reporting.
 - Local payment mode is still the default development path, but is blocked in production.
 - Partner payout, commission, settlement, and dispute handling are not implemented.
 
@@ -413,7 +425,7 @@ Goal: make booking payment safe enough for real customers.
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, and invalid transition auditability. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05; web finance dashboard and provider mismatch workflows remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05 and first read-only web finance dashboard on 2026-07-06; provider mismatch workflows and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 
