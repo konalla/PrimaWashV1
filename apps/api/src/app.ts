@@ -3102,7 +3102,20 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           assertPartnerOrInternal(actor);
         }
 
+        const idempotencyKey = getPaymentIdempotencyKey(request);
+
         if (!canTransitionBookingStatus(booking.status, "cancelled")) {
+          const idempotentVoidPayment = await getIdempotentPaymentForOperation(options.repositories, {
+            operation: "void",
+            bookingId: booking.id,
+            idempotencyKey,
+          });
+
+          if (booking.status === "cancelled" && idempotentVoidPayment?.status === "voided") {
+            sendJson(response, 200, { data: booking });
+            return;
+          }
+
           sendError(
             response,
             409,
@@ -3117,6 +3130,15 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           options.repositories,
           paymentProvider,
           updatedBooking.id,
+          {
+            actor,
+            requestId: requestContext.requestId,
+            idempotencyKey,
+            metadata: {
+              source: "booking_cancel_request",
+              bookingStatus: updatedBooking.status,
+            },
+          },
         );
 
         await options.repositories.audit.record({
@@ -3143,17 +3165,6 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             voidedPayment.payment,
             voidedPayment.providerResult,
           );
-          await recordPaymentOperation(options.repositories, {
-            actor,
-            requestId: requestContext.requestId,
-            operation: "void",
-            payment: voidedPayment.payment,
-            providerResult: voidedPayment.providerResult,
-            metadata: {
-              source: "booking_cancel_request",
-              bookingStatus: updatedBooking.status,
-            },
-          });
         }
 
         await recordProductEvent(options.repositories, {
@@ -3449,7 +3460,15 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           ...(message ? { initialMessage: message } : {}),
         });
         const updatedBooking = await options.repositories.bookings.updateStatus(booking.id, "cancelled");
-        const voidedPayment = await voidAuthorizedPaymentByBooking(options.repositories, paymentProvider, updatedBooking.id);
+        const voidedPayment = await voidAuthorizedPaymentByBooking(options.repositories, paymentProvider, updatedBooking.id, {
+          actor,
+          requestId: requestContext.requestId,
+          idempotencyKey: getPaymentIdempotencyKey(request),
+          metadata: {
+            source: "booking_status_cancelled",
+            bookingStatus: updatedBooking.status,
+          },
+        });
 
         await options.repositories.audit.record({
           actor,
@@ -3476,17 +3495,6 @@ export function createApiServer(options: CreateApiServerOptions): Server {
             voidedPayment.payment,
             voidedPayment.providerResult,
           );
-          await recordPaymentOperation(options.repositories, {
-            actor,
-            requestId: requestContext.requestId,
-            operation: "void",
-            payment: voidedPayment.payment,
-            providerResult: voidedPayment.providerResult,
-            metadata: {
-              source: "booking_status_cancelled",
-              bookingStatus: updatedBooking.status,
-            },
-          });
         }
 
         await recordProductEvent(options.repositories, {
@@ -4847,19 +4855,72 @@ async function voidAuthorizedPaymentByBooking(
   repositories: Repositories,
   paymentProvider: PaymentProvider,
   bookingId: string,
+  options: {
+    readonly actor?: Parameters<typeof assertOwnerAccess>[0] | undefined;
+    readonly requestId?: string | undefined;
+    readonly idempotencyKey?: string | undefined;
+    readonly metadata?: Record<string, unknown> | undefined;
+  } = {},
 ): Promise<{ readonly payment: PaymentIntent; readonly providerResult: PaymentProviderResult } | undefined> {
   const payment = await repositories.payments.getByBookingId(bookingId);
+
+  const idempotentPayment = await getIdempotentPaymentForOperation(repositories, {
+    operation: "void",
+    bookingId,
+    idempotencyKey: options.idempotencyKey,
+  });
+
+  if (idempotentPayment?.status === "voided") {
+    return undefined;
+  }
 
   if (!payment || payment.status !== "authorized") {
     return undefined;
   }
 
-  const providerResult = await paymentProvider.void(payment);
-  const voidedPayment = await repositories.payments.voidByBookingId(bookingId);
+  let providerResult: PaymentProviderResult | undefined;
+  let voidedPayment: PaymentIntent | undefined;
+
+  try {
+    providerResult = await paymentProvider.void(payment);
+    voidedPayment = await repositories.payments.voidByBookingId(bookingId);
+  } catch (error) {
+    await recordPaymentOperationFailure(repositories, {
+      actor: options.actor,
+      requestId: options.requestId,
+      operation: "void",
+      payment,
+      providerResult,
+      idempotencyKey: options.idempotencyKey,
+      error,
+      metadata: options.metadata,
+    });
+    throw error;
+  }
 
   if (!voidedPayment) {
+    await recordPaymentOperationFailure(repositories, {
+      actor: options.actor,
+      requestId: options.requestId,
+      operation: "void",
+      payment,
+      providerResult,
+      idempotencyKey: options.idempotencyKey,
+      error: new Error("payment_intent_not_found"),
+      metadata: options.metadata,
+    });
     throw new Error("payment_intent_not_found");
   }
+
+  await recordPaymentOperation(repositories, {
+    actor: options.actor,
+    requestId: options.requestId,
+    operation: "void",
+    payment: voidedPayment,
+    providerResult,
+    idempotencyKey: options.idempotencyKey,
+    metadata: options.metadata,
+  });
 
   return {
     payment: voidedPayment,

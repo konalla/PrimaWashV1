@@ -198,6 +198,16 @@ Latest payment idempotency hardening on 2026-07-05:
 - `npm run db:smoke` passed with 38 applied migrations.
 - `npm run test:postgres` passed with 9 Postgres repository integration tests.
 
+Latest payment void idempotency hardening on 2026-07-06:
+
+- Booking cancellation now passes idempotency metadata into the payment void operation path.
+- Replayed customer cancellation requests with the same idempotency key now return the already-cancelled booking instead of a false cancellation conflict.
+- Payment void operations now write successful payment-operation records from the centralized void helper.
+- Failed void attempts after access checks now write failed payment-operation records with actor, request id, idempotency key, provider result where available, source metadata, and error message.
+- API tests now verify cancellation replay protection and single-provider-call behavior for payment voids.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 122 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -259,7 +269,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests, append-only payment operation records, create/authorize/capture/refund idempotency-key replay protection, and failed-operation ledger records.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, and failed-operation ledger records.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -381,7 +391,7 @@ Goal: make booking payment safe enough for real customers.
 
 - Make Stripe the production provider with environment-gated local mode.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable.
-- Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, and refund replay protection on 2026-07-05; void replay handling still needs provider-specific completion.
+- Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
 - Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05; web finance dashboard and provider mismatch workflows remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.

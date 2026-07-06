@@ -3313,6 +3313,45 @@ describe("Prima Wash API", () => {
     assert.deepEqual(paymentProviderOperations.slice(operationCount), ["void"]);
   });
 
+  it("reuses payment void when a cancellation idempotency key is replayed", async () => {
+    const vehicle = await createVehicle("PAYIDEM5");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    const operationCount = paymentProviderOperations.length;
+    const headers = { ...customerHeaders, "idempotency-key": `payment-void-${booking.id}` };
+
+    const firstResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/cancel`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ reason: "change_of_plan" }),
+    });
+    const firstPayload = (await firstResponse.json()) as ApiResponse<Booking>;
+
+    const replayResponse = await fetch(`${baseUrl}/v1/bookings/${booking.id}/cancel`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ reason: "change_of_plan" }),
+    });
+    const replayPayload = (await replayResponse.json()) as ApiResponse<Booking>;
+
+    assert.equal(firstResponse.status, 200);
+    assert.equal(replayResponse.status, 200);
+    assert.equal(firstPayload.data.status, "cancelled");
+    assert.equal(replayPayload.data.id, firstPayload.data.id);
+    assert.equal(replayPayload.data.status, "cancelled");
+    assert.deepEqual(paymentProviderOperations.slice(operationCount), ["void"]);
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const voidOperations = operationsPayload.data.filter((operation) => operation.operation === "void");
+
+    assert.equal(voidOperations.length, 1);
+    assert.equal(voidOperations[0]?.status, "succeeded");
+    assert.equal(voidOperations[0]?.idempotencyKey, headers["idempotency-key"]);
+  });
+
   it("prevents customers from paying another owner's booking", async () => {
     const vehicle = await createVehicle("PAYOWN1");
     const booking = await createBooking(vehicle.id, "wash_basic");
