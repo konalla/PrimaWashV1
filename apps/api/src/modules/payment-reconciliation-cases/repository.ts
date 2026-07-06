@@ -29,6 +29,11 @@ export interface ListPaymentReconciliationCasesFilter {
 export interface PaymentReconciliationCaseRepository {
   list(filter?: ListPaymentReconciliationCasesFilter): Promise<readonly PaymentReconciliationCase[]>;
   get(id: string): Promise<PaymentReconciliationCaseDetail | undefined>;
+  findOpenByProviderEvent(input: {
+    readonly caseType: PaymentReconciliationCaseType;
+    readonly providerReference: string;
+    readonly providerEventType: string;
+  }): Promise<PaymentReconciliationCaseDetail | undefined>;
   create(input: CreatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail>;
   update(id: string, input: UpdatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail | undefined>;
 }
@@ -121,6 +126,21 @@ export class InMemoryPaymentReconciliationCaseRepository implements PaymentRecon
     return record ? { case: record, events: this.#eventsFor(id) } : undefined;
   }
 
+  async findOpenByProviderEvent(input: {
+    readonly caseType: PaymentReconciliationCaseType;
+    readonly providerReference: string;
+    readonly providerEventType: string;
+  }): Promise<PaymentReconciliationCaseDetail | undefined> {
+    const record = [...this.#cases.values()].find(
+      (candidate) =>
+        candidate.caseType === input.caseType &&
+        candidate.providerReference === input.providerReference &&
+        candidate.providerEventType === input.providerEventType &&
+        !isClosedCaseStatus(candidate.status),
+    );
+    return record ? { case: record, events: this.#eventsFor(record.id) } : undefined;
+  }
+
   async create(input: CreatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail> {
     const record = buildPaymentReconciliationCase(input);
     const events = [
@@ -194,6 +214,25 @@ export class PostgresPaymentReconciliationCaseRepository implements PaymentRecon
     );
     const record = result.rows[0] ? mapPaymentReconciliationCaseRow(result.rows[0]) : undefined;
     return record ? { case: record, events: await this.#listEvents(id) } : undefined;
+  }
+
+  async findOpenByProviderEvent(input: {
+    readonly caseType: PaymentReconciliationCaseType;
+    readonly providerReference: string;
+    readonly providerEventType: string;
+  }): Promise<PaymentReconciliationCaseDetail | undefined> {
+    const result = await this.pool.query<PaymentReconciliationCaseRow>(
+      `${paymentReconciliationCaseSelectSql}
+       where case_type = $1
+         and provider_reference = $2
+         and provider_event_type = $3
+         and status not in ('resolved', 'written_off')
+       order by updated_at desc
+       limit 1`,
+      [input.caseType, input.providerReference, input.providerEventType],
+    );
+    const record = result.rows[0] ? mapPaymentReconciliationCaseRow(result.rows[0]) : undefined;
+    return record ? { case: record, events: await this.#listEvents(record.id) } : undefined;
   }
 
   async create(input: CreatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail> {
@@ -339,6 +378,8 @@ interface PaymentReconciliationCaseEventRow {
 
 function buildPaymentReconciliationCase(input: CreatePaymentReconciliationCaseInput): PaymentReconciliationCase {
   const now = new Date().toISOString();
+  const providerReference = input.operation.providerReference ?? stringMetadataValue(input.operation.metadata?.providerReference);
+  const providerEventType = stringMetadataValue(input.operation.metadata?.stripeEventType);
   return {
     id: `paycase_${crypto.randomUUID()}`,
     caseType: input.caseType,
@@ -347,8 +388,8 @@ function buildPaymentReconciliationCase(input: CreatePaymentReconciliationCaseIn
     ownerId: input.operation.ownerId,
     ...(input.operation.paymentIntentId ? { paymentIntentId: input.operation.paymentIntentId } : {}),
     paymentOperationId: input.paymentOperationId,
-    ...(input.operation.providerReference ? { providerReference: input.operation.providerReference } : {}),
-    ...(typeof input.operation.metadata?.stripeEventType === "string" ? { providerEventType: input.operation.metadata.stripeEventType } : {}),
+    ...(providerReference ? { providerReference } : {}),
+    ...(providerEventType ? { providerEventType } : {}),
     ...(input.assignedToUserId?.trim() ? { assignedToUserId: input.assignedToUserId.trim() } : {}),
     summary: input.summary.trim(),
     openedByUserId: input.actor.userId,
@@ -532,4 +573,12 @@ function normalizeLimit(limit?: number): number {
   }
 
   return Math.max(1, Math.min(Math.trunc(limit), 200));
+}
+
+function isClosedCaseStatus(status: PaymentReconciliationCaseStatus): boolean {
+  return status === "resolved" || status === "written_off";
+}
+
+function stringMetadataValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
 }

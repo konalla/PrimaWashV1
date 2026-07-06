@@ -3058,6 +3058,17 @@ describe("Prima Wash API", () => {
     assert.equal(reviewOperation?.status, "skipped");
     assert.equal(reviewOperation?.metadata["stripeEventType"], "payment_intent.payment_failed");
     assert.equal(reviewOperation?.metadata["reviewCode"], "card_declined");
+
+    const casesResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const casesPayload = (await casesResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+    const failedPaymentCase = casesPayload.data.find((record) => record.caseType === "payment_failed");
+
+    assert.equal(failedPaymentCase?.status, "open");
+    assert.equal(failedPaymentCase?.paymentOperationId, reviewOperation?.id);
+    assert.equal(failedPaymentCase?.providerReference, providerReference);
+    assert.equal(failedPaymentCase?.providerEventType, "payment_intent.payment_failed");
   });
 
   it("reconciles Stripe refund updates to refunded payments", async () => {
@@ -3151,6 +3162,113 @@ describe("Prima Wash API", () => {
     assert.equal(reviewOperation?.status, "skipped");
     assert.equal(reviewOperation?.metadata["outcome"], "review_required");
     assert.equal(reviewOperation?.metadata["reviewCode"], "charge.dispute.created");
+
+    const casesResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const casesPayload = (await casesResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+    const disputeCase = casesPayload.data.find((record) => record.caseType === "stripe_dispute");
+
+    assert.equal(disputeCase?.status, "open");
+    assert.equal(disputeCase?.paymentOperationId, reviewOperation?.id);
+    assert.equal(disputeCase?.providerReference, providerReference);
+    assert.equal(disputeCase?.providerEventType, "charge.dispute.created");
+  });
+
+  it("opens finance cases for duplicate and invalid Stripe webhook transitions", async () => {
+    const duplicateSlot = await createAvailabilitySlot({
+      startsAt: "2026-07-13T01:00:00.000Z",
+      endsAt: "2026-07-13T01:30:00.000Z",
+      capacity: 1,
+      serviceCodes: ["wash_basic"],
+    });
+    const duplicateVehicle = await createVehicle("PAYHOOK5");
+    const duplicateBooking = await createBooking(duplicateVehicle.id, "wash_basic", duplicateSlot.id);
+    const duplicateProviderReference = `pi_dup_${duplicateBooking.id.slice(-10)}`;
+    const duplicatePayment = await repositories.payments.createForBooking(duplicateBooking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference: duplicateProviderReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${duplicateBooking.id.slice(-8)}`,
+    });
+    await repositories.payments.authorize(duplicatePayment.id);
+    const duplicateEvent = {
+      id: `evt_dup_${duplicateBooking.id.slice(-10)}`,
+      type: "payment_intent.amount_capturable_updated",
+      data: {
+        object: {
+          object: "payment_intent",
+          id: duplicateProviderReference,
+          status: "requires_capture",
+        },
+      },
+    };
+
+    const duplicateResponse = await postStripeWebhook(duplicateEvent);
+    const duplicatePayload = (await duplicateResponse.json()) as ApiResponse<{ readonly outcome: string }>;
+
+    assert.equal(duplicateResponse.status, 200);
+    assert.equal(duplicatePayload.data.outcome, "duplicate");
+
+    const invalidSlot = await createAvailabilitySlot({
+      startsAt: "2026-07-13T02:00:00.000Z",
+      endsAt: "2026-07-13T02:30:00.000Z",
+      capacity: 1,
+      serviceCodes: ["wash_basic"],
+    });
+    const invalidVehicle = await createVehicle("PAYHOOK6");
+    const invalidBooking = await createBooking(invalidVehicle.id, "wash_basic", invalidSlot.id);
+    const invalidProviderReference = `pi_invalid_${invalidBooking.id.slice(-10)}`;
+    const invalidPayment = await repositories.payments.createForBooking(invalidBooking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference: invalidProviderReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${invalidBooking.id.slice(-8)}`,
+    });
+    await repositories.payments.authorize(invalidPayment.id);
+    await repositories.payments.captureByBookingId(invalidBooking.id);
+    const invalidEvent = {
+      id: `evt_invalid_transition_${invalidBooking.id.slice(-10)}`,
+      type: "payment_intent.amount_capturable_updated",
+      data: {
+        object: {
+          object: "payment_intent",
+          id: invalidProviderReference,
+          status: "requires_capture",
+        },
+      },
+    };
+
+    const invalidResponse = await postStripeWebhook(invalidEvent);
+    const invalidPayload = (await invalidResponse.json()) as ApiResponse<{ readonly outcome: string; readonly reason: string }>;
+
+    assert.equal(invalidResponse.status, 200);
+    assert.equal(invalidPayload.data.outcome, "ignored");
+    assert.equal(invalidPayload.data.reason, "invalid_payment_status_transition");
+
+    const duplicateCasesResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?bookingId=${duplicateBooking.id}`, {
+      headers: internalHeaders,
+    });
+    const duplicateCasesPayload = (await duplicateCasesResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+    const duplicateCase = duplicateCasesPayload.data.find((record) => record.caseType === "duplicate_event");
+
+    assert.equal(duplicateCase?.status, "open");
+    assert.equal(duplicateCase?.providerReference, duplicateProviderReference);
+    assert.equal(duplicateCase?.providerEventType, "payment_intent.amount_capturable_updated");
+
+    const invalidCasesResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?bookingId=${invalidBooking.id}`, {
+      headers: internalHeaders,
+    });
+    const invalidCasesPayload = (await invalidCasesResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+    const invalidCase = invalidCasesPayload.data.find((record) => record.caseType === "invalid_transition");
+
+    assert.equal(invalidCase?.status, "open");
+    assert.equal(invalidCase?.providerReference, invalidProviderReference);
+    assert.equal(invalidCase?.providerEventType, "payment_intent.amount_capturable_updated");
   });
 
   it("rejects Stripe webhooks with an invalid signature", async () => {

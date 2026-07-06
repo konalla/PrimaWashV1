@@ -250,6 +250,16 @@ Latest payment reconciliation case workflow on 2026-07-06:
 - `npm run test --workspace @prima-wash/api` passed with 130 API tests.
 - Inline web script parse check passed with `node -e`.
 
+Latest automated payment reconciliation case workflow on 2026-07-06:
+
+- Added `0040_payment_reconciliation_case_uniqueness.sql`.
+- Stripe payment failures, Stripe disputes, duplicate webhook deliveries, and invalid payment status transitions now automatically open finance reconciliation cases from the webhook reconciliation path.
+- Automated cases are attributed to the seeded finance account `usr_internal_finance_001` and link back to the payment-operation ledger row, booking, payment intent, provider reference, and Stripe event type.
+- Repeated provider events reuse the existing open case and append a note instead of creating duplicate active finance work.
+- Postgres now has a partial unique index preventing more than one open provider-event case for the same case type, provider reference, and provider event type.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 131 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -294,7 +304,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0039_payment_reconciliation_cases.sql`.
+- Postgres migrations through `0040_payment_reconciliation_case_uniqueness.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -311,7 +321,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, failed-operation ledger records, and finance-owned reconciliation cases with append-only case events.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, failed-operation ledger records, finance-owned reconciliation cases with append-only case events, and automated finance case creation for payment failures, disputes, duplicate webhooks, and invalid payment transitions.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -379,7 +389,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is now `0039_payment_reconciliation_cases.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0040_payment_reconciliation_case_uniqueness.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -435,9 +445,9 @@ Exit criteria:
 Goal: make booking payment safe enough for real customers.
 
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
-- Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, and invalid transition auditability. Charge-ID-only dispute mapping and operational runbooks remain.
+- Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, invalid transition auditability, and automated finance case creation for webhook review work. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, and finance reconciliation case workflow on 2026-07-06; provider mismatch automation and deeper finance reporting remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, and automated webhook-triggered finance cases on 2026-07-06; provider mismatch automation and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 

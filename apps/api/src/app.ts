@@ -55,7 +55,9 @@ import type {
   PaymentMethodSummary,
   PaymentOperationName,
   PaymentOperationStatus,
+  PaymentOperation,
   PaymentStatus,
+  PaymentReconciliationCaseType,
   PaymentReconciliationCaseStatus,
   PartnerLocation,
   PrimaWashDayBookingItem,
@@ -4918,8 +4920,8 @@ async function recordPaymentOperation(
     readonly errorMessage?: string | undefined;
     readonly metadata?: Record<string, unknown> | undefined;
   },
-): Promise<void> {
-  await repositories.paymentOperations.create({
+): Promise<PaymentOperation> {
+  return repositories.paymentOperations.create({
     paymentIntentId: input.payment.id,
     bookingId: input.payment.bookingId,
     ownerId: input.payment.ownerId,
@@ -5697,7 +5699,7 @@ async function reconcileStripeWebhookEvent(
 
   if (!action.targetStatus) {
     await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "review_required", action.reviewCode);
-    await recordPaymentOperation(repositories, {
+    const operation = await recordPaymentOperation(repositories, {
       requestId,
       operation: "reconcile",
       payment,
@@ -5712,6 +5714,11 @@ async function reconcileStripeWebhookEvent(
         reviewCode: action.reviewCode ?? null,
       },
     });
+    await openAutomatedPaymentReconciliationCase(repositories, operation, {
+      caseType: caseTypeForStripeReview(action.reviewCode ?? event.type),
+      summary: summaryForStripeReview(event.type, action.reason),
+      note: `Stripe ${event.type} requires finance review: ${action.reason}`,
+    });
     return {
       received: true,
       eventId: event.id,
@@ -5725,7 +5732,7 @@ async function reconcileStripeWebhookEvent(
 
   if (payment.status === action.targetStatus) {
     await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "duplicate");
-    await recordPaymentOperation(repositories, {
+    const operation = await recordPaymentOperation(repositories, {
       requestId,
       operation: "reconcile",
       payment,
@@ -5739,6 +5746,11 @@ async function reconcileStripeWebhookEvent(
         outcome: "duplicate",
         reason: action.reason,
       },
+    });
+    await openAutomatedPaymentReconciliationCase(repositories, operation, {
+      caseType: "duplicate_event",
+      summary: `Duplicate Stripe webhook received for ${action.providerReference}.`,
+      note: `Stripe ${event.type} arrived after the payment was already ${payment.status}.`,
     });
     return {
       received: true,
@@ -5754,7 +5766,7 @@ async function reconcileStripeWebhookEvent(
     assertPaymentTransition(payment.status, action.targetStatus);
   } catch {
     await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "ignored", "invalid_payment_status_transition");
-    await recordPaymentOperation(repositories, {
+    const operation = await recordPaymentOperation(repositories, {
       requestId,
       operation: "reconcile",
       payment,
@@ -5768,6 +5780,11 @@ async function reconcileStripeWebhookEvent(
         outcome: "ignored",
         reason: "invalid_payment_status_transition",
       },
+    });
+    await openAutomatedPaymentReconciliationCase(repositories, operation, {
+      caseType: "invalid_transition",
+      summary: `Stripe webhook could not move payment from ${payment.status} to ${action.targetStatus}.`,
+      note: `Stripe ${event.type} was ignored because the requested transition is not allowed.`,
     });
     return {
       received: true,
@@ -5940,6 +5957,72 @@ async function recordIgnoredStripeWebhook(
     },
   });
 }
+
+async function openAutomatedPaymentReconciliationCase(
+  repositories: Repositories,
+  operation: PaymentOperation,
+  input: {
+    readonly caseType: PaymentReconciliationCaseType;
+    readonly summary: string;
+    readonly note: string;
+  },
+): Promise<void> {
+  const providerReference = operation.providerReference ?? stringMetadataValue(operation.metadata["providerReference"]);
+  const providerEventType = stringMetadataValue(operation.metadata["stripeEventType"]);
+
+  if (!providerReference || !providerEventType) {
+    return;
+  }
+
+  const existing = await repositories.paymentReconciliationCases.findOpenByProviderEvent({
+    caseType: input.caseType,
+    providerReference,
+    providerEventType,
+  });
+
+  if (existing) {
+    await repositories.paymentReconciliationCases.update(existing.case.id, {
+      actor: systemFinanceActor,
+      note: `Repeated Stripe event received for payment operation ${operation.id}.`,
+    });
+    return;
+  }
+
+  await repositories.paymentReconciliationCases.create({
+    actor: systemFinanceActor,
+    paymentOperationId: operation.id,
+    operation,
+    caseType: input.caseType,
+    summary: input.summary,
+    note: input.note,
+  });
+}
+
+function caseTypeForStripeReview(reviewCode: string): PaymentReconciliationCaseType {
+  if (reviewCode.startsWith("charge.dispute.")) {
+    return "stripe_dispute";
+  }
+
+  return "payment_failed";
+}
+
+function summaryForStripeReview(eventType: string, reason: string): string {
+  if (eventType.startsWith("charge.dispute.")) {
+    return `Stripe dispute requires review: ${reason}`;
+  }
+
+  return `Stripe payment failed: ${reason}`;
+}
+
+function stringMetadataValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+const systemFinanceActor: Actor = {
+  userId: "usr_internal_finance_001",
+  role: "internal",
+  permissions: ["finance_read", "finance_write"],
+};
 
 function getHeaderValue(header: string | readonly string[] | undefined): string | undefined {
   if (typeof header === "string") {
