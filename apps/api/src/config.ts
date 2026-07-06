@@ -1,4 +1,5 @@
 export type PersistenceMode = "memory" | "postgres";
+export type PaymentProviderMode = "local" | "stripe";
 
 export interface ApiConfig {
   readonly port: number;
@@ -9,7 +10,7 @@ export interface ApiConfig {
   readonly authCodeDeliveryWebhookUrl?: string;
   readonly authCodeDeliveryWebhookSecret?: string;
   readonly showDevAuthCode: boolean;
-  readonly paymentProvider: string;
+  readonly paymentProvider: PaymentProviderMode;
   readonly stripeSecretKey?: string;
   readonly stripeWebhookSecret?: string;
   readonly evidenceStorageDirectory: string;
@@ -57,6 +58,20 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     throw new Error("AUTH_CODE_DELIVERY_WEBHOOK_URL is required when AUTH_CODE_DELIVERY_PROVIDER=webhook");
   }
 
+  const paymentProvider = parsePaymentProviderMode(environment);
+
+  if (environment.NODE_ENV === "production" && paymentProvider === "local") {
+    throw new Error("PAYMENT_PROVIDER=stripe is required in production");
+  }
+
+  if (paymentProvider === "stripe" && !environment.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is required when PAYMENT_PROVIDER=stripe");
+  }
+
+  if (environment.NODE_ENV === "production" && !environment.STRIPE_WEBHOOK_SECRET) {
+    throw new Error("STRIPE_WEBHOOK_SECRET is required in production");
+  }
+
   return {
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     persistenceMode,
@@ -69,7 +84,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     ...(environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET
       ? { authCodeDeliveryWebhookSecret: environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET }
       : {}),
-    paymentProvider: environment.PAYMENT_PROVIDER ?? "local",
+    paymentProvider,
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
     evidenceStorageDirectory: environment.EVIDENCE_STORAGE_DIRECTORY ?? "var/uploads",
@@ -96,4 +111,14 @@ function parseAuthCodeDeliveryProvider(environment: NodeJS.ProcessEnv): "local" 
   }
 
   throw new Error("AUTH_CODE_DELIVERY_PROVIDER must be either 'local' or 'webhook'");
+}
+
+function parsePaymentProviderMode(environment: NodeJS.ProcessEnv): PaymentProviderMode {
+  const value = environment.PAYMENT_PROVIDER ?? "local";
+
+  if (value === "local" || value === "stripe") {
+    return value;
+  }
+
+  throw new Error("PAYMENT_PROVIDER must be either 'local' or 'stripe'");
 }

@@ -208,6 +208,16 @@ Latest payment void idempotency hardening on 2026-07-06:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 122 API tests.
 
+Latest Stripe production guardrails on 2026-07-06:
+
+- Production config now rejects `PAYMENT_PROVIDER=local`.
+- Stripe mode now requires `STRIPE_SECRET_KEY`.
+- Production config now requires `STRIPE_WEBHOOK_SECRET`.
+- Payment provider config is now typed as `local` or `stripe`.
+- API config tests now verify local-payment rejection, missing Stripe secret rejection, missing Stripe webhook secret rejection, and valid production Stripe config.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 125 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -314,8 +324,9 @@ Auth and identity:
 Payments and finance:
 
 - Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
+- Production config now refuses to start with local payments, missing Stripe secret key, or missing Stripe webhook secret.
 - Production operation still needs broader Stripe webhook coverage, reconciliation runbooks, capture/refund runbooks, failure handling, receipt/tax logic, and finance dashboards.
-- Local payment mode is still the default development path.
+- Local payment mode is still the default development path, but is blocked in production.
 - Partner payout, commission, settlement, and dispute handling are not implemented.
 
 Operations:
@@ -389,7 +400,7 @@ Exit criteria:
 
 Goal: make booking payment safe enough for real customers.
 
-- Make Stripe the production provider with environment-gated local mode.
+- Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
 - Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05; web finance dashboard and provider mismatch workflows remain.
