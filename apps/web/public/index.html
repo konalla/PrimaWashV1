@@ -2361,6 +2361,7 @@
       let accessInvitationsCache = [];
       let accessMembershipsCache = [];
       let paymentOperationsCache = [];
+      let paymentReconciliationCasesCache = [];
       let selectedPaymentOperationId = null;
       let selectedPrimaWashDayQueueId = null;
       let activeQueueFilter = "upcoming";
@@ -2999,6 +3000,9 @@
         const paymentOperations = isAdminMode && hasAdminPermission("finance_read")
           ? await requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read"))
           : [];
+        const paymentReconciliationCases = isAdminMode && hasAdminPermission("finance_read")
+          ? await requestJson(`/v1/internal/payment-reconciliation-cases?limit=200`, adminHeaders("finance_read"))
+          : [];
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
@@ -3006,6 +3010,7 @@
         accessInvitationsCache = accessInvitations.invitations || [];
         accessMembershipsCache = accessMemberships.memberships || [];
         paymentOperationsCache = paymentOperations;
+        paymentReconciliationCasesCache = paymentReconciliationCases;
         renderDashboard(dashboard, mavo);
         renderFinance(paymentOperationsCache);
         syncInvitationForm();
@@ -3552,12 +3557,54 @@
       async function refreshFinanceOperations() {
         if (!isAdminMode || !hasAdminPermission("finance_read")) {
           paymentOperationsCache = [];
+          paymentReconciliationCasesCache = [];
           renderFinance(paymentOperationsCache);
           return;
         }
 
-        paymentOperationsCache = await requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read"));
+        const [operations, cases] = await Promise.all([
+          requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read")),
+          requestJson(`/v1/internal/payment-reconciliation-cases?limit=200`, adminHeaders("finance_read")),
+        ]);
+        paymentOperationsCache = operations;
+        paymentReconciliationCasesCache = cases;
         renderFinance(paymentOperationsCache);
+      }
+
+      async function createPaymentReconciliationCase(input) {
+        const response = await fetch(`${apiBase}/v1/internal/payment-reconciliation-cases`, {
+          method: "POST",
+          headers: {
+            ...adminHeaders("finance_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Payment reconciliation case could not be opened");
+        }
+
+        return payload.data;
+      }
+
+      async function updatePaymentReconciliationCase(caseId, input) {
+        const response = await fetch(`${apiBase}/v1/internal/payment-reconciliation-cases/${encodeURIComponent(caseId)}`, {
+          method: "PATCH",
+          headers: {
+            ...adminHeaders("finance_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Payment reconciliation case could not be updated");
+        }
+
+        return payload.data;
       }
 
       function renderFinance(operations) {
@@ -3584,13 +3631,13 @@
         const reviewCount = operations.filter(isReviewRequiredOperation).length;
         const failedCount = operations.filter((operation) => operation.status === "failed").length;
         const capturedCount = operations.filter((operation) => operation.operation === "capture" && operation.status === "succeeded").length;
-        const refundedCount = operations.filter((operation) => operation.operation === "refund" && operation.status === "succeeded").length;
+        const openCaseCount = paymentReconciliationCasesCache.filter((item) => !["resolved", "written_off"].includes(item.status)).length;
 
         financeSummaryEl.innerHTML = [
           ["Needs review", reviewCount],
           ["Failed operations", failedCount],
           ["Captured", capturedCount],
-          ["Refunded", refundedCount],
+          ["Open cases", openCaseCount],
         ]
           .map(
             ([label, value]) => `
@@ -3711,6 +3758,7 @@
           .slice(0, 12)
           .map(([key, value]) => `<div class="finance-detail-item"><span>${escapeHtml(key)}</span><code>${escapeHtml(formatMetadataValue(value))}</code></div>`)
           .join("");
+        const linkedCase = findPaymentReconciliationCaseForOperation(operation.id);
 
         financeDetailEl.innerHTML = `
           <p class="eyebrow">Ledger detail</p>
@@ -3731,10 +3779,102 @@
             ${operation.errorMessage ? `<div class="finance-detail-item"><span>Error</span><code>${escapeHtml(operation.errorMessage)}</code></div>` : ""}
             ${metadataRows ? `<div class="finance-detail-meta">Metadata</div>${metadataRows}` : ""}
           </div>
+          ${renderPaymentReconciliationCasePanel(operation, linkedCase)}
           <div class="dialog-actions">
             <button class="action" type="button" data-finance-booking-id="${operation.bookingId}">Find booking in queue</button>
           </div>
         `;
+      }
+
+      function findPaymentReconciliationCaseForOperation(paymentOperationId) {
+        return paymentReconciliationCasesCache.find((item) => item.paymentOperationId === paymentOperationId);
+      }
+
+      function renderPaymentReconciliationCasePanel(operation, linkedCase) {
+        if (!canUseAdmin("finance_write")) {
+          return `
+            <div class="finance-detail-item">
+              <span>Case workflow</span>
+              <strong>${linkedCase ? `${formatStatus(linkedCase.status)} - ${escapeHtml(linkedCase.summary)}` : "Finance write required to open a case"}</strong>
+            </div>
+          `;
+        }
+
+        if (linkedCase) {
+          return `
+            <form class="cluster" data-payment-case-update="${linkedCase.id}">
+              <div class="finance-detail-meta">Reconciliation case</div>
+              <div class="finance-detail-item"><span>Case type</span><strong>${formatStatus(linkedCase.caseType)}</strong></div>
+              <div class="finance-detail-item"><span>Summary</span><strong>${escapeHtml(linkedCase.summary)}</strong></div>
+              <label>
+                Status
+                <select name="status">
+                  ${["open", "waiting_customer", "waiting_partner", "resolved", "written_off"]
+                    .map((status) => `<option value="${status}" ${linkedCase.status === status ? "selected" : ""}>${formatStatus(status)}</option>`)
+                    .join("")}
+                </select>
+              </label>
+              <label>
+                Note
+                <textarea name="note" placeholder="Add an append-only finance note"></textarea>
+              </label>
+              <label>
+                Resolution notes
+                <textarea name="resolutionNotes" placeholder="Required when resolving without a note">${escapeHtml(linkedCase.resolutionNotes || "")}</textarea>
+              </label>
+              <button class="action primary-command" type="submit">Update case</button>
+            </form>
+          `;
+        }
+
+        return `
+          <form class="cluster" data-payment-case-create="${operation.id}">
+            <div class="finance-detail-meta">Open reconciliation case</div>
+            <label>
+              Case type
+              <select name="caseType">
+                ${recommendedCaseTypeOptions(operation)}
+              </select>
+            </label>
+            <label>
+              Summary
+              <textarea name="summary" required>${escapeHtml(defaultPaymentCaseSummary(operation))}</textarea>
+            </label>
+            <label>
+              Initial note
+              <textarea name="note" placeholder="What should finance do next?"></textarea>
+            </label>
+            <button class="action primary-command" type="submit">Open case</button>
+          </form>
+        `;
+      }
+
+      function recommendedCaseTypeOptions(operation) {
+        const recommended = recommendedCaseType(operation);
+        return ["payment_failed", "stripe_dispute", "invalid_transition", "duplicate_event", "provider_mismatch"]
+          .map((caseType) => `<option value="${caseType}" ${caseType === recommended ? "selected" : ""}>${formatStatus(caseType)}</option>`)
+          .join("");
+      }
+
+      function recommendedCaseType(operation) {
+        const eventType = String(operation.metadata?.stripeEventType || operation.metadata?.reviewCode || "");
+        if (eventType.includes("dispute")) {
+          return "stripe_dispute";
+        }
+        if (eventType.includes("payment_failed") || String(operation.metadata?.reviewCode || "").includes("declined")) {
+          return "payment_failed";
+        }
+        if (operation.metadata?.reason === "invalid_payment_status_transition") {
+          return "invalid_transition";
+        }
+        if (operation.metadata?.outcome === "duplicate") {
+          return "duplicate_event";
+        }
+        return "provider_mismatch";
+      }
+
+      function defaultPaymentCaseSummary(operation) {
+        return `${formatPaymentOperation(operation)} requires finance reconciliation for booking ${operation.bookingId.slice(-8).toUpperCase()}.`;
       }
 
       function isReviewRequiredOperation(operation) {
@@ -6356,6 +6496,57 @@
       });
 
       document.addEventListener("submit", async (event) => {
+        const paymentCaseCreateForm = event.target.closest?.("[data-payment-case-create]");
+
+        if (paymentCaseCreateForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(paymentCaseCreateForm);
+            await createPaymentReconciliationCase({
+              paymentOperationId: paymentCaseCreateForm.dataset.paymentCaseCreate,
+              caseType: String(form.get("caseType")),
+              summary: String(form.get("summary") || "").trim(),
+              note: String(form.get("note") || "").trim(),
+            });
+            await refreshFinanceOperations();
+            showToast("Payment reconciliation case opened.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const paymentCaseUpdateForm = event.target.closest?.("[data-payment-case-update]");
+
+        if (paymentCaseUpdateForm) {
+          event.preventDefault();
+          const submitButton = event.submitter;
+          submitButton.disabled = true;
+
+          try {
+            const form = new FormData(paymentCaseUpdateForm);
+            await updatePaymentReconciliationCase(paymentCaseUpdateForm.dataset.paymentCaseUpdate, {
+              status: String(form.get("status")),
+              note: String(form.get("note") || "").trim(),
+              resolutionNotes: String(form.get("resolutionNotes") || "").trim(),
+            });
+            await refreshFinanceOperations();
+            showToast("Payment reconciliation case updated.");
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+          }
+
+          return;
+        }
+
         const bookingCommunicationForm = event.target.closest?.("#booking-communication-form");
 
         if (bookingCommunicationForm) {

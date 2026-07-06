@@ -36,6 +36,7 @@ import type {
   ListAccessMembershipsResponse,
   PartnerBookingDecisionRequest,
   CreatePaymentIntentRequest,
+  CreatePaymentReconciliationCaseRequest,
   CreatePropertyInterestRequest,
   CreatePrimaWashDayRequest,
   CreateVehicleRequest,
@@ -55,6 +56,7 @@ import type {
   PaymentOperationName,
   PaymentOperationStatus,
   PaymentStatus,
+  PaymentReconciliationCaseStatus,
   PartnerLocation,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
@@ -69,6 +71,7 @@ import type {
   UpdateBookingStatusRequest,
   UpdateCondoOperationalProfileRequest,
   UpdatePrimaWashDayRequest,
+  UpdatePaymentReconciliationCaseRequest,
   UpdateAvailabilitySlotRequest,
   UpdateAccessMembershipRequest,
   UpdateCapacityTemplateRequest,
@@ -124,6 +127,10 @@ import {
 } from "./modules/bookings/repository.js";
 import type { Repositories } from "./modules/repositories.js";
 import { assertPaymentTransition, validateCreatePaymentIntent } from "./modules/payments/repository.js";
+import {
+  validateCreatePaymentReconciliationCase,
+  validateUpdatePaymentReconciliationCase,
+} from "./modules/payment-reconciliation-cases/repository.js";
 import {
   createPaymentProvider,
   type PaymentCustomer,
@@ -2262,6 +2269,136 @@ export function createApiServer(options: CreateApiServerOptions): Server {
         });
 
         sendJson(response, 200, { data: operations });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/payment-reconciliation-cases") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        const limit = Number.parseInt(requestUrl.searchParams.get("limit") ?? "100", 10);
+        const status = requestUrl.searchParams.get("status") ?? undefined;
+        const cases = await options.repositories.paymentReconciliationCases.list({
+          bookingId: requestUrl.searchParams.get("bookingId") ?? undefined,
+          status: isPaymentReconciliationCaseStatus(status) || status === "all" ? status : undefined,
+          limit,
+        });
+
+        sendJson(response, 200, { data: cases });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/internal/payment-reconciliation-cases") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_write");
+        const input = await readJsonBody<CreatePaymentReconciliationCaseRequest>(request);
+        const errors = validateCreatePaymentReconciliationCase(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Payment reconciliation case payload is invalid", errors);
+          return;
+        }
+
+        const operation = await options.repositories.paymentOperations.get(input.paymentOperationId);
+
+        if (!operation) {
+          sendError(response, 404, "payment_operation_not_found", "Payment operation does not exist");
+          return;
+        }
+
+        const detail = await options.repositories.paymentReconciliationCases.create({
+          ...input,
+          operation,
+          actor,
+        });
+
+        await options.repositories.audit.record({
+          actor,
+          action: "payment_reconciliation_case.created",
+          resourceType: "booking",
+          resourceId: operation.bookingId,
+          metadata: {
+            caseId: detail.case.id,
+            caseType: detail.case.caseType,
+            paymentOperationId: operation.id,
+            providerReference: operation.providerReference,
+          },
+        });
+
+        sendJson(response, 201, { data: detail });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    const reconciliationCaseMatch = requestUrl.pathname.match(/^\/v1\/internal\/payment-reconciliation-cases\/([^/]+)$/);
+
+    if (reconciliationCaseMatch && request.method === "GET") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        const caseId = decodeURIComponent(reconciliationCaseMatch[1] ?? "");
+        const detail = await options.repositories.paymentReconciliationCases.get(caseId);
+
+        if (!detail) {
+          sendError(response, 404, "payment_reconciliation_case_not_found", "Payment reconciliation case does not exist");
+          return;
+        }
+
+        sendJson(response, 200, { data: detail });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (reconciliationCaseMatch && request.method === "PATCH") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_write");
+        const input = await readJsonBody<UpdatePaymentReconciliationCaseRequest>(request);
+        const errors = validateUpdatePaymentReconciliationCase(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Payment reconciliation case update is invalid", errors);
+          return;
+        }
+
+        const detail = await options.repositories.paymentReconciliationCases.update(
+          decodeURIComponent(reconciliationCaseMatch[1] ?? ""),
+          { ...input, actor },
+        );
+
+        if (!detail) {
+          sendError(response, 404, "payment_reconciliation_case_not_found", "Payment reconciliation case does not exist");
+          return;
+        }
+
+        await options.repositories.audit.record({
+          actor,
+          action: "payment_reconciliation_case.updated",
+          resourceType: "booking",
+          resourceId: detail.case.bookingId,
+          metadata: {
+            caseId: detail.case.id,
+            status: detail.case.status,
+            assignedToUserId: detail.case.assignedToUserId,
+          },
+        });
+
+        sendJson(response, 200, { data: detail });
       } catch (error) {
         sendAuthError(response, error);
       }
@@ -5514,6 +5651,16 @@ function isInternalPermission(value: string): value is InternalPermission {
     value === "partner_manage" ||
     value === "property_manage" ||
     value === "super_admin"
+  );
+}
+
+function isPaymentReconciliationCaseStatus(value: string | undefined): value is PaymentReconciliationCaseStatus {
+  return (
+    value === "open" ||
+    value === "waiting_customer" ||
+    value === "waiting_partner" ||
+    value === "resolved" ||
+    value === "written_off"
   );
 }
 

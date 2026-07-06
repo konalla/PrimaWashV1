@@ -33,6 +33,8 @@ import type {
   PaymentHistoryItem,
   PaymentMethodSummary,
   PaymentOperation,
+  PaymentReconciliationCase,
+  PaymentReconciliationCaseDetail,
   PrimaWashDayBookingItem,
   Property,
   PropertyManagementDashboardResponse,
@@ -3410,6 +3412,100 @@ describe("Prima Wash API", () => {
     );
     assert.ok(operationsPayload.data.every((operation) => operation.status === "succeeded"));
     assert.ok(operationsPayload.data.every((operation) => operation.requestId));
+  });
+
+  it("creates and updates payment reconciliation cases from payment operations", async () => {
+    const vehicle = await createVehicle("PAYCASE1");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const authorizeOperation = operationsPayload.data.find((operation) => operation.operation === "authorize");
+
+    assert.ok(authorizeOperation);
+
+    const createResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        paymentOperationId: authorizeOperation.id,
+        caseType: "provider_mismatch",
+        summary: "Provider authorization requires manual reconciliation.",
+        assignedToUserId: "usr_internal_001",
+        note: "Initial finance review note.",
+      }),
+    });
+    const createPayload = (await createResponse.json()) as ApiResponse<PaymentReconciliationCaseDetail>;
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(createPayload.data.case.bookingId, booking.id);
+    assert.equal(createPayload.data.case.paymentOperationId, authorizeOperation.id);
+    assert.equal(createPayload.data.case.status, "open");
+    assert.equal(createPayload.data.events[0]?.eventType, "created");
+    assert.equal(createPayload.data.events[0]?.note, "Initial finance review note.");
+
+    const updateResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        status: "waiting_customer",
+        note: "Customer needs to confirm the payment method.",
+      }),
+    });
+    const updatePayload = (await updateResponse.json()) as ApiResponse<PaymentReconciliationCaseDetail>;
+
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updatePayload.data.case.status, "waiting_customer");
+    assert.ok(updatePayload.data.events.some((event) => event.eventType === "status_changed"));
+    assert.ok(updatePayload.data.events.some((event) => event.note === "Customer needs to confirm the payment method."));
+
+    const listResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?status=waiting_customer`, {
+      headers: internalHeaders,
+    });
+    const listPayload = (await listResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+
+    assert.equal(listResponse.status, 200);
+    assert.ok(listPayload.data.some((item) => item.id === createPayload.data.case.id));
+  });
+
+  it("protects payment reconciliation case writes with finance permissions", async () => {
+    const vehicle = await createVehicle("PAYCASE2");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    await authorizeBookingPayment(booking.id);
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const createOperation = operationsPayload.data.find((operation) => operation.operation === "create");
+
+    assert.ok(createOperation);
+
+    const readOnlySession = await createCustomerSession("ops.read@primawash.local");
+    const readOnlyListResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases`, {
+      headers: { authorization: `Bearer ${readOnlySession.accessToken}` },
+    });
+    const readOnlyWriteResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${readOnlySession.accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        paymentOperationId: createOperation.id,
+        caseType: "provider_mismatch",
+        summary: "Read-only finance should not create this.",
+      }),
+    });
+    const partnerManagerSession = await createCustomerSession("partner.ops@primawash.local");
+    const partnerManagerResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases`, {
+      headers: { authorization: `Bearer ${partnerManagerSession.accessToken}` },
+    });
+
+    assert.equal(readOnlyListResponse.status, 200);
+    assert.equal(readOnlyWriteResponse.status, 403);
+    assert.equal(partnerManagerResponse.status, 403);
   });
 
   it("rejects refund attempts before payment capture", async () => {

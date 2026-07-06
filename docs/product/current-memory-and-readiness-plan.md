@@ -238,6 +238,18 @@ Latest finance reconciliation dashboard on 2026-07-06:
 - `npm run check` passed.
 - Inline web script parse check passed with `node -e`.
 
+Latest payment reconciliation case workflow on 2026-07-06:
+
+- Added `0039_payment_reconciliation_cases.sql`.
+- Added payment reconciliation cases and append-only case events for payment failed, Stripe dispute, invalid transition, duplicate event, and provider mismatch workflows.
+- Added memory and Postgres payment-reconciliation-case repositories.
+- Added internal finance API endpoints to list, create, read, and update reconciliation cases.
+- Case writes require `finance_write`; case reads require `finance_read`.
+- Web Finance users can now open a case from a payment-operation ledger row and update case status/notes from the ledger detail panel.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 130 API tests.
+- Inline web script parse check passed with `node -e`.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -282,7 +294,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0038_payment_operation_idempotency.sql`.
+- Postgres migrations through `0039_payment_reconciliation_cases.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -299,7 +311,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, and failed-operation ledger records.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, failed-operation ledger records, and finance-owned reconciliation cases with append-only case events.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -326,7 +338,7 @@ Web portal currently includes:
 - Condo activation lead management.
 - Condo operational profile and Prima Wash Day management.
 - Property-management scoped dashboard.
-- Read-only internal finance reconciliation dashboard for payment-operation ledger review.
+- Internal finance reconciliation dashboard for payment-operation ledger review and finance case workflow.
 - Booking drawer, work-order instructions, partner decisions, status actions, and communications.
 
 ## Important Current Gaps
@@ -345,7 +357,7 @@ Auth and identity:
 Payments and finance:
 
 - Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
-- A first internal web finance dashboard now exposes ledger review, filters, detail metadata, and recommended follow-up text.
+- A first internal web finance dashboard now exposes ledger review, filters, detail metadata, recommended follow-up text, and finance-owned reconciliation case workflow.
 - Production config now refuses to start with local payments, missing Stripe secret key, or missing Stripe webhook secret.
 - Production operation still needs Stripe charge-ID-only dispute mapping, formal reconciliation runbooks, capture/refund runbooks, provider mismatch workflows, receipt/tax logic, and deeper finance reporting.
 - Local payment mode is still the default development path, but is blocked in production.
@@ -367,7 +379,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is now `0038_payment_operation_idempotency.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0039_payment_reconciliation_cases.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
@@ -425,7 +437,7 @@ Goal: make booking payment safe enough for real customers.
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, and invalid transition auditability. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05 and first read-only web finance dashboard on 2026-07-06; provider mismatch workflows and deeper finance reporting remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, and finance reconciliation case workflow on 2026-07-06; provider mismatch automation and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 

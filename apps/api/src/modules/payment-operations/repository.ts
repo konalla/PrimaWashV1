@@ -30,6 +30,7 @@ export interface ListPaymentOperationsFilter {
 
 export interface PaymentOperationRepository {
   list(filter?: ListPaymentOperationsFilter): Promise<readonly PaymentOperation[]>;
+  get(id: string): Promise<PaymentOperation | undefined>;
   create(input: CreatePaymentOperationInput): Promise<PaymentOperation>;
   findSucceededByIdempotencyKey(input: {
     readonly operation: PaymentOperationName;
@@ -54,6 +55,10 @@ export class InMemoryPaymentOperationRepository implements PaymentOperationRepos
     const record = buildPaymentOperation(input);
     this.#records.push(record);
     return record;
+  }
+
+  async get(id: string): Promise<PaymentOperation | undefined> {
+    return this.#records.find((record) => record.id === id);
   }
 
   async findSucceededByIdempotencyKey(input: {
@@ -147,6 +152,19 @@ export class PostgresPaymentOperationRepository implements PaymentOperationRepos
     }
 
     return mapPaymentOperationRow(row);
+  }
+
+  async get(id: string): Promise<PaymentOperation | undefined> {
+    const result = await this.pool.query<PaymentOperationRow>(
+      `select id, payment_intent_id, booking_id, owner_id, operation, status,
+              provider, provider_operation, provider_reference, provider_status, provider_processed_at,
+              idempotency_key, actor_user_id, actor_role, request_id, error_message, metadata, created_at
+       from payment_operations
+       where id = $1`,
+      [id],
+    );
+
+    return result.rows[0] ? mapPaymentOperationRow(result.rows[0]) : undefined;
   }
 
   async findSucceededByIdempotencyKey(input: {

@@ -976,6 +976,71 @@ export interface PaymentOperation {
   readonly createdAt: string;
 }
 
+export type PaymentReconciliationCaseType =
+  | "payment_failed"
+  | "stripe_dispute"
+  | "invalid_transition"
+  | "duplicate_event"
+  | "provider_mismatch";
+
+export type PaymentReconciliationCaseStatus =
+  | "open"
+  | "waiting_customer"
+  | "waiting_partner"
+  | "resolved"
+  | "written_off";
+
+export interface PaymentReconciliationCase {
+  readonly id: string;
+  readonly caseType: PaymentReconciliationCaseType;
+  readonly status: PaymentReconciliationCaseStatus;
+  readonly bookingId: string;
+  readonly ownerId: string;
+  readonly paymentIntentId?: string;
+  readonly paymentOperationId?: string;
+  readonly providerReference?: string;
+  readonly providerEventType?: string;
+  readonly assignedToUserId?: string;
+  readonly summary: string;
+  readonly resolutionNotes?: string;
+  readonly openedByUserId: string;
+  readonly openedAt: string;
+  readonly updatedAt: string;
+  readonly resolvedAt?: string;
+}
+
+export interface PaymentReconciliationCaseEvent {
+  readonly id: string;
+  readonly caseId: string;
+  readonly eventType: "created" | "note_added" | "status_changed" | "assigned" | "resolved";
+  readonly actorUserId: string;
+  readonly fromStatus?: PaymentReconciliationCaseStatus;
+  readonly toStatus?: PaymentReconciliationCaseStatus;
+  readonly note?: string;
+  readonly metadata: Record<string, unknown>;
+  readonly createdAt: string;
+}
+
+export interface CreatePaymentReconciliationCaseRequest {
+  readonly paymentOperationId: string;
+  readonly caseType: PaymentReconciliationCaseType;
+  readonly summary: string;
+  readonly assignedToUserId?: string;
+  readonly note?: string;
+}
+
+export interface UpdatePaymentReconciliationCaseRequest {
+  readonly status?: PaymentReconciliationCaseStatus;
+  readonly assignedToUserId?: string | null;
+  readonly note?: string;
+  readonly resolutionNotes?: string;
+}
+
+export interface PaymentReconciliationCaseDetail {
+  readonly case: PaymentReconciliationCase;
+  readonly events: readonly PaymentReconciliationCaseEvent[];
+}
+
 export interface BillingSession {
   readonly provider: string;
   readonly providerCustomerId: string;
