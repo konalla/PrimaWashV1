@@ -53,6 +53,7 @@ import type {
   PaymentIntent,
   PaymentMethodSummary,
   PaymentOperationName,
+  PaymentOperationStatus,
   PaymentStatus,
   PartnerLocation,
   PrimaWashDayBookingItem,
@@ -4776,7 +4777,7 @@ async function recordPaymentOperation(
     readonly payment: PaymentIntent;
     readonly providerResult?: PaymentProviderResult | undefined;
     readonly idempotencyKey?: string | undefined;
-    readonly status?: "succeeded" | "failed" | undefined;
+    readonly status?: PaymentOperationStatus | undefined;
     readonly errorMessage?: string | undefined;
     readonly metadata?: Record<string, unknown> | undefined;
   },
@@ -5233,12 +5234,20 @@ interface StripeWebhookEvent {
   };
 }
 
-type StripeWebhookObject = StripeWebhookPaymentIntent | StripeWebhookRefund | StripeWebhookCharge;
+type StripeWebhookObject =
+  | StripeWebhookPaymentIntent
+  | StripeWebhookRefund
+  | StripeWebhookCharge
+  | StripeWebhookDispute;
 
 interface StripeWebhookPaymentIntent {
   readonly object: "payment_intent";
   readonly id: string;
   readonly status?: string;
+  readonly last_payment_error?: {
+    readonly code?: string;
+    readonly message?: string;
+  };
 }
 
 interface StripeWebhookRefund {
@@ -5254,17 +5263,27 @@ interface StripeWebhookCharge {
   readonly refunded?: boolean;
 }
 
+interface StripeWebhookDispute {
+  readonly object: "dispute";
+  readonly id: string;
+  readonly charge?: string;
+  readonly payment_intent?: string;
+  readonly status?: string;
+  readonly reason?: string;
+}
+
 interface StripeWebhookAction {
   readonly providerReference: string;
-  readonly targetStatus: PaymentStatus;
+  readonly targetStatus?: PaymentStatus;
   readonly reason: string;
+  readonly reviewCode?: string;
 }
 
 interface StripeWebhookReconciliationResult {
   readonly received: true;
   readonly eventId: string;
   readonly eventType: string;
-  readonly outcome: "reconciled" | "duplicate" | "ignored";
+  readonly outcome: "reconciled" | "duplicate" | "ignored" | "review_required";
   readonly paymentIntentId?: string;
   readonly paymentStatus?: PaymentStatus;
   readonly reason?: string;
@@ -5529,8 +5548,51 @@ async function reconcileStripeWebhookEvent(
     };
   }
 
+  if (!action.targetStatus) {
+    await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "review_required", action.reviewCode);
+    await recordPaymentOperation(repositories, {
+      requestId,
+      operation: "reconcile",
+      payment,
+      status: "skipped",
+      metadata: {
+        source: "stripe_webhook",
+        stripeEventId: event.id,
+        stripeEventType: event.type,
+        providerReference: action.providerReference,
+        outcome: "review_required",
+        reason: action.reason,
+        reviewCode: action.reviewCode ?? null,
+      },
+    });
+    return {
+      received: true,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: "review_required",
+      paymentIntentId: payment.id,
+      paymentStatus: payment.status,
+      reason: action.reviewCode ?? action.reason,
+    };
+  }
+
   if (payment.status === action.targetStatus) {
     await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "duplicate");
+    await recordPaymentOperation(repositories, {
+      requestId,
+      operation: "reconcile",
+      payment,
+      status: "skipped",
+      metadata: {
+        source: "stripe_webhook",
+        stripeEventId: event.id,
+        stripeEventType: event.type,
+        providerReference: action.providerReference,
+        targetStatus: action.targetStatus,
+        outcome: "duplicate",
+        reason: action.reason,
+      },
+    });
     return {
       received: true,
       eventId: event.id,
@@ -5545,6 +5607,21 @@ async function reconcileStripeWebhookEvent(
     assertPaymentTransition(payment.status, action.targetStatus);
   } catch {
     await recordStripeWebhookAudit(repositories, event, requestId, payment, action, "ignored", "invalid_payment_status_transition");
+    await recordPaymentOperation(repositories, {
+      requestId,
+      operation: "reconcile",
+      payment,
+      status: "skipped",
+      metadata: {
+        source: "stripe_webhook",
+        stripeEventId: event.id,
+        stripeEventType: event.type,
+        providerReference: action.providerReference,
+        targetStatus: action.targetStatus,
+        outcome: "ignored",
+        reason: "invalid_payment_status_transition",
+      },
+    });
     return {
       received: true,
       eventId: event.id,
@@ -5623,6 +5700,14 @@ function getStripeWebhookAction(event: StripeWebhookEvent): StripeWebhookAction 
     };
   }
 
+  if (event.type === "payment_intent.payment_failed" && object.object === "payment_intent") {
+    return {
+      providerReference: object.id,
+      reason: object.last_payment_error?.message ?? object.status ?? "payment_intent_payment_failed",
+      reviewCode: object.last_payment_error?.code ?? "payment_failed",
+    };
+  }
+
   if (event.type === "payment_intent.canceled" && object.object === "payment_intent") {
     return {
       providerReference: object.id,
@@ -5631,11 +5716,11 @@ function getStripeWebhookAction(event: StripeWebhookEvent): StripeWebhookAction 
     };
   }
 
-  if (event.type === "refund.created" && object.object === "refund" && object.payment_intent) {
+  if ((event.type === "refund.created" || event.type === "refund.updated") && object.object === "refund" && object.payment_intent) {
     return {
       providerReference: object.payment_intent,
       targetStatus: "refunded",
-      reason: "refund_created",
+      reason: event.type === "refund.created" ? "refund_created" : "refund_updated",
     };
   }
 
@@ -5644,6 +5729,14 @@ function getStripeWebhookAction(event: StripeWebhookEvent): StripeWebhookAction 
       providerReference: object.payment_intent,
       targetStatus: "refunded",
       reason: "charge_refunded",
+    };
+  }
+
+  if (event.type.startsWith("charge.dispute.") && object.object === "dispute" && object.payment_intent) {
+    return {
+      providerReference: object.payment_intent,
+      reason: object.reason ?? object.status ?? event.type,
+      reviewCode: event.type,
     };
   }
 

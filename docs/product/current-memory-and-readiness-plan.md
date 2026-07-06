@@ -1,6 +1,6 @@
 # Prima Wash Current Memory and Readiness Plan
 
-Last updated: 2026-07-05
+Last updated: 2026-07-06
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
@@ -218,6 +218,16 @@ Latest Stripe production guardrails on 2026-07-06:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 125 API tests.
 
+Latest Stripe webhook reconciliation hardening on 2026-07-06:
+
+- Stripe `payment_intent.payment_failed` webhooks now produce a `review_required` reconciliation outcome instead of silently ignoring the failed payment signal.
+- Stripe dispute events with a `payment_intent` now produce a `review_required` reconciliation outcome for finance/operations follow-up.
+- Stripe `refund.updated` now reconciles captured payments to `refunded`, matching the existing `refund.created` and `charge.refunded` coverage.
+- Duplicate webhook deliveries and invalid status-transition webhooks now create skipped payment-operation ledger rows, so finance can see why a provider event did not mutate payment state.
+- Review-required webhook outcomes create skipped payment-operation ledger rows with Stripe event id, event type, provider reference, reason, and review code.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 128 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -279,7 +289,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, and failed-operation ledger records.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, and failed-operation ledger records.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -325,7 +335,7 @@ Payments and finance:
 
 - Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
 - Production config now refuses to start with local payments, missing Stripe secret key, or missing Stripe webhook secret.
-- Production operation still needs broader Stripe webhook coverage, reconciliation runbooks, capture/refund runbooks, failure handling, receipt/tax logic, and finance dashboards.
+- Production operation still needs Stripe charge-ID-only dispute mapping, reconciliation runbooks, capture/refund runbooks, provider mismatch workflows, receipt/tax logic, and finance dashboards.
 - Local payment mode is still the default development path, but is blocked in production.
 - Partner payout, commission, settlement, and dispute handling are not implemented.
 
@@ -401,7 +411,7 @@ Exit criteria:
 Goal: make booking payment safe enough for real customers.
 
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
-- Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable.
+- Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, and invalid transition auditability. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
 - Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05; web finance dashboard and provider mismatch workflows remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.

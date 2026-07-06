@@ -3003,6 +3003,154 @@ describe("Prima Wash API", () => {
     assert.equal(duplicatePayload.data.outcome, "duplicate");
   });
 
+  it("records Stripe payment failures as review-required reconciliation work", async () => {
+    const vehicle = await createVehicle("PAYHOOK2");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const providerReference = `pi_failed_${booking.id.slice(-10)}`;
+    const payment = await repositories.payments.createForBooking(booking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${booking.id.slice(-8)}`,
+    });
+    const event = {
+      id: `evt_failed_${booking.id.slice(-10)}`,
+      type: "payment_intent.payment_failed",
+      data: {
+        object: {
+          object: "payment_intent",
+          id: providerReference,
+          status: "requires_payment_method",
+          last_payment_error: {
+            code: "card_declined",
+            message: "The card was declined.",
+          },
+        },
+      },
+    };
+
+    const response = await postStripeWebhook(event);
+    const payload = (await response.json()) as ApiResponse<{
+      readonly outcome: string;
+      readonly paymentIntentId: string;
+      readonly paymentStatus: string;
+      readonly reason: string;
+    }>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.outcome, "review_required");
+    assert.equal(payload.data.paymentIntentId, payment.id);
+    assert.equal(payload.data.paymentStatus, "requires_authorization");
+    assert.equal(payload.data.reason, "card_declined");
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const reviewOperation = operationsPayload.data.find(
+      (operation) => operation.operation === "reconcile" && operation.metadata["outcome"] === "review_required",
+    );
+
+    assert.equal(reviewOperation?.status, "skipped");
+    assert.equal(reviewOperation?.metadata["stripeEventType"], "payment_intent.payment_failed");
+    assert.equal(reviewOperation?.metadata["reviewCode"], "card_declined");
+  });
+
+  it("reconciles Stripe refund updates to refunded payments", async () => {
+    const vehicle = await createVehicle("PAYHOOK3");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const providerReference = `pi_refund_${booking.id.slice(-10)}`;
+    const payment = await repositories.payments.createForBooking(booking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${booking.id.slice(-8)}`,
+    });
+    await repositories.payments.authorize(payment.id);
+    await repositories.payments.captureByBookingId(booking.id);
+    const event = {
+      id: `evt_refund_${booking.id.slice(-10)}`,
+      type: "refund.updated",
+      data: {
+        object: {
+          object: "refund",
+          id: `re_${booking.id.slice(-10)}`,
+          payment_intent: providerReference,
+        },
+      },
+    };
+
+    const response = await postStripeWebhook(event);
+    const payload = (await response.json()) as ApiResponse<{
+      readonly outcome: string;
+      readonly paymentIntentId: string;
+      readonly paymentStatus: string;
+    }>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.outcome, "reconciled");
+    assert.equal(payload.data.paymentIntentId, payment.id);
+    assert.equal(payload.data.paymentStatus, "refunded");
+  });
+
+  it("records Stripe dispute events as review-required reconciliation work", async () => {
+    const vehicle = await createVehicle("PAYHOOK4");
+    const booking = await createBooking(vehicle.id, "wash_basic");
+    const providerReference = `pi_dispute_${booking.id.slice(-9)}`;
+    const payment = await repositories.payments.createForBooking(booking, {
+      provider: "stripe",
+      operation: "create",
+      providerReference,
+      status: "succeeded",
+      processedAt: new Date().toISOString(),
+      clientSecret: `pi_secret_${booking.id.slice(-8)}`,
+    });
+    await repositories.payments.authorize(payment.id);
+    const event = {
+      id: `evt_dispute_${booking.id.slice(-9)}`,
+      type: "charge.dispute.created",
+      data: {
+        object: {
+          object: "dispute",
+          id: `dp_${booking.id.slice(-9)}`,
+          payment_intent: providerReference,
+          status: "needs_response",
+          reason: "fraudulent",
+        },
+      },
+    };
+
+    const response = await postStripeWebhook(event);
+    const payload = (await response.json()) as ApiResponse<{
+      readonly outcome: string;
+      readonly paymentIntentId: string;
+      readonly paymentStatus: string;
+      readonly reason: string;
+    }>;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.outcome, "review_required");
+    assert.equal(payload.data.paymentIntentId, payment.id);
+    assert.equal(payload.data.paymentStatus, "authorized");
+    assert.equal(payload.data.reason, "charge.dispute.created");
+
+    const operationsResponse = await fetch(`${baseUrl}/v1/internal/payment-operations?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const operationsPayload = (await operationsResponse.json()) as ApiResponse<readonly PaymentOperation[]>;
+    const reviewOperation = operationsPayload.data.find(
+      (operation) => operation.operation === "reconcile" && operation.metadata["stripeEventType"] === "charge.dispute.created",
+    );
+
+    assert.equal(reviewOperation?.status, "skipped");
+    assert.equal(reviewOperation?.metadata["outcome"], "review_required");
+    assert.equal(reviewOperation?.metadata["reviewCode"], "charge.dispute.created");
+  });
+
   it("rejects Stripe webhooks with an invalid signature", async () => {
     const response = await fetch(`${baseUrl}/v1/webhooks/stripe`, {
       method: "POST",
