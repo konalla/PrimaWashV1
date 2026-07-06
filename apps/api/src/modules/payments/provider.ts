@@ -20,6 +20,14 @@ export interface PaymentProviderResult {
   readonly clientSecret?: string;
 }
 
+export interface PaymentProviderState {
+  readonly provider: string;
+  readonly providerReference: string;
+  readonly providerStatus: string;
+  readonly normalizedStatus: PaymentIntent["status"] | "unknown";
+  readonly processedAt: string;
+}
+
 export interface PaymentCustomer {
   readonly provider: string;
   readonly providerCustomerId: string;
@@ -47,6 +55,7 @@ export interface PaymentProvider {
   capture(payment: PaymentIntent): Promise<PaymentProviderResult>;
   refund(payment: PaymentIntent): Promise<PaymentProviderResult>;
   void(payment: PaymentIntent): Promise<PaymentProviderResult>;
+  retrieveState(payment: PaymentIntent): Promise<PaymentProviderState>;
 }
 
 export class LocalPaymentProvider implements PaymentProvider {
@@ -114,6 +123,16 @@ export class LocalPaymentProvider implements PaymentProvider {
 
   void(payment: PaymentIntent): Promise<PaymentProviderResult> {
     return Promise.resolve(this.#result("void", payment));
+  }
+
+  retrieveState(payment: PaymentIntent): Promise<PaymentProviderState> {
+    return Promise.resolve({
+      provider: this.#provider,
+      providerReference: payment.providerReference ?? `local_intent_${payment.bookingId}`,
+      providerStatus: payment.status,
+      normalizedStatus: payment.status,
+      processedAt: new Date().toISOString(),
+    });
   }
 
   #result(operation: PaymentProviderOperation, payment: PaymentIntent): PaymentProviderResult {
@@ -263,6 +282,17 @@ export class StripePaymentProvider implements PaymentProvider {
     return this.#result("void", payload, payload.client_secret);
   }
 
+  async retrieveState(payment: PaymentIntent): Promise<PaymentProviderState> {
+    const payload = await this.#retrievePaymentIntent(payment);
+    return {
+      provider: "stripe",
+      providerReference: payload.id,
+      providerStatus: payload.status,
+      normalizedStatus: normalizeStripePaymentStatus(payload.status),
+      processedAt: new Date().toISOString(),
+    };
+  }
+
   async #retrievePaymentIntent(payment: PaymentIntent): Promise<StripePaymentIntent> {
     const response = await fetch(`${this.#apiBaseUrl}/payment_intents/${encodeURIComponent(this.#providerReference(payment))}`, {
       headers: this.#headers(),
@@ -366,6 +396,31 @@ interface StripePaymentMethod {
 
 interface StripeRefund {
   readonly id: string;
+}
+
+function normalizeStripePaymentStatus(status: string): PaymentProviderState["normalizedStatus"] {
+  if (status === "requires_capture") {
+    return "authorized";
+  }
+
+  if (status === "succeeded") {
+    return "captured";
+  }
+
+  if (status === "canceled") {
+    return "voided";
+  }
+
+  if (
+    status === "requires_payment_method" ||
+    status === "requires_confirmation" ||
+    status === "requires_action" ||
+    status === "processing"
+  ) {
+    return "requires_authorization";
+  }
+
+  return "unknown";
 }
 
 export function createPaymentProvider(providerName = "local", input?: { readonly stripeSecretKey?: string }): PaymentProvider {

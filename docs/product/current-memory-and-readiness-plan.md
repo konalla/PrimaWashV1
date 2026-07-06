@@ -260,6 +260,17 @@ Latest automated payment reconciliation case workflow on 2026-07-06:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 131 API tests.
 
+Latest provider mismatch reconciliation automation on 2026-07-06:
+
+- Payment providers can now expose provider payment state through `retrieveState`.
+- Payment repositories can now list provider-backed payment intents for bounded reconciliation scans.
+- Added `POST /v1/internal/payment-provider-reconciliation-runs` for internal finance users with `finance_write`.
+- The reconciliation run compares local payment status with provider-normalized status, records skipped `reconcile` ledger rows for mismatches, and opens/reuses `provider_mismatch` finance cases.
+- Provider state read failures create failed reconciliation ledger rows instead of silently disappearing.
+- The scan does not mutate local payment status automatically; finance review remains required for mismatches.
+- `npm run check` passed.
+- `npm run test --workspace @prima-wash/api` passed with 133 API tests.
+
 ## Product Direction
 
 Prima Wash is not only a marketplace for car washing. The stronger product is a vehicle-care operating system that can support property-approved onsite care, customer drive-to-partner appointments, pickup-and-return service, and eventually market-specific models outside Singapore.
@@ -321,7 +332,7 @@ Backend foundations now include:
 - Booking operational exception reporting and resolution with scoped access checks, audit events, owner communication threads, and dashboard-visible blockers.
 - Hardened booking lifecycle controls for payment authorization, partner acceptance, technician check-in/check-out, completion, capture, cancellation, and active exception blockers.
 - Work-order accountability metadata for assigned technician, completion notes, legacy before/after URL placeholders, append-only booking evidence records, and completion quality gates.
-- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, failed-operation ledger records, finance-owned reconciliation cases with append-only case events, and automated finance case creation for payment failures, disputes, duplicate webhooks, and invalid payment transitions.
+- Payment intents with local and Stripe providers, manual authorization/capture/refund/void concepts, billing sessions, payment methods, Stripe webhook reconciliation tests for authorization, capture, cancel, refund, failed payment, and dispute review, append-only payment operation records, create/authorize/capture/refund/void idempotency-key replay protection, skipped webhook reconciliation ledger records, failed-operation ledger records, finance-owned reconciliation cases with append-only case events, automated finance case creation for payment failures, disputes, duplicate webhooks, and invalid payment transitions, and a finance-only provider mismatch reconciliation run.
 - Communication threads/messages for Prima Wash, customers, partners, and property offices.
 - Partner scheduling, capacity templates, resource pools, closure exceptions, dynamic availability, and capacity enforcement.
 
@@ -369,7 +380,7 @@ Payments and finance:
 - Stripe provider code exists, and payment operation records now provide a structured internal finance ledger for payment lifecycle review.
 - A first internal web finance dashboard now exposes ledger review, filters, detail metadata, recommended follow-up text, and finance-owned reconciliation case workflow.
 - Production config now refuses to start with local payments, missing Stripe secret key, or missing Stripe webhook secret.
-- Production operation still needs Stripe charge-ID-only dispute mapping, formal reconciliation runbooks, capture/refund runbooks, provider mismatch workflows, receipt/tax logic, and deeper finance reporting.
+- Production operation still needs Stripe charge-ID-only dispute mapping, formal reconciliation runbooks, capture/refund runbooks, receipt/tax logic, and deeper finance reporting. Provider mismatch detection now exists, but still needs scheduled execution and finance reporting.
 - Local payment mode is still the default development path, but is blocked in production.
 - Partner payout, commission, settlement, and dispute handling are not implemented.
 
@@ -447,7 +458,7 @@ Goal: make booking payment safe enough for real customers.
 - Make Stripe the production provider with environment-gated local mode. Completed production config guardrails on 2026-07-06.
 - Complete webhook handling for payment succeeded, requires capture, failed, cancelled, refunded, and disputes where applicable. Completed first production-critical coverage on 2026-07-06 for authorization, capture, cancel, refund create/update, payment failure review, dispute review when Stripe provides `payment_intent`, duplicate replay, invalid transition auditability, and automated finance case creation for webhook review work. Charge-ID-only dispute mapping and operational runbooks remain.
 - Add idempotency keys for payment operations. Completed for payment-intent creation, authorization, direct capture, refund, and cancellation-driven void replay protection by 2026-07-06.
-- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, and automated webhook-triggered finance cases on 2026-07-06; provider mismatch automation and deeper finance reporting remain.
+- Add finance reconciliation views. Completed first internal API ledger endpoint on 2026-07-05, first web finance dashboard on 2026-07-06, manual finance reconciliation case workflow on 2026-07-06, automated webhook-triggered finance cases on 2026-07-06, and provider mismatch reconciliation run on 2026-07-06; scheduled execution and deeper finance reporting remain.
 - Add receipt, refund, cancellation-fee, and tax policy placeholders.
 - Document manual operational runbooks for failed authorization, expired authorization, capture failure, refund, and dispute.
 

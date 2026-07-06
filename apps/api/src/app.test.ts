@@ -53,6 +53,8 @@ interface ApiResponse<T> {
   readonly data: T;
 }
 
+const recordingProviderStates = new Map<string, PaymentIntent["status"] | "unknown">();
+
 function createRecordingPaymentProvider(operations: PaymentProviderOperation[]): PaymentProvider {
   async function record(operation: PaymentProviderOperation): Promise<PaymentProviderResult> {
     operations.push(operation);
@@ -108,6 +110,13 @@ function createRecordingPaymentProvider(operations: PaymentProviderOperation[]):
     capture: () => record("capture"),
     refund: () => record("refund"),
     void: () => record("void"),
+    retrieveState: async (payment) => ({
+      provider: payment.provider ?? "recording",
+      providerReference: payment.providerReference ?? `recording_missing_${payment.id}`,
+      providerStatus: recordingProviderStates.get(payment.providerReference ?? "") ?? payment.status,
+      normalizedStatus: recordingProviderStates.get(payment.providerReference ?? "") ?? payment.status,
+      processedAt: new Date().toISOString(),
+    }),
   };
 }
 
@@ -146,6 +155,7 @@ describe("Prima Wash API", () => {
   before(async () => {
     previousShowDevAuthCode = process.env.SHOW_DEV_AUTH_CODE;
     process.env.SHOW_DEV_AUTH_CODE = "true";
+    recordingProviderStates.clear();
     repositories = createRepositories();
 
     server = createApiServer({
@@ -3624,6 +3634,88 @@ describe("Prima Wash API", () => {
     assert.equal(readOnlyListResponse.status, 200);
     assert.equal(readOnlyWriteResponse.status, 403);
     assert.equal(partnerManagerResponse.status, 403);
+  });
+
+  it("runs provider mismatch reconciliation and opens one finance case per active mismatch", async () => {
+    const slot = await createAvailabilitySlot({
+      startsAt: "2026-07-13T03:00:00.000Z",
+      endsAt: "2026-07-13T03:30:00.000Z",
+      capacity: 1,
+      serviceCodes: ["wash_basic"],
+    });
+    const vehicle = await createVehicle("PAYRECON1");
+    const booking = await createBooking(vehicle.id, "wash_basic", slot.id);
+    const payment = await createPaymentIntent(booking.id);
+    const authorizedPayment = await authorizePayment(payment.id);
+
+    assert.equal(authorizedPayment.status, "authorized");
+    assert.ok(authorizedPayment.providerReference);
+    recordingProviderStates.set(authorizedPayment.providerReference, "captured");
+
+    const firstRunResponse = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ provider: "recording", limit: 50 }),
+    });
+    const firstRunPayload = (await firstRunResponse.json()) as ApiResponse<{
+      readonly checked: number;
+      readonly mismatched: number;
+      readonly casesOpened: number;
+    }>;
+
+    assert.equal(firstRunResponse.status, 201);
+    assert.ok(firstRunPayload.data.checked >= 1);
+    assert.equal(firstRunPayload.data.mismatched, 1);
+    assert.equal(firstRunPayload.data.casesOpened, 1);
+
+    const casesResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases?bookingId=${booking.id}`, {
+      headers: internalHeaders,
+    });
+    const casesPayload = (await casesResponse.json()) as ApiResponse<readonly PaymentReconciliationCase[]>;
+    const mismatchCase = casesPayload.data.find((record) => record.caseType === "provider_mismatch");
+
+    assert.equal(mismatchCase?.status, "open");
+    assert.equal(mismatchCase?.providerReference, authorizedPayment.providerReference);
+    assert.equal(mismatchCase?.providerEventType, "provider_reconciliation");
+
+    const secondRunResponse = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ provider: "recording", limit: 50 }),
+    });
+    const secondRunPayload = (await secondRunResponse.json()) as ApiResponse<{ readonly casesOpened: number }>;
+
+    assert.equal(secondRunResponse.status, 201);
+    assert.equal(secondRunPayload.data.casesOpened, 0);
+
+    const detailResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${mismatchCase?.id}`, {
+      headers: internalHeaders,
+    });
+    const detailPayload = (await detailResponse.json()) as ApiResponse<PaymentReconciliationCaseDetail>;
+
+    assert.equal(detailResponse.status, 200);
+    assert.ok(detailPayload.data.events.some((event) => event.eventType === "note_added"));
+  });
+
+  it("protects provider mismatch reconciliation runs with finance write permission", async () => {
+    const readOnlyResponse = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs`, {
+      method: "POST",
+      headers: {
+        ...internalHeaders,
+        "content-type": "application/json",
+        "x-prima-user-id": "usr_internal_ops_read_001",
+        "x-prima-permissions": "operations_read,finance_read",
+      },
+      body: JSON.stringify({ provider: "recording" }),
+    });
+    const partnerResponse = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs`, {
+      method: "POST",
+      headers: { ...partnerHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ provider: "recording" }),
+    });
+
+    assert.equal(readOnlyResponse.status, 403);
+    assert.equal(partnerResponse.status, 403);
   });
 
   it("rejects refund attempts before payment capture", async () => {

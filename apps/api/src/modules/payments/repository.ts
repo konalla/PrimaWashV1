@@ -5,6 +5,10 @@ import type { PaymentProviderResult } from "./provider.js";
 export interface PaymentRepository {
   get(paymentIntentId: string): Promise<PaymentIntent | undefined>;
   getByBookingId(bookingId: string): Promise<PaymentIntent | undefined>;
+  list(filter?: {
+    readonly provider?: string | undefined;
+    readonly limit?: number | undefined;
+  }): Promise<readonly PaymentIntent[]>;
   createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent>;
   authorize(paymentIntentId: string): Promise<PaymentIntent>;
   captureByBookingId(bookingId: string): Promise<PaymentIntent>;
@@ -23,6 +27,13 @@ export class InMemoryPaymentRepository implements PaymentRepository {
 
   async getByBookingId(bookingId: string): Promise<PaymentIntent | undefined> {
     return Array.from(this.#payments.values()).find((payment) => payment.bookingId === bookingId);
+  }
+
+  async list(filter: { readonly provider?: string | undefined; readonly limit?: number | undefined } = {}): Promise<readonly PaymentIntent[]> {
+    return Array.from(this.#payments.values())
+      .filter((payment) => !filter.provider || payment.provider === filter.provider)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, normalizeLimit(filter.limit));
   }
 
   async createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent> {
@@ -135,6 +146,31 @@ export class PostgresPaymentRepository implements PaymentRepository {
     );
 
     return result.rows[0] ? mapPaymentIntentRow(result.rows[0]) : undefined;
+  }
+
+  async list(filter: { readonly provider?: string | undefined; readonly limit?: number | undefined } = {}): Promise<readonly PaymentIntent[]> {
+    const clauses: string[] = [];
+    const values: unknown[] = [];
+
+    if (filter.provider) {
+      values.push(filter.provider);
+      clauses.push(`provider = $${values.length}`);
+    }
+
+    values.push(normalizeLimit(filter.limit));
+    const whereClause = clauses.length > 0 ? `where ${clauses.join(" and ")}` : "";
+    const result = await this.pool.query<PaymentIntentRow>(
+      `select id, booking_id, owner_id, amount_minor, currency, status,
+              provider, provider_reference, client_secret,
+              authorized_at, captured_at, refunded_at, voided_at, created_at
+       from payment_intents
+       ${whereClause}
+       order by created_at desc
+       limit $${values.length}`,
+      values,
+    );
+
+    return result.rows.map(mapPaymentIntentRow);
   }
 
   async createForBooking(booking: Booking, providerResult?: PaymentProviderResult): Promise<PaymentIntent> {
@@ -357,4 +393,12 @@ function mapPaymentIntentRow(row: PaymentIntentRow): PaymentIntent {
     ...(row.voided_at ? { voidedAt: new Date(row.voided_at).toISOString() } : {}),
     createdAt: new Date(row.created_at).toISOString(),
   };
+}
+
+function normalizeLimit(limit?: number): number {
+  if (!limit || !Number.isFinite(limit)) {
+    return 100;
+  }
+
+  return Math.max(1, Math.min(Math.trunc(limit), 500));
 }

@@ -379,7 +379,8 @@ interface PaymentReconciliationCaseEventRow {
 function buildPaymentReconciliationCase(input: CreatePaymentReconciliationCaseInput): PaymentReconciliationCase {
   const now = new Date().toISOString();
   const providerReference = input.operation.providerReference ?? stringMetadataValue(input.operation.metadata?.providerReference);
-  const providerEventType = stringMetadataValue(input.operation.metadata?.stripeEventType);
+  const providerEventType =
+    stringMetadataValue(input.operation.metadata?.providerEventType) ?? stringMetadataValue(input.operation.metadata?.stripeEventType);
   return {
     id: `paycase_${crypto.randomUUID()}`,
     caseType: input.caseType,
