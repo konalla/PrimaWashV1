@@ -19,6 +19,8 @@ Latest finance evidence-pack work on 2026-07-07:
 - Evidence packs are assembled from existing operational records: case timeline, booking, vehicle, partner location, payment intent, payment operation ledger, booking evidence, handovers, consents, service record, communications, and recent linked audit events.
 - Evidence packs include a present/missing/not-applicable checklist for finance readiness.
 - The internal Finance dashboard can now load and show the evidence pack from a linked reconciliation case.
+- The Finance dashboard evidence-pack view now exposes booking, party, payment, operational proof, communication, and linked audit records behind the checklist.
+- Finance users can download a text evidence-pack summary for internal review or Stripe dispute preparation.
 
 Latest local environment hardening on 2026-07-07:
 

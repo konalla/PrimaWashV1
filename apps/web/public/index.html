@@ -379,6 +379,40 @@
         font-weight: 700;
       }
 
+      .evidence-pack-section {
+        display: grid;
+        gap: 8px;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+      }
+
+      .evidence-pack-section h4 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .evidence-pack-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .evidence-pack-record {
+        display: grid;
+        gap: 3px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: #ffffff;
+        padding: 10px;
+      }
+
+      .evidence-pack-record code {
+        overflow-wrap: anywhere;
+        color: var(--green-2);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
       .split {
         grid-template-columns: 1.45fr 0.55fr;
       }
@@ -4060,7 +4094,7 @@
                 <strong>${escapeHtml(item.label)}</strong>
                 ${item.detail ? `<span>${escapeHtml(item.detail)}</span>` : ""}
               </div>
-              <span class="payment-chip ${item.status === "missing" ? "is-failed" : item.status === "present" ? "is-success" : ""}">${formatStatus(item.status)}</span>
+              <span class="payment-chip ${item.status === "missing" ? "is-blocked" : item.status === "present" ? "is-authorized" : "is-refunded"}">${formatStatus(item.status)}</span>
             </div>
           `)
           .join("");
@@ -4073,9 +4107,238 @@
               <span class="finance-row-meta">${presentCount} present - ${pack.paymentOperations.length} payment operations - ${pack.bookingEvidence.length} evidence records - ${pack.communicationThreads.length} communication threads</span>
               <span class="finance-row-meta">Generated ${formatRelativeTime(pack.generatedAt)}</span>
             </div>
+            <div class="dialog-actions">
+              <button class="action" type="button" data-payment-case-export="${linkedCase.id}">Download text summary</button>
+            </div>
             ${checklistRows}
+            ${renderEvidencePackRecords(pack)}
           </div>
         `;
+      }
+
+      function renderEvidencePackRecords(pack) {
+        return [
+          renderEvidencePackCoreRecords(pack),
+          renderEvidencePackPaymentRecords(pack),
+          renderEvidencePackOperationalRecords(pack),
+          renderEvidencePackCommunicationRecords(pack),
+          renderEvidencePackAuditRecords(pack),
+        ].join("");
+      }
+
+      function renderEvidencePackCoreRecords(pack) {
+        const booking = pack.booking;
+        const vehicle = pack.vehicle;
+        const partner = pack.partnerLocation;
+        const serviceRecord = pack.serviceRecord;
+        return `
+          <section class="evidence-pack-section">
+            <h4>Booking and parties</h4>
+            <div class="evidence-pack-list">
+              ${booking ? evidencePackRecord("Booking", [
+                ["Reference", booking.id],
+                ["Service", formatService(booking.serviceCode)],
+                ["Status", formatStatus(booking.status)],
+                ["Mode", formatServiceMode(booking.onsiteServiceMode || "partner_location")],
+                ["Scheduled", `${formatDateTime(booking.scheduledStartAt)} - ${formatDateTime(booking.scheduledEndAt)}`],
+                ["Accepted price", formatMoney(booking.acceptedPrice)],
+              ]) : evidencePackEmpty("Booking record missing")}
+              ${vehicle ? evidencePackRecord("Vehicle", [
+                ["Plate", vehicle.plateNumber],
+                ["Vehicle", [vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.nickname || "Vehicle profile"],
+                ["Primary", vehicle.isPrimary ? "Yes" : "No"],
+              ]) : evidencePackEmpty("Vehicle profile missing")}
+              ${partner ? evidencePackRecord("Partner location", [
+                ["Name", partner.name],
+                ["Organization", partner.organizationId],
+                ["Address", [partner.addressLine1, partner.city, partner.region, partner.countryCode].filter(Boolean).join(", ")],
+                ["Verified", partner.verified ? "Yes" : "No"],
+              ]) : evidencePackEmpty("Partner location missing")}
+              ${serviceRecord ? evidencePackRecord("Service record", [
+                ["Completed", formatDateTime(serviceRecord.completedAt)],
+                ["Record", serviceRecord.id],
+              ]) : evidencePackEmpty("No completed service record")}
+            </div>
+          </section>
+        `;
+      }
+
+      function renderEvidencePackPaymentRecords(pack) {
+        const paymentIntent = pack.paymentIntent;
+        const operations = pack.paymentOperations.slice(0, 8);
+        return `
+          <section class="evidence-pack-section">
+            <h4>Payment records</h4>
+            <div class="evidence-pack-list">
+              ${paymentIntent ? evidencePackRecord("Payment intent", [
+                ["Reference", paymentIntent.id],
+                ["Status", formatPaymentStatus(paymentIntent.status)],
+                ["Amount", formatMoney(paymentIntent.amount)],
+                ["Provider", paymentIntent.provider || "Not linked"],
+                ["Provider reference", paymentIntent.providerReference || "Not captured"],
+              ]) : evidencePackEmpty("Payment intent missing")}
+              ${operations.length ? operations.map((operation) => evidencePackRecord(formatPaymentOperation(operation), [
+                ["Status", formatStatus(operation.status)],
+                ["Provider", operation.provider || "Not linked"],
+                ["Provider ref", operation.providerReference || operation.paymentIntentId || "Not captured"],
+                ["Request id", operation.requestId || "Not captured"],
+                ["Created", formatDateTime(operation.createdAt)],
+                ...(operation.errorMessage ? [["Error", operation.errorMessage]] : []),
+              ])).join("") : evidencePackEmpty("No payment operation rows")}
+            </div>
+          </section>
+        `;
+      }
+
+      function renderEvidencePackOperationalRecords(pack) {
+        return `
+          <section class="evidence-pack-section">
+            <h4>Operational proof</h4>
+            <div class="evidence-pack-list">
+              ${pack.bookingEvidence.length ? pack.bookingEvidence.map((record) => evidencePackRecord(formatEvidenceType(record.evidenceType), [
+                ["Created", formatDateTime(record.createdAt)],
+                ["Uploaded by", [record.uploadedByRole, record.uploadedByUserId].filter(Boolean).join(" - ")],
+                ["URL", record.url || record.storageKey || "Stored evidence"],
+                ...(record.notes ? [["Notes", record.notes]] : []),
+              ])).join("") : evidencePackEmpty("No booking evidence records")}
+              ${pack.bookingHandovers.length ? pack.bookingHandovers.map((record) => evidencePackRecord(formatStatus(record.handoverType), [
+                ["Created", formatDateTime(record.createdAt)],
+                ["Contact", record.contactName],
+                ["Location", record.locationNotes],
+                ...(record.conditionNotes ? [["Condition", record.conditionNotes]] : []),
+                ...(record.acknowledgedBy ? [["Acknowledged by", record.acknowledgedBy]] : []),
+              ])).join("") : evidencePackEmpty("No handover records")}
+              ${pack.bookingConsents.length ? pack.bookingConsents.map((record) => evidencePackRecord(formatStatus(record.consentType), [
+                ["Accepted", formatDateTime(record.acceptedAt)],
+                ["Terms", record.termsVersion],
+                ["Accepted by", record.acceptedByUserId || "Customer"],
+              ])).join("") : evidencePackEmpty("No customer consent records")}
+            </div>
+          </section>
+        `;
+      }
+
+      function renderEvidencePackCommunicationRecords(pack) {
+        return `
+          <section class="evidence-pack-section">
+            <h4>Communications</h4>
+            <div class="evidence-pack-list">
+              ${pack.communicationThreads.length ? pack.communicationThreads.map(({ thread, messages }) => evidencePackRecord(thread.subject, [
+                ["Type", formatStatus(thread.type)],
+                ["Resource", `${thread.resourceType} ${thread.resourceId}`],
+                ["Updated", formatDateTime(thread.updatedAt)],
+                ["Messages", String(messages.length)],
+                ...(messages[0] ? [["Latest", `${formatDateTime(messages[0].createdAt)} - ${messages[0].body}`]] : []),
+              ])).join("") : evidencePackEmpty("No communication threads")}
+            </div>
+          </section>
+        `;
+      }
+
+      function renderEvidencePackAuditRecords(pack) {
+        return `
+          <section class="evidence-pack-section">
+            <h4>Linked audit trail</h4>
+            <div class="evidence-pack-list">
+              ${pack.auditEvents.length ? pack.auditEvents.slice(0, 8).map((event) => evidencePackRecord(formatStatus(event.action), [
+                ["Created", formatDateTime(event.createdAt)],
+                ["Resource", `${event.resourceType} ${event.resourceId}`],
+                ["Actor", [event.actorUserId, event.actorOrganizationId].filter(Boolean).join(" - ") || "System"],
+                ["Request", event.requestId || "Not captured"],
+              ])).join("") : evidencePackEmpty("No linked audit events found")}
+            </div>
+          </section>
+        `;
+      }
+
+      function evidencePackRecord(title, rows) {
+        return `
+          <article class="evidence-pack-record">
+            <strong>${escapeHtml(title)}</strong>
+            ${rows
+              .filter(([, value]) => value !== undefined && value !== null && value !== "")
+              .map(([label, value]) => `<span>${escapeHtml(label)}: <code>${escapeHtml(String(value))}</code></span>`)
+              .join("")}
+          </article>
+        `;
+      }
+
+      function evidencePackEmpty(message) {
+        return `<div class="empty">${escapeHtml(message)}</div>`;
+      }
+
+      function exportEvidencePackText(caseId) {
+        const pack = paymentEvidencePacksCache.get(caseId);
+        if (!pack) {
+          throw new Error("Load the evidence pack before exporting it.");
+        }
+
+        const lines = buildEvidencePackTextSummary(pack);
+        const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `prima-wash-evidence-pack-${pack.case.id}.txt`;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function buildEvidencePackTextSummary(pack) {
+        const booking = pack.booking;
+        const vehicle = pack.vehicle;
+        const partner = pack.partnerLocation;
+        const payment = pack.paymentIntent;
+        const lines = [
+          "Prima Wash Evidence Pack",
+          `Generated: ${formatDateTime(pack.generatedAt)}`,
+          "",
+          "Case",
+          `Case id: ${pack.case.id}`,
+          `Type: ${formatStatus(pack.case.caseType)}`,
+          `Status: ${formatStatus(pack.case.status)}`,
+          `Summary: ${pack.case.summary}`,
+          `Recommended action: ${pack.case.guidance?.actionLabel || "Not available"}`,
+          "",
+          "Booking",
+          `Booking id: ${booking?.id || "Missing"}`,
+          `Service: ${booking ? formatService(booking.serviceCode) : "Missing"}`,
+          `Booking status: ${booking ? formatStatus(booking.status) : "Missing"}`,
+          `Service mode: ${booking ? formatServiceMode(booking.onsiteServiceMode || "partner_location") : "Missing"}`,
+          `Scheduled: ${booking ? `${formatDateTime(booking.scheduledStartAt)} - ${formatDateTime(booking.scheduledEndAt)}` : "Missing"}`,
+          `Vehicle: ${vehicle ? `${vehicle.plateNumber} ${[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(" ")}` : "Missing"}`,
+          `Partner: ${partner ? `${partner.name}, ${partner.addressLine1}` : "Missing"}`,
+          "",
+          "Payment",
+          `Payment intent: ${payment?.id || "Missing"}`,
+          `Payment status: ${payment ? formatPaymentStatus(payment.status) : "Missing"}`,
+          `Payment amount: ${payment ? formatMoney(payment.amount) : "Missing"}`,
+          `Provider reference: ${payment?.providerReference || "Missing"}`,
+          "",
+          "Checklist",
+          ...pack.checklist.map((item) => `- ${item.label}: ${formatStatus(item.status)}${item.detail ? ` (${item.detail})` : ""}`),
+          "",
+          "Payment operations",
+          ...pack.paymentOperations.map((operation) => `- ${formatDateTime(operation.createdAt)} | ${formatPaymentOperation(operation)} | ${formatStatus(operation.status)} | ${operation.providerReference || operation.paymentIntentId || "no provider ref"}`),
+          "",
+          "Evidence records",
+          ...pack.bookingEvidence.map((record) => `- ${formatDateTime(record.createdAt)} | ${formatEvidenceType(record.evidenceType)} | ${record.url || record.storageKey || "stored"} | ${record.notes || "no notes"}`),
+          "",
+          "Handovers",
+          ...pack.bookingHandovers.map((record) => `- ${formatDateTime(record.createdAt)} | ${formatStatus(record.handoverType)} | ${record.contactName} | ${record.locationNotes}`),
+          "",
+          "Communications",
+          ...pack.communicationThreads.flatMap(({ thread, messages }) => [
+            `- Thread: ${thread.subject} (${formatStatus(thread.type)})`,
+            ...messages.map((message) => `  - ${formatDateTime(message.createdAt)} ${message.senderRole}: ${message.body}`),
+          ]),
+          "",
+          "Audit events",
+          ...pack.auditEvents.map((event) => `- ${formatDateTime(event.createdAt)} | ${event.action} | ${event.resourceType}:${event.resourceId}`),
+        ];
+
+        return lines;
       }
 
       function renderPaymentCaseGuidance(linkedCase) {
@@ -6459,6 +6722,19 @@
             showToast(error.message, "error");
           } finally {
             evidencePackButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const evidencePackExportButton = event.target.closest("button[data-payment-case-export]");
+
+        if (evidencePackExportButton) {
+          try {
+            exportEvidencePackText(evidencePackExportButton.dataset.paymentCaseExport);
+            showToast("Evidence pack summary downloaded.");
+          } catch (error) {
+            showToast(error.message, "error");
           }
 
           return;

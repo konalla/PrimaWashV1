@@ -100,6 +100,8 @@ Pack contents:
 
 The Finance dashboard exposes the pack from the selected ledger row when a reconciliation case is linked. Use the checklist to decide whether the case is ready for dispute evidence, customer follow-up, partner escalation, refund, write-off, or engineering escalation.
 
+The dashboard evidence-pack view also shows the underlying booking, vehicle, partner, payment, operational proof, communication, and linked audit records. Finance can download a text summary from the loaded pack for internal review or Stripe dispute preparation. PDF export and direct Stripe evidence submission are future hardening steps.
+
 ## Operational Runbooks
 
 Payment failed:
