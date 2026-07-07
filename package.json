@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/api && npm run build --workspace @prima-wash/web",
-    "check": "npm run check --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/contracts && npm run check --workspace @prima-wash/api && npm run check --workspace @prima-wash/web && npm run check --workspace @prima-wash/mobile",
+    "build": "npm run build --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/api && npm run build --workspace @prima-wash/web && npm run build --workspace @prima-wash/delivery-relay",
+    "check": "npm run check --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/contracts && npm run check --workspace @prima-wash/api && npm run check --workspace @prima-wash/web && npm run check --workspace @prima-wash/mobile && npm run check --workspace @prima-wash/delivery-relay",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "npm run migrate --workspace @prima-wash/api",
@@ -20,6 +20,7 @@
     "dev:mobile": "npm run start --workspace @prima-wash/mobile",
     "dev:mobile:web": "npm run web --workspace @prima-wash/mobile",
     "dev:web": "npm run dev --workspace @prima-wash/web",
+    "dev:delivery-relay": "npm run dev --workspace @prima-wash/delivery-relay",
     "test": "npm run test --workspaces --if-present",
     "test:postgres": "npm run test:postgres --workspace @prima-wash/api"
   },

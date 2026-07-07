@@ -53,7 +53,7 @@ Done when:
 
 Why: the platform has a webhook delivery boundary, but no selected email/SMS sender is wired for real OTP/invitation delivery.
 
-Status: backend webhook delivery was hardened on 2026-07-07 with timeout, retry, delivery-id/idempotency headers, channel metadata, and tests proving codes are not exposed to clients. A real email/SMS relay still needs to be deployed and pointed at `AUTH_CODE_DELIVERY_WEBHOOK_URL` for staging signoff.
+Status: backend webhook delivery was hardened on 2026-07-07 with timeout, retry, delivery-id/idempotency headers, channel metadata, and tests proving codes are not exposed to clients. A deployable `@prima-wash/delivery-relay` service now receives that webhook, sends email through SMTP, and can hand SMS traffic to an external SMS webhook. It still needs staging SMTP/SMS secrets and a live staging rehearsal for final signoff.
 
 Done when:
 

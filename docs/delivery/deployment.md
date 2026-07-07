@@ -51,6 +51,16 @@ Environment contract:
 - `AUTH_CODE_DELIVERY_WEBHOOK_SECRET`: optional bearer secret sent to the auth-code delivery webhook.
 - `AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS`: webhook delivery timeout. Default `5000`.
 - `AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS`: delivery attempts for retryable webhook failures such as `408`, `429`, and `5xx`. Default `3`.
+- `PRIMA_DELIVERY_WEBHOOK_SECRET`: shared bearer secret expected by the deployable delivery relay.
+- `SMTP_HOST`: SMTP host used by `@prima-wash/delivery-relay`.
+- `SMTP_PORT`: SMTP port used by `@prima-wash/delivery-relay`. Default `587`.
+- `SMTP_SECURE`: set `true` for direct TLS SMTP, typically port `465`; otherwise the relay uses STARTTLS.
+- `SMTP_USER`: optional SMTP username.
+- `SMTP_PASSWORD`: optional SMTP password.
+- `SMTP_FROM`: sender address used by the delivery relay. Required in production relay deployments.
+- `SMTP_TIMEOUT_MS`: SMTP connection/response timeout. Default `10000`.
+- `SMS_WEBHOOK_URL`: optional SMS provider/automation webhook used by the delivery relay for phone-number recipients.
+- `SMS_WEBHOOK_SECRET`: optional bearer secret sent to `SMS_WEBHOOK_URL`.
 - `AUTH_RATE_LIMIT_RETENTION_HOURS`: retention window for auth rate-limit events pruned by the cleanup job. Default `24`.
 - `AUTH_REVOKED_SESSION_RETENTION_DAYS`: retention window for revoked auth sessions pruned by the cleanup job. Default `30`.
 - `AUTH_REFRESH_TOKEN_RETENTION_DAYS`: retention window for old used/revoked refresh tokens pruned by the cleanup job. Default `30`.
@@ -81,6 +91,14 @@ Auth-code delivery webhook contract:
 - Headers include `content-type: application/json`, `x-prima-wash-delivery-id`, `x-prima-wash-delivery-attempt`, and optional `authorization: Bearer AUTH_CODE_DELIVERY_WEBHOOK_SECRET`.
 - Body fields are `type` (`auth_code` or `access_invitation`), `deliveryId`, `channel` (`email` or `sms`), `identifier`, `deliveryHint`, `code`, and `expiresAt`.
 - The delivery service should send the code to `identifier`, treat `deliveryId` as the idempotency key, and return `2xx` only after accepting the message for delivery.
+
+Deployable delivery relay:
+
+- Build with `Dockerfile.delivery-relay`.
+- Run with `AUTH_CODE_DELIVERY_WEBHOOK_URL=http://delivery-relay:3025/auth-code` on the API side.
+- Set the same value in `AUTH_CODE_DELIVERY_WEBHOOK_SECRET` on the API and `PRIMA_DELIVERY_WEBHOOK_SECRET` on the relay.
+- Configure SMTP variables for email delivery before staging signoff.
+- Configure `SMS_WEBHOOK_URL` only when phone-number verification codes must be sent during pilot; email-only pilot invitations can leave it unset.
 
 Payment reconciliation scheduler:
 
