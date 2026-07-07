@@ -12,6 +12,8 @@ export interface ApiConfig {
   readonly authCodeDeliveryProvider: "local" | "webhook";
   readonly authCodeDeliveryWebhookUrl?: string;
   readonly authCodeDeliveryWebhookSecret?: string;
+  readonly authCodeDeliveryWebhookTimeoutMs: number;
+  readonly authCodeDeliveryWebhookMaxAttempts: number;
   readonly showDevAuthCode: boolean;
   readonly paymentProvider: PaymentProviderMode;
   readonly stripeSecretKey?: string;
@@ -94,6 +96,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     ...(environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET
       ? { authCodeDeliveryWebhookSecret: environment.AUTH_CODE_DELIVERY_WEBHOOK_SECRET }
       : {}),
+    authCodeDeliveryWebhookTimeoutMs: parsePositiveInteger(
+      environment.AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS,
+      5_000,
+      "AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS",
+    ),
+    authCodeDeliveryWebhookMaxAttempts: parsePositiveInteger(
+      environment.AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS,
+      3,
+      "AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS",
+    ),
     paymentProvider,
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
@@ -141,4 +153,18 @@ function parsePaymentProviderMode(environment: NodeJS.ProcessEnv): PaymentProvid
   }
 
   throw new Error("PAYMENT_PROVIDER must be either 'local' or 'stripe'");
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value.trim() === "") {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+
+  return parsed;
 }

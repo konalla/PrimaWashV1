@@ -16,6 +16,8 @@ const authCodeDeliveryProvider = createAuthCodeDeliveryProvider(config.authCodeD
   exposeDevelopmentCode: config.showDevAuthCode,
   ...(config.authCodeDeliveryWebhookUrl ? { webhookUrl: config.authCodeDeliveryWebhookUrl } : {}),
   ...(config.authCodeDeliveryWebhookSecret ? { webhookSecret: config.authCodeDeliveryWebhookSecret } : {}),
+  webhookTimeoutMs: config.authCodeDeliveryWebhookTimeoutMs,
+  webhookMaxAttempts: config.authCodeDeliveryWebhookMaxAttempts,
 });
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(moduleDirectory, "../public");

@@ -11,6 +11,7 @@ Launch-freeze update on 2026-07-07:
 - New work should be accepted only if it directly completes a Must Fix item from the launch-freeze checklist.
 - Feature expansion, deeper automation, broad UI redesigns, realtime messaging, push notifications, advanced analytics, and global expansion work are post-pilot unless they become launch blockers.
 - Web portal demo auth-code login, partner-location switching, and internal permission switching are now localhost-only safeguards. Non-local web origins require an issued bearer access token and no longer auto-login as demo users.
+- Auth-code webhook delivery now has bounded timeout/retry behavior, a stable delivery id for idempotent email/SMS relay handling, delivery attempt headers, channel metadata, and tests proving webhook delivery does not expose development codes.
 
 Latest finance operations runbook work on 2026-07-07:
 

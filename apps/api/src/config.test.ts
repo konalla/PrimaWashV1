@@ -135,6 +135,8 @@ describe("API config", () => {
       AUTH_CODE_DELIVERY_PROVIDER: "webhook",
       AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
       AUTH_CODE_DELIVERY_WEBHOOK_SECRET: "delivery-secret",
+      AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS: "7500",
+      AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS: "4",
       PAYMENT_PROVIDER: "stripe",
       STRIPE_SECRET_KEY: "sk_test_config",
       STRIPE_WEBHOOK_SECRET: "whsec_config",
@@ -144,10 +146,36 @@ describe("API config", () => {
     assert.equal(config.authCodeDeliveryProvider, "webhook");
     assert.equal(config.authCodeDeliveryWebhookUrl, "https://delivery.example.com/auth-code");
     assert.equal(config.authCodeDeliveryWebhookSecret, "delivery-secret");
+    assert.equal(config.authCodeDeliveryWebhookTimeoutMs, 7500);
+    assert.equal(config.authCodeDeliveryWebhookMaxAttempts, 4);
     assert.equal(config.paymentProvider, "stripe");
     assert.equal(config.stripeSecretKey, "sk_test_config");
     assert.equal(config.stripeWebhookSecret, "whsec_config");
     assert.equal(config.showDevAuthCode, false);
     assert.deepEqual(config.corsAllowedOrigins, ["https://admin.primawash.com", "https://app.primawash.com"]);
+  });
+
+  it("rejects invalid webhook auth delivery retry settings", () => {
+    assert.throws(
+      () =>
+        loadConfig({
+          NODE_ENV: "test",
+          AUTH_CODE_DELIVERY_PROVIDER: "webhook",
+          AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
+          AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS: "0",
+        }),
+      /AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS must be a positive integer/,
+    );
+
+    assert.throws(
+      () =>
+        loadConfig({
+          NODE_ENV: "test",
+          AUTH_CODE_DELIVERY_PROVIDER: "webhook",
+          AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
+          AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS: "-1",
+        }),
+      /AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS must be a positive integer/,
+    );
   });
 });

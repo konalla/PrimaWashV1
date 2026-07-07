@@ -49,6 +49,8 @@ Environment contract:
 - `AUTH_CODE_DELIVERY_PROVIDER`: `local` for development or `webhook` for generated-code delivery to an external email/SMS service. Production must not use `local`.
 - `AUTH_CODE_DELIVERY_WEBHOOK_URL`: required when `AUTH_CODE_DELIVERY_PROVIDER=webhook`.
 - `AUTH_CODE_DELIVERY_WEBHOOK_SECRET`: optional bearer secret sent to the auth-code delivery webhook.
+- `AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS`: webhook delivery timeout. Default `5000`.
+- `AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS`: delivery attempts for retryable webhook failures such as `408`, `429`, and `5xx`. Default `3`.
 - `AUTH_RATE_LIMIT_RETENTION_HOURS`: retention window for auth rate-limit events pruned by the cleanup job. Default `24`.
 - `AUTH_REVOKED_SESSION_RETENTION_DAYS`: retention window for revoked auth sessions pruned by the cleanup job. Default `30`.
 - `AUTH_REFRESH_TOKEN_RETENTION_DAYS`: retention window for old used/revoked refresh tokens pruned by the cleanup job. Default `30`.
@@ -72,6 +74,13 @@ Staging requirements before external users:
 - Run migrations as a controlled release step, not an always-on service.
 - Add database backup, restore, and migration rollback procedures.
 - Add Stripe webhook delivery monitoring and payment reconciliation runbooks.
+
+Auth-code delivery webhook contract:
+
+- The API sends `POST AUTH_CODE_DELIVERY_WEBHOOK_URL`.
+- Headers include `content-type: application/json`, `x-prima-wash-delivery-id`, `x-prima-wash-delivery-attempt`, and optional `authorization: Bearer AUTH_CODE_DELIVERY_WEBHOOK_SECRET`.
+- Body fields are `type` (`auth_code` or `access_invitation`), `deliveryId`, `channel` (`email` or `sms`), `identifier`, `deliveryHint`, `code`, and `expiresAt`.
+- The delivery service should send the code to `identifier`, treat `deliveryId` as the idempotency key, and return `2xx` only after accepting the message for delivery.
 
 Payment reconciliation scheduler:
 

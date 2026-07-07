@@ -53,6 +53,8 @@ Done when:
 
 Why: the platform has a webhook delivery boundary, but no selected email/SMS sender is wired for real OTP/invitation delivery.
 
+Status: backend webhook delivery was hardened on 2026-07-07 with timeout, retry, delivery-id/idempotency headers, channel metadata, and tests proving codes are not exposed to clients. A real email/SMS relay still needs to be deployed and pointed at `AUTH_CODE_DELIVERY_WEBHOOK_URL` for staging signoff.
+
 Done when:
 
 - `AUTH_CODE_DELIVERY_PROVIDER=webhook` works in staging.
