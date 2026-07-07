@@ -1,3 +1,5 @@
+import { defaultLocalCorsAllowedOrigins } from "./http/respond.js";
+
 export type PersistenceMode = "memory" | "postgres";
 export type PaymentProviderMode = "local" | "stripe";
 
@@ -5,6 +7,7 @@ export interface ApiConfig {
   readonly port: number;
   readonly persistenceMode: PersistenceMode;
   readonly databaseUrl?: string;
+  readonly corsAllowedOrigins: readonly string[];
   readonly authSessionSecret: string;
   readonly authCodeDeliveryProvider: "local" | "webhook";
   readonly authCodeDeliveryWebhookUrl?: string;
@@ -34,6 +37,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
 
   if (environment.NODE_ENV === "production" && persistenceMode !== "postgres") {
     throw new Error("PERSISTENCE_MODE=postgres is required in production");
+  }
+
+  const corsAllowedOrigins = parseCorsAllowedOrigins(environment);
+
+  if (environment.NODE_ENV === "production" && corsAllowedOrigins.length === 0) {
+    throw new Error("CORS_ALLOWED_ORIGINS is required in production");
   }
 
   const authSessionSecret =
@@ -75,6 +84,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
   return {
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     persistenceMode,
+    corsAllowedOrigins,
     authSessionSecret,
     authCodeDeliveryProvider,
     showDevAuthCode,
@@ -91,6 +101,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     ...(environment.EVIDENCE_PUBLIC_BASE_URL ? { evidencePublicBaseUrl: environment.EVIDENCE_PUBLIC_BASE_URL } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
   };
+}
+
+function parseCorsAllowedOrigins(environment: NodeJS.ProcessEnv): readonly string[] {
+  if (environment.CORS_ALLOWED_ORIGINS !== undefined) {
+    return environment.CORS_ALLOWED_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+  }
+
+  return environment.NODE_ENV === "production" ? [] : defaultLocalCorsAllowedOrigins;
 }
 
 function parsePersistenceMode(environment: NodeJS.ProcessEnv): PersistenceMode {

@@ -13,6 +13,35 @@ describe("API config", () => {
     assert.equal(config.authCodeDeliveryProvider, "local");
     assert.equal(config.paymentProvider, "local");
     assert.equal(config.showDevAuthCode, true);
+    assert.ok(config.corsAllowedOrigins.includes("http://127.0.0.1:3020"));
+    assert.ok(config.corsAllowedOrigins.includes("http://localhost:8082"));
+  });
+
+  it("parses explicit CORS origins", () => {
+    const config = loadConfig({
+      NODE_ENV: "test",
+      CORS_ALLOWED_ORIGINS: "https://admin.primawash.com, https://app.primawash.com ",
+    });
+
+    assert.deepEqual(config.corsAllowedOrigins, ["https://admin.primawash.com", "https://app.primawash.com"]);
+  });
+
+  it("requires explicit CORS origins in production", () => {
+    assert.throws(
+      () =>
+        loadConfig({
+          NODE_ENV: "production",
+          PERSISTENCE_MODE: "postgres",
+          DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/prima_wash",
+          AUTH_SESSION_SECRET: "production-auth-secret-with-enough-length",
+          AUTH_CODE_DELIVERY_PROVIDER: "webhook",
+          AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
+          PAYMENT_PROVIDER: "stripe",
+          STRIPE_SECRET_KEY: "sk_test_config",
+          STRIPE_WEBHOOK_SECRET: "whsec_config",
+        }),
+      /CORS_ALLOWED_ORIGINS is required in production/,
+    );
   });
 
   it("rejects exposed development auth codes in production", () => {
@@ -28,6 +57,7 @@ describe("API config", () => {
           PAYMENT_PROVIDER: "stripe",
           STRIPE_SECRET_KEY: "sk_test_config",
           STRIPE_WEBHOOK_SECRET: "whsec_config",
+          CORS_ALLOWED_ORIGINS: "https://admin.primawash.com",
           SHOW_DEV_AUTH_CODE: "true",
         }),
       /SHOW_DEV_AUTH_CODE must be disabled in production/,
@@ -43,6 +73,7 @@ describe("API config", () => {
           DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/prima_wash",
           AUTH_SESSION_SECRET: "production-auth-secret-with-enough-length",
           AUTH_CODE_DELIVERY_PROVIDER: "local",
+          CORS_ALLOWED_ORIGINS: "https://admin.primawash.com",
         }),
       /AUTH_CODE_DELIVERY_PROVIDER must not be 'local' in production/,
     );
@@ -60,6 +91,7 @@ describe("API config", () => {
           AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
           PAYMENT_PROVIDER: "local",
           STRIPE_WEBHOOK_SECRET: "whsec_config",
+          CORS_ALLOWED_ORIGINS: "https://admin.primawash.com",
         }),
       /PAYMENT_PROVIDER=stripe is required in production/,
     );
@@ -88,6 +120,7 @@ describe("API config", () => {
           AUTH_CODE_DELIVERY_WEBHOOK_URL: "https://delivery.example.com/auth-code",
           PAYMENT_PROVIDER: "stripe",
           STRIPE_SECRET_KEY: "sk_test_config",
+          CORS_ALLOWED_ORIGINS: "https://admin.primawash.com",
         }),
       /STRIPE_WEBHOOK_SECRET is required in production/,
     );
@@ -105,6 +138,7 @@ describe("API config", () => {
       PAYMENT_PROVIDER: "stripe",
       STRIPE_SECRET_KEY: "sk_test_config",
       STRIPE_WEBHOOK_SECRET: "whsec_config",
+      CORS_ALLOWED_ORIGINS: "https://admin.primawash.com,https://app.primawash.com",
     });
 
     assert.equal(config.authCodeDeliveryProvider, "webhook");
@@ -114,5 +148,6 @@ describe("API config", () => {
     assert.equal(config.stripeSecretKey, "sk_test_config");
     assert.equal(config.stripeWebhookSecret, "whsec_config");
     assert.equal(config.showDevAuthCode, false);
+    assert.deepEqual(config.corsAllowedOrigins, ["https://admin.primawash.com", "https://app.primawash.com"]);
   });
 });

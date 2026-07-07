@@ -30,6 +30,7 @@ const server = createApiServer({
   evidenceStorageProvider,
   publicDirectory,
   authSessionSecret: config.authSessionSecret,
+  corsAllowedOrigins: config.corsAllowedOrigins,
   ...(config.stripeWebhookSecret ? { stripeWebhookSecret: config.stripeWebhookSecret } : {}),
 });
 

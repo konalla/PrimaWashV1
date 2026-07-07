@@ -20,6 +20,21 @@ Then open:
 - Customer preview: `http://127.0.0.1:3001/`
 - Partner dashboard: `http://127.0.0.1:3000/?api=http://127.0.0.1:3001`
 
+Local manual preview flow:
+
+```powershell
+npm run db:migrate
+npm run dev:api:local
+npm run dev:web
+npm run dev:mobile:web
+```
+
+When port `3000` is occupied, run the web app on `3020` and open:
+
+- API health: `http://127.0.0.1:3011/health`
+- Admin/web portal: `http://127.0.0.1:3020/?api=http://127.0.0.1:3011`
+- Mobile web preview: `http://localhost:8082`
+
 Environment contract:
 
 - `PORT`: API port. Default `3001`.
@@ -29,6 +44,7 @@ Environment contract:
 - `POSTGRES_USER`: compose database user.
 - `POSTGRES_PASSWORD`: compose database password.
 - `POSTGRES_DB`: compose database name.
+- `CORS_ALLOWED_ORIGINS`: comma-separated browser origins allowed to call the API. Local development defaults include `127.0.0.1`/`localhost` web and Expo preview ports. Production must set this explicitly.
 - `AUTH_SESSION_SECRET`: signing secret for bearer sessions. Required in production and must contain at least 32 characters.
 - `AUTH_CODE_DELIVERY_PROVIDER`: `local` for development or `webhook` for generated-code delivery to an external email/SMS service. Production must not use `local`.
 - `AUTH_CODE_DELIVERY_WEBHOOK_URL`: required when `AUTH_CODE_DELIVERY_PROVIDER=webhook`.

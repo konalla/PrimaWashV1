@@ -91,7 +91,7 @@ import {
 } from "./http/auth.js";
 import { readJsonBody, readRawBody } from "./http/body.js";
 import { attachRequestLogging, type RequestContext } from "./http/request-log.js";
-import { applyCorsHeaders, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
+import { applyCorsHeaders, defaultLocalCorsAllowedOrigins, sendCorsPreflight, sendError, sendJson } from "./http/respond.js";
 import { findServiceOffering, serviceCatalog } from "./modules/availability/catalog.js";
 import { AuthService } from "./modules/auth/service.js";
 import {
@@ -164,6 +164,7 @@ export interface CreateApiServerOptions {
   readonly authCodeDeliveryProvider?: AuthCodeDeliveryProvider;
   readonly stripeWebhookSecret?: string;
   readonly evidenceStorageProvider?: EvidenceStorageProvider;
+  readonly corsAllowedOrigins?: readonly string[];
 }
 
 export function createApiServer(options: CreateApiServerOptions): Server {
@@ -176,6 +177,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
   const authSessionSecret =
     options.authSessionSecret ?? process.env.AUTH_SESSION_SECRET ?? "prima-wash-development-secret-change-before-production";
   const evidenceStorageProvider = options.evidenceStorageProvider ?? new InMemoryEvidenceStorageProvider();
+  const corsAllowedOrigins = options.corsAllowedOrigins ?? defaultLocalCorsAllowedOrigins;
   const authService = new AuthService(
     authSessionSecret,
     authCodeDeliveryProvider,
@@ -183,10 +185,10 @@ export function createApiServer(options: CreateApiServerOptions): Server {
   );
 
   return createServer(async (request, response) => {
-    applyCorsHeaders(request, response);
+    applyCorsHeaders(request, response, corsAllowedOrigins);
 
     if (request.method === "OPTIONS") {
-      sendCorsPreflight(request, response);
+      sendCorsPreflight(request, response, corsAllowedOrigins);
       return;
     }
 

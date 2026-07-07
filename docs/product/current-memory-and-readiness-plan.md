@@ -1,8 +1,17 @@
 # Prima Wash Current Memory and Readiness Plan
 
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
+
+Latest local environment hardening on 2026-07-07:
+
+- API CORS origins are now configurable through `CORS_ALLOWED_ORIGINS`.
+- Local development defaults include the standard web and Expo preview ports, including fallback web ports `3020` and `3021`.
+- Production config now requires explicit `CORS_ALLOWED_ORIGINS` instead of relying on local defaults.
+- Unknown browser origins are no longer echoed by the API CORS response.
+- Added `npm run dev:api:local` to start the API on port `3011` with local Postgres, exposed development auth code, and local preview CORS origins.
+- `docs/delivery/deployment.md` now documents the safer local preview restart flow.
 
 Latest Phase 0 verification on 2026-07-03:
 
@@ -656,7 +665,7 @@ npm run test:postgres
 Local app commands:
 
 ```powershell
-npm run dev:api
+npm run dev:api:local
 npm run dev:web
 npm run dev:mobile:web
 ```

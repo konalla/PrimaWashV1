@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApiErrorResponse } from "@prima-wash/contracts";
 
-const allowedLocalOrigins = new Set([
+export const defaultLocalCorsAllowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:3000",
   "http://127.0.0.1:3020",
@@ -16,7 +16,7 @@ const allowedLocalOrigins = new Set([
   "http://localhost:8083",
   "http://127.0.0.1:19006",
   "http://localhost:19006",
-]);
+];
 
 export function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
@@ -34,11 +34,17 @@ export function sendError(
   sendJson(response, statusCode, payload);
 }
 
-export function applyCorsHeaders(request: IncomingMessage, response: ServerResponse): void {
+export function applyCorsHeaders(
+  request: IncomingMessage,
+  response: ServerResponse,
+  allowedOrigins: readonly string[],
+): void {
   const origin = request.headers.origin;
-  const allowOrigin = typeof origin === "string" && allowedLocalOrigins.has(origin) ? origin : "http://127.0.0.1:3000";
 
-  response.setHeader("access-control-allow-origin", allowOrigin);
+  if (typeof origin === "string" && allowedOrigins.includes(origin)) {
+    response.setHeader("access-control-allow-origin", origin);
+  }
+
   response.setHeader("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
   response.setHeader(
     "access-control-allow-headers",
@@ -48,8 +54,12 @@ export function applyCorsHeaders(request: IncomingMessage, response: ServerRespo
   response.setHeader("vary", "Origin");
 }
 
-export function sendCorsPreflight(request: IncomingMessage, response: ServerResponse): void {
-  applyCorsHeaders(request, response);
+export function sendCorsPreflight(
+  request: IncomingMessage,
+  response: ServerResponse,
+  allowedOrigins: readonly string[],
+): void {
+  applyCorsHeaders(request, response, allowedOrigins);
   response.writeHead(204);
   response.end();
 }

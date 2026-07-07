@@ -1677,7 +1677,7 @@ describe("Prima Wash API", () => {
   });
 
   it("supports browser CORS preflight for local web and mobile previews", async () => {
-    for (const origin of ["http://127.0.0.1:3000", "http://127.0.0.1:8082"]) {
+    for (const origin of ["http://127.0.0.1:3000", "http://127.0.0.1:3020", "http://127.0.0.1:8082"]) {
       const response = await fetch(`${baseUrl}/v1/partner/dashboard`, {
         method: "OPTIONS",
         headers: {
@@ -1692,6 +1692,18 @@ describe("Prima Wash API", () => {
       assert.match(response.headers.get("access-control-allow-headers") ?? "", /x-prima-user-id/);
       assert.match(response.headers.get("access-control-allow-headers") ?? "", /x-prima-permissions/);
     }
+
+    const unknownOriginResponse = await fetch(`${baseUrl}/v1/partner/dashboard`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://unknown.example.com",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization",
+      },
+    });
+
+    assert.equal(unknownOriginResponse.status, 204);
+    assert.equal(unknownOriginResponse.headers.get("access-control-allow-origin"), null);
   });
 
   it("discovers verified partners and filters availability by location", async () => {

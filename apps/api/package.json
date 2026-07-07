@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:local": "tsx watch src/dev-local.ts",
     "start": "node dist/server.js",
     "check": "tsc --noEmit",
     "build": "tsc",
