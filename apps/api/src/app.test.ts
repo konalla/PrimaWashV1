@@ -3679,6 +3679,35 @@ describe("Prima Wash API", () => {
       evidenceRequestPayload.data.caseDetail.events.some((event) => event.note === "Evidence requested from partner: after_evidence"),
     );
 
+    const openEvidencePackResponse = await fetch(
+      `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-pack`,
+      { headers: internalHeaders },
+    );
+    const openEvidencePackPayload = (await openEvidencePackResponse.json()) as ApiResponse<PaymentReconciliationEvidencePack>;
+
+    assert.equal(openEvidencePackResponse.status, 200);
+    assert.ok(
+      openEvidencePackPayload.data.requestedEvidence.some((request) =>
+        request.evidenceKey === "after_evidence" && request.target === "partner" && request.status === "open",
+      ),
+    );
+
+    const afterEvidence = await createBookingEvidence(booking.id, "after", `evidence://${booking.id}/after-pack`, "After finance pack evidence.");
+    const satisfiedEvidencePackResponse = await fetch(
+      `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-pack`,
+      { headers: internalHeaders },
+    );
+    const satisfiedEvidencePackPayload = (await satisfiedEvidencePackResponse.json()) as ApiResponse<PaymentReconciliationEvidencePack>;
+
+    assert.equal(satisfiedEvidencePackResponse.status, 200);
+    assert.ok(
+      satisfiedEvidencePackPayload.data.requestedEvidence.some((request) =>
+        request.evidenceKey === "after_evidence" &&
+        request.status === "satisfied" &&
+        request.satisfiedBy.some((record) => record.includes(afterEvidence.id)),
+      ),
+    );
+
     const invalidEvidenceRequestResponse = await fetch(
       `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-requests`,
       {

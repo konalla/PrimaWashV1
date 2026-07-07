@@ -110,6 +110,8 @@ POST /v1/internal/payment-reconciliation-cases/:id/evidence-requests
 
 The endpoint requires `finance_write`. It does not delete or mutate evidence records. It appends a booking-scoped communication thread/message, adds a reconciliation case event, writes an audit event, and moves the case to `waiting_partner` or `waiting_customer` depending on the request target. PDF export and direct Stripe evidence submission are future hardening steps.
 
+Evidence packs also include a requested-evidence status section. Each finance request is derived from append-only communication messages and marked `open` until matching proof is present in booking evidence, handover, consent, or service-record data. This lets Finance decide whether a case can move out of `waiting_partner` or `waiting_customer` without manually cross-checking every operational record.
+
 ## Operational Runbooks
 
 Payment failed:

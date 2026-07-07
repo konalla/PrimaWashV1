@@ -1077,6 +1077,20 @@ export interface EvidencePackChecklistItem {
   readonly detail?: string;
 }
 
+export type EvidencePackRequestedEvidenceStatus = "open" | "satisfied";
+
+export interface EvidencePackRequestedEvidence {
+  readonly messageId: string;
+  readonly threadId: string;
+  readonly target: PaymentReconciliationEvidenceRequestTarget;
+  readonly evidenceKey: string;
+  readonly label: string;
+  readonly message: string;
+  readonly requestedAt: string;
+  readonly status: EvidencePackRequestedEvidenceStatus;
+  readonly satisfiedBy: readonly string[];
+}
+
 export interface PaymentReconciliationEvidencePack {
   readonly case: PaymentReconciliationCase;
   readonly events: readonly PaymentReconciliationCaseEvent[];
@@ -1090,6 +1104,7 @@ export interface PaymentReconciliationEvidencePack {
   readonly bookingConsents: readonly BookingConsent[];
   readonly serviceRecord?: ServiceRecord;
   readonly communicationThreads: readonly CommunicationThreadWithMessages[];
+  readonly requestedEvidence: readonly EvidencePackRequestedEvidence[];
   readonly auditEvents: readonly AuditEvent[];
   readonly checklist: readonly EvidencePackChecklistItem[];
   readonly generatedAt: string;

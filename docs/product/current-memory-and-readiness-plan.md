@@ -23,6 +23,7 @@ Latest finance evidence-pack work on 2026-07-07:
 - Finance users can download a text evidence-pack summary for internal review or Stripe dispute preparation.
 - Finance users with `finance_write` can request missing partner/customer evidence from the pack view. Requests append a booking-scoped communication, add a case event/audit trail, and move the case to `waiting_partner` or `waiting_customer`.
 - Partner work orders now surface finance evidence requests as visible tasks and let partners prefill the matching append-only evidence upload. Customer booking detail now surfaces booking-scoped Prima Wash evidence/info requests in a dedicated panel.
+- Evidence packs now include requested-evidence status, showing each finance request as `open` or `satisfied` based on matching booking evidence, handover, consent, or service-record records.
 
 Latest local environment hardening on 2026-07-07:
 

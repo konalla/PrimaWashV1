@@ -406,6 +406,16 @@
         padding: 10px;
       }
 
+      .evidence-pack-record.is-open {
+        border-color: rgba(185, 71, 71, 0.34);
+        background: rgba(185, 71, 71, 0.05);
+      }
+
+      .evidence-pack-record.is-satisfied {
+        border-color: rgba(12, 91, 104, 0.28);
+        background: var(--mist);
+      }
+
       .evidence-pack-record code {
         overflow-wrap: anywhere;
         color: var(--green-2);
@@ -4109,11 +4119,16 @@
 
         const missingCount = pack.checklist.filter((item) => item.status === "missing").length;
         const presentCount = pack.checklist.filter((item) => item.status === "present").length;
+        const openRequestCount = (pack.requestedEvidence || []).filter((item) => item.status === "open").length;
+        const satisfiedRequestCount = (pack.requestedEvidence || []).filter((item) => item.status === "satisfied").length;
         const checklistRows = pack.checklist
           .map((item) => {
             const requestTarget = paymentEvidenceRequestTarget(item.key);
+            const existingRequest = paymentEvidenceRequestForKey(pack, item.key);
             const requestAction = item.status === "missing" && requestTarget
-              ? canUseAdmin("finance_write")
+              ? existingRequest?.status === "open"
+                ? `<button class="action is-disabled" type="button" disabled>Requested</button>`
+                : canUseAdmin("finance_write")
                 ? `<button class="action" type="button" data-payment-evidence-request="${linkedCase.id}" data-evidence-key="${escapeHtml(item.key)}" data-evidence-label="${escapeHtml(item.label)}" data-evidence-target="${requestTarget}">${requestTarget === "partner" ? "Request partner evidence" : "Request customer info"}</button>`
                 : permissionBlockedButton("Request evidence", "finance_write")
               : "";
@@ -4139,14 +4154,45 @@
             <div class="finance-guidance">
               <strong>${missingCount ? `${missingCount} missing item${missingCount === 1 ? "" : "s"}` : "Evidence pack ready"}</strong>
               <span class="finance-row-meta">${presentCount} present - ${pack.paymentOperations.length} payment operations - ${pack.bookingEvidence.length} evidence records - ${pack.communicationThreads.length} communication threads</span>
+              <span class="finance-row-meta">${openRequestCount} open evidence request${openRequestCount === 1 ? "" : "s"} - ${satisfiedRequestCount} satisfied</span>
               <span class="finance-row-meta">Generated ${formatRelativeTime(pack.generatedAt)}</span>
             </div>
             <div class="dialog-actions">
               <button class="action" type="button" data-payment-case-export="${linkedCase.id}">Download text summary</button>
             </div>
             ${checklistRows}
+            ${renderEvidencePackRequestedEvidence(pack)}
             ${renderEvidencePackRecords(pack)}
           </div>
+        `;
+      }
+
+      function paymentEvidenceRequestForKey(pack, evidenceKey) {
+        return (pack.requestedEvidence || []).find((request) => request.evidenceKey === evidenceKey);
+      }
+
+      function renderEvidencePackRequestedEvidence(pack) {
+        const requests = pack.requestedEvidence || [];
+
+        if (!requests.length) {
+          return "";
+        }
+
+        return `
+          <section class="evidence-pack-section">
+            <h4>Requested evidence status</h4>
+            <div class="evidence-pack-list">
+              ${requests
+                .map((request) => evidencePackRecord(request.label, [
+                  ["Status", request.status === "satisfied" ? "Satisfied" : "Open"],
+                  ["Target", request.target],
+                  ["Requested", formatDateTime(request.requestedAt)],
+                  ["Message", request.message],
+                  ["Satisfied by", request.satisfiedBy.length ? request.satisfiedBy.join(", ") : "Waiting for matching proof"],
+                ], request.status === "satisfied" ? "is-satisfied" : "is-open"))
+                .join("")}
+            </div>
+          </section>
         `;
       }
 
@@ -4328,9 +4374,9 @@
         `;
       }
 
-      function evidencePackRecord(title, rows) {
+      function evidencePackRecord(title, rows, className = "") {
         return `
-          <article class="evidence-pack-record">
+          <article class="evidence-pack-record ${className}">
             <strong>${escapeHtml(title)}</strong>
             ${rows
               .filter(([, value]) => value !== undefined && value !== null && value !== "")

@@ -4566,6 +4566,122 @@ async function createPaymentReconciliationEvidenceRequest(
   };
 }
 
+function buildRequestedEvidenceStatus(input: {
+  readonly booking?: Booking | undefined;
+  readonly bookingEvidence: readonly { readonly id: string; readonly evidenceType: string }[];
+  readonly bookingHandovers: readonly { readonly id: string; readonly handoverType: string }[];
+  readonly bookingConsents: readonly { readonly id: string }[];
+  readonly serviceRecord?: ServiceRecord | undefined;
+  readonly communicationThreads: readonly {
+    readonly thread: CommunicationThread;
+    readonly messages: readonly { readonly id: string; readonly body: string; readonly createdAt: string }[];
+  }[];
+}): PaymentReconciliationEvidencePack["requestedEvidence"] {
+  return input.communicationThreads
+    .flatMap(({ thread, messages }) =>
+      messages
+        .map((message) => {
+          const evidenceKey = parseEvidenceRequestKey(message.body);
+
+          if (!evidenceKey || (thread.type !== "prima_to_partner" && thread.type !== "prima_to_owner")) {
+            return undefined;
+          }
+
+          const satisfiedBy = evidenceRequestSatisfiedBy(evidenceKey, input);
+
+          return {
+            messageId: message.id,
+            threadId: thread.id,
+            target: thread.type === "prima_to_partner" ? "partner" as const : "customer" as const,
+            evidenceKey,
+            label: evidenceRequestLabel(evidenceKey),
+            message: message.body.split("\n\n")[0] || message.body,
+            requestedAt: message.createdAt,
+            status: satisfiedBy.length > 0 ? "satisfied" as const : "open" as const,
+            satisfiedBy,
+          };
+        })
+        .filter((item): item is PaymentReconciliationEvidencePack["requestedEvidence"][number] => Boolean(item)),
+    )
+    .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+}
+
+function parseEvidenceRequestKey(body: string): string | undefined {
+  return body.match(/Evidence item:\s*([^\n]+)/)?.[1]?.trim();
+}
+
+function evidenceRequestSatisfiedBy(
+  evidenceKey: string,
+  input: {
+    readonly booking?: Booking | undefined;
+    readonly bookingEvidence: readonly { readonly id: string; readonly evidenceType: string }[];
+    readonly bookingHandovers: readonly { readonly id: string; readonly handoverType: string }[];
+    readonly bookingConsents: readonly { readonly id: string }[];
+    readonly serviceRecord?: ServiceRecord | undefined;
+  },
+): readonly string[] {
+  if (evidenceKey === "before_evidence") {
+    return input.bookingEvidence.filter((item) => item.evidenceType === "before").map((item) => `Evidence ${item.id}`);
+  }
+
+  if (evidenceKey === "after_evidence") {
+    return input.bookingEvidence.filter((item) => item.evidenceType === "after").map((item) => `Evidence ${item.id}`);
+  }
+
+  if (evidenceKey === "damage_evidence") {
+    return input.bookingEvidence.filter((item) => item.evidenceType === "damage").map((item) => `Evidence ${item.id}`);
+  }
+
+  if (evidenceKey === "pickup_handover") {
+    return input.bookingHandovers.filter((item) => item.handoverType === "pickup").map((item) => `Handover ${item.id}`);
+  }
+
+  if (evidenceKey === "return_handover") {
+    return input.bookingHandovers.filter((item) => item.handoverType === "return").map((item) => `Handover ${item.id}`);
+  }
+
+  if (evidenceKey === "onsite_receipt") {
+    return input.bookingHandovers.filter((item) => item.handoverType === "onsite_receipt").map((item) => `Handover ${item.id}`);
+  }
+
+  if (evidenceKey === "onsite_release") {
+    return input.bookingHandovers.filter((item) => item.handoverType === "onsite_release").map((item) => `Handover ${item.id}`);
+  }
+
+  if (evidenceKey === "service_record" && input.serviceRecord) {
+    return [`Service record ${input.serviceRecord.id}`];
+  }
+
+  if (evidenceKey === "customer_consent") {
+    return input.bookingConsents.map((item) => `Consent ${item.id}`);
+  }
+
+  if (evidenceKey === "communications") {
+    return [];
+  }
+
+  if (input.booking?.status === "completed" && evidenceKey === "service_record") {
+    return ["Completed booking"];
+  }
+
+  return [];
+}
+
+function evidenceRequestLabel(evidenceKey: string): string {
+  return {
+    before_evidence: "Before-service evidence",
+    after_evidence: "After-service evidence",
+    damage_evidence: "Damage evidence",
+    customer_consent: "Customer consent records",
+    pickup_handover: "Pickup handover",
+    return_handover: "Return handover",
+    onsite_receipt: "Onsite receipt handover",
+    onsite_release: "Onsite release handover",
+    service_record: "Completed service record",
+    communications: "Customer/booking communications",
+  }[evidenceKey] ?? evidenceKey.replaceAll("_", " ");
+}
+
 async function buildPaymentReconciliationEvidencePack(
   repositories: Repositories,
   detail: PaymentReconciliationCaseDetail,
@@ -4602,6 +4718,14 @@ async function buildPaymentReconciliationEvidencePack(
         messages: await repositories.communications.getMessages(thread.id),
       })),
   );
+  const requestedEvidence = buildRequestedEvidenceStatus({
+    booking,
+    bookingEvidence,
+    bookingHandovers,
+    bookingConsents,
+    serviceRecord,
+    communicationThreads,
+  });
   const auditEvents = (await repositories.audit.list(200)).filter((event) =>
     [
       reconciliationCase.id,
@@ -4628,6 +4752,7 @@ async function buildPaymentReconciliationEvidencePack(
     bookingConsents,
     ...(serviceRecord ? { serviceRecord } : {}),
     communicationThreads,
+    requestedEvidence,
     auditEvents,
     checklist: buildPaymentReconciliationEvidenceChecklist({
       booking,
