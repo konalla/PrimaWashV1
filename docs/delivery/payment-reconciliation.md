@@ -75,6 +75,31 @@ Standard guidance fields:
 - `customerImpact`: plain-language risk to the customer or booking.
 - `nextStep`: first action expected from the case owner.
 
+## Evidence Packs
+
+Finance users can load an evidence pack for a reconciliation case from:
+
+```text
+GET /v1/internal/payment-reconciliation-cases/:id/evidence-pack
+```
+
+The endpoint requires `finance_read` and assembles the pack at read time from existing operational records. It does not create mutable evidence-pack records.
+
+Pack contents:
+
+- Reconciliation case and case event timeline.
+- Booking, vehicle, partner location, and payment intent records when available.
+- Payment operation ledger rows for the booking.
+- Booking evidence records.
+- Booking handover records.
+- Booking consent records.
+- Completed service record when available.
+- Booking and owner communication threads with messages.
+- Recent audit events linked to the case, booking, payment operation, payment intent, vehicle, or partner location.
+- Checklist showing present, missing, and not-applicable evidence items.
+
+The Finance dashboard exposes the pack from the selected ledger row when a reconciliation case is linked. Use the checklist to decide whether the case is ready for dispute evidence, customer follow-up, partner escalation, refund, write-off, or engineering escalation.
+
 ## Operational Runbooks
 
 Payment failed:

@@ -1055,6 +1055,33 @@ export interface PaymentReconciliationCaseDetail {
   readonly events: readonly PaymentReconciliationCaseEvent[];
 }
 
+export type EvidencePackItemStatus = "present" | "missing" | "not_applicable";
+
+export interface EvidencePackChecklistItem {
+  readonly key: string;
+  readonly label: string;
+  readonly status: EvidencePackItemStatus;
+  readonly detail?: string;
+}
+
+export interface PaymentReconciliationEvidencePack {
+  readonly case: PaymentReconciliationCase;
+  readonly events: readonly PaymentReconciliationCaseEvent[];
+  readonly booking?: Booking;
+  readonly vehicle?: Vehicle;
+  readonly partnerLocation?: PartnerLocation;
+  readonly paymentIntent?: PaymentIntent;
+  readonly paymentOperations: readonly PaymentOperation[];
+  readonly bookingEvidence: readonly BookingEvidence[];
+  readonly bookingHandovers: readonly BookingHandover[];
+  readonly bookingConsents: readonly BookingConsent[];
+  readonly serviceRecord?: ServiceRecord;
+  readonly communicationThreads: readonly CommunicationThreadWithMessages[];
+  readonly auditEvents: readonly AuditEvent[];
+  readonly checklist: readonly EvidencePackChecklistItem[];
+  readonly generatedAt: string;
+}
+
 export type PaymentProviderReconciliationRunStatus = "running" | "completed" | "failed";
 
 export interface PaymentProviderReconciliationRun {

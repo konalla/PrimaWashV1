@@ -12,6 +12,14 @@ Latest finance operations runbook work on 2026-07-07:
 - Resolving or writing off a case from the dashboard can reuse the recommended action as resolution context.
 - `docs/delivery/payment-reconciliation.md` now includes operational runbooks for payment failures, Stripe disputes, invalid transitions, duplicate provider events, provider mismatches, customer follow-up, and partner evidence requests.
 
+Latest finance evidence-pack work on 2026-07-07:
+
+- Added a shared `PaymentReconciliationEvidencePack` contract.
+- Added `GET /v1/internal/payment-reconciliation-cases/:id/evidence-pack` for internal finance users with `finance_read`.
+- Evidence packs are assembled from existing operational records: case timeline, booking, vehicle, partner location, payment intent, payment operation ledger, booking evidence, handovers, consents, service record, communications, and recent linked audit events.
+- Evidence packs include a present/missing/not-applicable checklist for finance readiness.
+- The internal Finance dashboard can now load and show the evidence pack from a linked reconciliation case.
+
 Latest local environment hardening on 2026-07-07:
 
 - API CORS origins are now configurable through `CORS_ALLOWED_ORIGINS`.

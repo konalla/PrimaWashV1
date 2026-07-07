@@ -59,6 +59,8 @@ import type {
   PaymentStatus,
   PaymentReconciliationCaseType,
   PaymentReconciliationCaseStatus,
+  PaymentReconciliationCaseDetail,
+  PaymentReconciliationEvidencePack,
   PartnerLocation,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
@@ -2398,6 +2400,30 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     }
 
     const reconciliationCaseMatch = requestUrl.pathname.match(/^\/v1\/internal\/payment-reconciliation-cases\/([^/]+)$/);
+    const reconciliationCaseEvidencePackMatch = requestUrl.pathname.match(
+      /^\/v1\/internal\/payment-reconciliation-cases\/([^/]+)\/evidence-pack$/,
+    );
+
+    if (reconciliationCaseEvidencePackMatch && request.method === "GET") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        const caseId = decodeURIComponent(reconciliationCaseEvidencePackMatch[1] ?? "");
+        const detail = await options.repositories.paymentReconciliationCases.get(caseId);
+
+        if (!detail) {
+          sendError(response, 404, "payment_reconciliation_case_not_found", "Payment reconciliation case does not exist");
+          return;
+        }
+
+        const pack = await buildPaymentReconciliationEvidencePack(options.repositories, detail);
+        sendJson(response, 200, { data: pack });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
 
     if (reconciliationCaseMatch && request.method === "GET") {
       try {
@@ -4403,6 +4429,152 @@ async function canAccessCommunicationThread(
   } catch {
     return false;
   }
+}
+
+async function buildPaymentReconciliationEvidencePack(
+  repositories: Repositories,
+  detail: PaymentReconciliationCaseDetail,
+): Promise<PaymentReconciliationEvidencePack> {
+  const reconciliationCase = detail.case;
+  const booking = await repositories.bookings.get(reconciliationCase.bookingId);
+  const vehicle = booking ? await repositories.vehicles.get(booking.vehicleId) : undefined;
+  const partnerLocation = booking ? await repositories.partners.get(booking.partnerLocationId) : undefined;
+  const paymentOperations = await repositories.paymentOperations.list({ bookingId: reconciliationCase.bookingId, limit: 100 });
+  const paymentIntent = reconciliationCase.paymentIntentId
+    ? await repositories.payments.get(reconciliationCase.paymentIntentId)
+    : await repositories.payments.getByBookingId(reconciliationCase.bookingId);
+  const bookingEvidence = await repositories.bookingEvidence.list(reconciliationCase.bookingId);
+  const bookingHandovers = await repositories.bookingHandovers.list(reconciliationCase.bookingId);
+  const bookingConsents = await repositories.bookingConsents.list(reconciliationCase.bookingId);
+  const serviceRecord = booking
+    ? (await repositories.serviceRecords.list(booking.ownerId)).find((record) => record.bookingId === booking.id)
+    : undefined;
+  const bookingThreads = await repositories.communications.list({
+    resourceType: "booking",
+    resourceId: reconciliationCase.bookingId,
+  });
+  const ownerThreads = booking
+    ? await repositories.communications.list({
+        resourceType: "owner",
+        resourceId: booking.ownerId,
+      })
+    : [];
+  const communicationThreads = await Promise.all(
+    [...bookingThreads, ...ownerThreads]
+      .filter((thread, index, threads) => threads.findIndex((candidate) => candidate.id === thread.id) === index)
+      .map(async (thread) => ({
+        thread,
+        messages: await repositories.communications.getMessages(thread.id),
+      })),
+  );
+  const auditEvents = (await repositories.audit.list(200)).filter((event) =>
+    [
+      reconciliationCase.id,
+      reconciliationCase.bookingId,
+      reconciliationCase.paymentOperationId,
+      reconciliationCase.paymentIntentId,
+      booking?.vehicleId,
+      booking?.partnerLocationId,
+    ]
+      .filter(Boolean)
+      .includes(event.resourceId),
+  );
+
+  return {
+    case: reconciliationCase,
+    events: detail.events,
+    ...(booking ? { booking } : {}),
+    ...(vehicle ? { vehicle } : {}),
+    ...(partnerLocation ? { partnerLocation } : {}),
+    ...(paymentIntent ? { paymentIntent } : {}),
+    paymentOperations,
+    bookingEvidence,
+    bookingHandovers,
+    bookingConsents,
+    ...(serviceRecord ? { serviceRecord } : {}),
+    communicationThreads,
+    auditEvents,
+    checklist: buildPaymentReconciliationEvidenceChecklist({
+      booking,
+      vehicle,
+      partnerLocation,
+      paymentIntent,
+      paymentOperations,
+      bookingEvidence,
+      bookingHandovers,
+      bookingConsents,
+      serviceRecord,
+      communicationThreadCount: communicationThreads.length,
+    }),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function buildPaymentReconciliationEvidenceChecklist(input: {
+  readonly booking?: Booking | undefined;
+  readonly vehicle?: Vehicle | undefined;
+  readonly partnerLocation?: PartnerLocation | undefined;
+  readonly paymentIntent?: PaymentIntent | undefined;
+  readonly paymentOperations: readonly PaymentOperation[];
+  readonly bookingEvidence: readonly { readonly evidenceType: string }[];
+  readonly bookingHandovers: readonly { readonly handoverType: string }[];
+  readonly bookingConsents: readonly unknown[];
+  readonly serviceRecord?: ServiceRecord | undefined;
+  readonly communicationThreadCount: number;
+}): PaymentReconciliationEvidencePack["checklist"] {
+  const booking = input.booking;
+  const pickupReturn = booking?.onsiteServiceMode === "pickup_return" || Boolean(booking?.valetRequested);
+  const onsiteOrPickup = booking?.onsiteServiceMode === "customer_property" || booking?.onsiteServiceMode === "onsite" || pickupReturn;
+  const beforeCount = input.bookingEvidence.filter((item) => item.evidenceType === "before").length;
+  const afterCount = input.bookingEvidence.filter((item) => item.evidenceType === "after").length;
+  const damageCount = input.bookingEvidence.filter((item) => item.evidenceType === "damage").length;
+  const hasPickup = input.bookingHandovers.some((item) => item.handoverType === "pickup");
+  const hasReturn = input.bookingHandovers.some((item) => item.handoverType === "return");
+  const hasOnsiteReceipt = input.bookingHandovers.some((item) => item.handoverType === "onsite_receipt");
+  const hasOnsiteRelease = input.bookingHandovers.some((item) => item.handoverType === "onsite_release");
+
+  return [
+    evidenceChecklistItem("booking", "Booking record", Boolean(input.booking), input.booking?.status),
+    evidenceChecklistItem("vehicle", "Vehicle profile", Boolean(input.vehicle), input.vehicle?.plateNumber),
+    evidenceChecklistItem("partner", "Partner/location record", Boolean(input.partnerLocation), input.partnerLocation?.name),
+    evidenceChecklistItem("payment_intent", "Payment intent", Boolean(input.paymentIntent), input.paymentIntent?.status),
+    evidenceChecklistItem(
+      "payment_ledger",
+      "Payment operation ledger",
+      input.paymentOperations.length > 0,
+      `${input.paymentOperations.length} operation${input.paymentOperations.length === 1 ? "" : "s"}`,
+    ),
+    evidenceChecklistItem("before_evidence", "Before-service evidence", beforeCount > 0, `${beforeCount} record${beforeCount === 1 ? "" : "s"}`),
+    evidenceChecklistItem("after_evidence", "After-service evidence", afterCount > 0, `${afterCount} record${afterCount === 1 ? "" : "s"}`),
+    evidenceChecklistItem("damage_evidence", "Damage evidence", damageCount > 0, damageCount > 0 ? `${damageCount} record${damageCount === 1 ? "" : "s"}` : "No damage evidence recorded", true),
+    evidenceChecklistItem("customer_consent", "Customer consent records", input.bookingConsents.length > 0, `${input.bookingConsents.length} consent${input.bookingConsents.length === 1 ? "" : "s"}`, !pickupReturn && !onsiteOrPickup),
+    evidenceChecklistItem("pickup_handover", "Pickup handover", hasPickup, hasPickup ? "Pickup recorded" : "Pickup not recorded", !pickupReturn),
+    evidenceChecklistItem("return_handover", "Return handover", hasReturn, hasReturn ? "Return recorded" : "Return not recorded", !pickupReturn),
+    evidenceChecklistItem("onsite_receipt", "Onsite receipt handover", hasOnsiteReceipt, hasOnsiteReceipt ? "Receipt recorded" : "Receipt not recorded", !onsiteOrPickup || pickupReturn),
+    evidenceChecklistItem("onsite_release", "Onsite release handover", hasOnsiteRelease, hasOnsiteRelease ? "Release recorded" : "Release not recorded", !onsiteOrPickup || pickupReturn),
+    evidenceChecklistItem("service_record", "Completed service record", Boolean(input.serviceRecord), input.serviceRecord?.completedAt, booking?.status !== "completed"),
+    evidenceChecklistItem(
+      "communications",
+      "Customer/booking communications",
+      input.communicationThreadCount > 0,
+      `${input.communicationThreadCount} thread${input.communicationThreadCount === 1 ? "" : "s"}`,
+    ),
+  ];
+}
+
+function evidenceChecklistItem(
+  key: string,
+  label: string,
+  present: boolean,
+  detail?: string | undefined,
+  notApplicable = false,
+): PaymentReconciliationEvidencePack["checklist"][number] {
+  return {
+    key,
+    label,
+    status: notApplicable ? "not_applicable" : present ? "present" : "missing",
+    ...(detail ? { detail } : {}),
+  };
 }
 
 async function assertPartnerBookingAccess(

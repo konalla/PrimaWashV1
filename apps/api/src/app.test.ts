@@ -35,6 +35,7 @@ import type {
   PaymentOperation,
   PaymentReconciliationCase,
   PaymentReconciliationCaseDetail,
+  PaymentReconciliationEvidencePack,
   PaymentProviderReconciliationRun,
   PrimaWashDayBookingItem,
   Property,
@@ -3612,6 +3613,42 @@ describe("Prima Wash API", () => {
     assert.equal(listResponse.status, 200);
     assert.ok(listPayload.data.some((item) => item.id === createPayload.data.case.id));
     assert.ok(listPayload.data.every((item) => item.guidance));
+
+    await createBookingEvidence(booking.id, "before", `evidence://${booking.id}/before-pack`, "Before finance pack evidence.");
+    await createBookingHandover(booking.id, "onsite_receipt", {
+      conditionNotes: "Vehicle received for service.",
+    });
+    const threadResponse = await fetch(`${baseUrl}/v1/communication/threads`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "prima_to_owner",
+        resourceType: "booking",
+        resourceId: booking.id,
+        subject: "Payment reconciliation follow-up",
+        initialMessage: "Finance is reviewing the provider payment mismatch.",
+      }),
+    });
+
+    assert.equal(threadResponse.status, 201);
+
+    const evidencePackResponse = await fetch(
+      `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-pack`,
+      { headers: internalHeaders },
+    );
+    const evidencePackPayload = (await evidencePackResponse.json()) as ApiResponse<PaymentReconciliationEvidencePack>;
+
+    assert.equal(evidencePackResponse.status, 200);
+    assert.equal(evidencePackPayload.data.case.id, createPayload.data.case.id);
+    assert.equal(evidencePackPayload.data.booking?.id, booking.id);
+    assert.equal(evidencePackPayload.data.vehicle?.id, vehicle.id);
+    assert.ok(evidencePackPayload.data.paymentIntent);
+    assert.ok(evidencePackPayload.data.paymentOperations.some((operation) => operation.id === authorizeOperation.id));
+    assert.ok(evidencePackPayload.data.bookingEvidence.some((record) => record.evidenceType === "before"));
+    assert.ok(evidencePackPayload.data.bookingHandovers.some((record) => record.handoverType === "onsite_receipt"));
+    assert.ok(evidencePackPayload.data.communicationThreads.some((thread) => thread.messages.length > 0));
+    assert.ok(evidencePackPayload.data.checklist.some((item) => item.key === "after_evidence" && item.status === "missing"));
+    assert.ok(evidencePackPayload.data.checklist.some((item) => item.key === "payment_ledger" && item.status === "present"));
 
     const invalidResolveResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}`, {
       method: "PATCH",
