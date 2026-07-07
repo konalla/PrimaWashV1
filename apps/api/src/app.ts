@@ -2298,7 +2298,16 @@ export function createApiServer(options: CreateApiServerOptions): Server {
 
         sendJson(response, 201, { data: result });
       } catch (error) {
-        sendAuthError(response, error);
+        if (sendAuthError(response, error)) {
+          return;
+        }
+
+        if (error instanceof Error && error.message === "payment_provider_reconciliation_run_already_running") {
+          sendError(response, 409, error.message, "A provider reconciliation run is already in progress for this provider");
+          return;
+        }
+
+        sendError(response, 500, "payment_provider_reconciliation_run_failed", "Provider reconciliation could not be started");
       }
 
       return;

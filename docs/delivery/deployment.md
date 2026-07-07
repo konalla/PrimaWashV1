@@ -72,3 +72,9 @@ Staging requirements before external users:
 - Run migrations as a controlled release step, not an always-on service.
 - Add database backup, restore, and migration rollback procedures.
 - Add Stripe webhook delivery monitoring and payment reconciliation runbooks.
+
+Payment reconciliation scheduler:
+
+- Use `docs/delivery/payment-reconciliation.md` as the runbook.
+- Start with `npm run reconcile:payments:loop -- --provider=stripe --limit=200 --interval-ms=900000` in staging/pilot production.
+- Ensure only one scheduler instance is configured per environment. The API also enforces one running provider reconciliation per provider as a safety net.

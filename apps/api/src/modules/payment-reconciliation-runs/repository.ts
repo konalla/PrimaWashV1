@@ -46,6 +46,10 @@ export class InMemoryPaymentProviderReconciliationRunRepository implements Payme
   }
 
   async start(input: StartPaymentProviderReconciliationRunInput): Promise<PaymentProviderReconciliationRun> {
+    if ([...this.#runs.values()].some((run) => run.provider === input.provider && run.status === "running")) {
+      throw new Error("payment_provider_reconciliation_run_already_running");
+    }
+
     const run: PaymentProviderReconciliationRun = {
       id: `payrecon_${crypto.randomUUID()}`,
       provider: input.provider,
@@ -137,27 +141,35 @@ export class PostgresPaymentProviderReconciliationRunRepository implements Payme
       casesOpened: 0,
       startedAt: new Date().toISOString(),
     };
-    const result = await this.pool.query<PaymentProviderReconciliationRunRow>(
-      `insert into payment_provider_reconciliation_runs (
-        id, provider, status, actor_user_id, request_id,
-        checked_count, matched_count, mismatched_count, failed_count, cases_opened_count,
-        started_at
-      )
-      values ($1, $2, $3, $4, $5, 0, 0, 0, 0, 0, $6)
-      returning id, provider, status, actor_user_id, request_id,
-                checked_count, matched_count, mismatched_count, failed_count, cases_opened_count,
-                error_message, started_at, completed_at`,
-      [
-        run.id,
-        run.provider,
-        run.status,
-        run.actorUserId ?? null,
-        run.requestId ?? null,
-        run.startedAt,
-      ],
-    );
+    try {
+      const result = await this.pool.query<PaymentProviderReconciliationRunRow>(
+        `insert into payment_provider_reconciliation_runs (
+          id, provider, status, actor_user_id, request_id,
+          checked_count, matched_count, mismatched_count, failed_count, cases_opened_count,
+          started_at
+        )
+        values ($1, $2, $3, $4, $5, 0, 0, 0, 0, 0, $6)
+        returning id, provider, status, actor_user_id, request_id,
+                  checked_count, matched_count, mismatched_count, failed_count, cases_opened_count,
+                  error_message, started_at, completed_at`,
+        [
+          run.id,
+          run.provider,
+          run.status,
+          run.actorUserId ?? null,
+          run.requestId ?? null,
+          run.startedAt,
+        ],
+      );
 
-    return mapRequiredRunRow(result.rows[0]);
+      return mapRequiredRunRow(result.rows[0]);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new Error("payment_provider_reconciliation_run_already_running");
+      }
+
+      throw error;
+    }
   }
 
   async complete(id: string, input: CompletePaymentProviderReconciliationRunInput): Promise<PaymentProviderReconciliationRun> {
@@ -258,4 +270,8 @@ function normalizeLimit(limit?: number): number {
   }
 
   return Math.max(1, Math.min(Math.trunc(limit), 100));
+}
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }

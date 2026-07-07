@@ -3740,6 +3740,76 @@ describe("Prima Wash API", () => {
     assert.equal(partnerResponse.status, 403);
   });
 
+  it("prevents overlapping provider reconciliation runs for the same provider", async () => {
+    const firstRun = await repositories.paymentProviderReconciliationRuns.start({
+      provider: "overlap_test",
+      requestId: "overlap-test-001",
+      actor: {
+        userId: "usr_internal_finance_001",
+        role: "internal",
+        permissions: ["finance_read", "finance_write"],
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        repositories.paymentProviderReconciliationRuns.start({
+          provider: "overlap_test",
+          requestId: "overlap-test-002",
+          actor: {
+            userId: "usr_internal_finance_001",
+            role: "internal",
+            permissions: ["finance_read", "finance_write"],
+          },
+        }),
+      /payment_provider_reconciliation_run_already_running/,
+    );
+
+    await repositories.paymentProviderReconciliationRuns.complete(firstRun.id, {
+      checked: 0,
+      matched: 0,
+      mismatched: 0,
+      failed: 0,
+      casesOpened: 0,
+    });
+
+    const nextRun = await repositories.paymentProviderReconciliationRuns.start({
+      provider: "overlap_test",
+      requestId: "overlap-test-003",
+    });
+
+    assert.equal(nextRun.status, "running");
+    await repositories.paymentProviderReconciliationRuns.complete(nextRun.id, {
+      checked: 0,
+      matched: 0,
+      mismatched: 0,
+      failed: 0,
+      casesOpened: 0,
+    });
+
+    const apiRun = await repositories.paymentProviderReconciliationRuns.start({
+      provider: "api_overlap_test",
+      requestId: "api-overlap-test-001",
+    });
+    const response = await fetch(`${baseUrl}/v1/internal/payment-provider-reconciliation-runs`, {
+      method: "POST",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ provider: "api_overlap_test" }),
+    });
+    const payload = (await response.json()) as ApiErrorResponse;
+
+    assert.equal(response.status, 409);
+    assert.equal(payload.code, "payment_provider_reconciliation_run_already_running");
+
+    await repositories.paymentProviderReconciliationRuns.complete(apiRun.id, {
+      checked: 0,
+      matched: 0,
+      mismatched: 0,
+      failed: 0,
+      casesOpened: 0,
+    });
+  });
+
   it("rejects refund attempts before payment capture", async () => {
     const vehicle = await createVehicle("PAYREF2");
     const booking = await createBooking(vehicle.id, "wash_basic");

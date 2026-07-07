@@ -13,6 +13,16 @@ Latest local environment hardening on 2026-07-07:
 - Added `npm run dev:api:local` to start the API on port `3011` with local Postgres, exposed development auth code, and local preview CORS origins.
 - `docs/delivery/deployment.md` now documents the safer local preview restart flow.
 
+Latest payment reconciliation scheduling hardening on 2026-07-07:
+
+- Added `0042_payment_provider_reconciliation_run_lock.sql`.
+- Postgres now enforces one running provider reconciliation run per provider with a partial unique index.
+- In-memory reconciliation-run storage enforces the same overlap rule for tests and local fallback.
+- Manual API reconciliation attempts now return `409` when a run is already active for that provider.
+- `npm run reconcile:payments` now supports scheduler-safe structured logs, `--mode=once`, `--mode=loop`, `--interval-ms`, provider selection, and exit codes.
+- Added `npm run reconcile:payments:loop` for long-running scheduler deployments.
+- Added `docs/delivery/payment-reconciliation.md` with schedule, exit-code, overlap, alert, and backfill guidance.
+
 Latest Phase 0 verification on 2026-07-03:
 
 - `npm run check` passed.
@@ -296,7 +306,7 @@ Latest operational provider reconciliation runs on 2026-07-06:
 - Added memory and Postgres repositories for provider reconciliation run history.
 - Moved provider mismatch reconciliation into a reusable service used by both API and CLI entry points.
 - Added `GET /v1/internal/payment-provider-reconciliation-runs` for finance-read history review.
-- Added root and API package command `npm run reconcile:payments` for scheduled jobs/cron-style execution.
+- Added root and API package command `npm run reconcile:payments` for scheduled jobs/cron-style execution; later hardened with loop mode and overlap protection on 2026-07-07.
 - The web Finance dashboard now shows recent provider reconciliation runs below the run summary.
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 133 API tests.
@@ -346,7 +356,7 @@ The repository is a TypeScript monorepo with:
 
 Backend foundations now include:
 
-- Postgres migrations through `0041_payment_provider_reconciliation_runs.sql`.
+- Postgres migrations through `0042_payment_provider_reconciliation_run_lock.sql`.
 - Repository adapters for memory and Postgres.
 - OTP-style auth code request/verify.
 - Persisted verification challenges and revocable auth sessions.
@@ -431,7 +441,7 @@ Product and UX:
 Platform readiness:
 
 - Docker/compose exists for local services, but production deployment, managed database setup, backups, restore drills, secret management, CI gates, observability, and incident workflows are not launch-ready.
-- The latest DB migration is now `0041_payment_provider_reconciliation_runs.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
+- The latest DB migration is now `0042_payment_provider_reconciliation_run_lock.sql`; apply and smoke-test it whenever a local or staging Postgres database is refreshed.
 
 ## Readiness Assessment
 
