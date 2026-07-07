@@ -4,6 +4,13 @@ Last updated: 2026-07-07
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
+Launch-freeze update on 2026-07-07:
+
+- The active goal is now a controlled Singapore pilot launch as soon as possible, not continued feature expansion.
+- `docs/product/launch-freeze-checklist.md` is the finish-line document for pilot readiness.
+- New work should be accepted only if it directly completes a Must Fix item from the launch-freeze checklist.
+- Feature expansion, deeper automation, broad UI redesigns, realtime messaging, push notifications, advanced analytics, and global expansion work are post-pilot unless they become launch blockers.
+
 Latest finance operations runbook work on 2026-07-07:
 
 - Payment reconciliation cases now include derived runbook guidance in the shared contract and API responses.
