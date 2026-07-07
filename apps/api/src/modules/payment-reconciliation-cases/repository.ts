@@ -5,6 +5,7 @@ import type {
   PaymentReconciliationCase,
   PaymentReconciliationCaseDetail,
   PaymentReconciliationCaseEvent,
+  PaymentReconciliationCaseGuidance,
   PaymentReconciliationCaseStatus,
   PaymentReconciliationCaseType,
   UpdatePaymentReconciliationCaseRequest,
@@ -54,6 +55,9 @@ const caseStatuses: readonly PaymentReconciliationCaseStatus[] = [
 ];
 const caseTypeSet = new Set<PaymentReconciliationCaseType>(caseTypes);
 const caseStatusSet = new Set<PaymentReconciliationCaseStatus>(caseStatuses);
+type PaymentReconciliationCaseRecord = Omit<PaymentReconciliationCase, "guidance"> & {
+  readonly guidance?: PaymentReconciliationCaseGuidance;
+};
 
 export function validateCreatePaymentReconciliationCase(input: Partial<CreatePaymentReconciliationCaseRequest>): readonly string[] {
   const errors: string[] = [];
@@ -118,12 +122,13 @@ export class InMemoryPaymentReconciliationCaseRepository implements PaymentRecon
       .filter((record) => !filter.bookingId || record.bookingId === filter.bookingId)
       .filter((record) => !filter.status || filter.status === "all" || record.status === filter.status)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(withPaymentReconciliationCaseGuidance)
       .slice(0, normalizeLimit(filter.limit));
   }
 
   async get(id: string): Promise<PaymentReconciliationCaseDetail | undefined> {
     const record = this.#cases.get(id);
-    return record ? { case: record, events: this.#eventsFor(id) } : undefined;
+    return record ? { case: withPaymentReconciliationCaseGuidance(record), events: this.#eventsFor(id) } : undefined;
   }
 
   async findOpenByProviderEvent(input: {
@@ -138,7 +143,7 @@ export class InMemoryPaymentReconciliationCaseRepository implements PaymentRecon
         candidate.providerEventType === input.providerEventType &&
         !isClosedCaseStatus(candidate.status),
     );
-    return record ? { case: record, events: this.#eventsFor(record.id) } : undefined;
+    return record ? { case: withPaymentReconciliationCaseGuidance(record), events: this.#eventsFor(record.id) } : undefined;
   }
 
   async create(input: CreatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail> {
@@ -155,7 +160,7 @@ export class InMemoryPaymentReconciliationCaseRepository implements PaymentRecon
     ];
     this.#cases.set(record.id, record);
     this.#events.set(record.id, events);
-    return { case: record, events: this.#eventsFor(record.id) };
+    return { case: withPaymentReconciliationCaseGuidance(record), events: this.#eventsFor(record.id) };
   }
 
   async update(id: string, input: UpdatePaymentReconciliationCaseInput): Promise<PaymentReconciliationCaseDetail | undefined> {
@@ -169,7 +174,7 @@ export class InMemoryPaymentReconciliationCaseRepository implements PaymentRecon
     const events = this.#events.get(id) ?? [];
     const nextEvents = buildUpdateEvents(existing, updated, input);
     this.#events.set(id, [...events, ...nextEvents]);
-    return { case: updated, events: this.#eventsFor(id) };
+    return { case: withPaymentReconciliationCaseGuidance(updated), events: this.#eventsFor(id) };
   }
 
   #eventsFor(caseId: string): readonly PaymentReconciliationCaseEvent[] {
@@ -381,7 +386,7 @@ function buildPaymentReconciliationCase(input: CreatePaymentReconciliationCaseIn
   const providerReference = input.operation.providerReference ?? stringMetadataValue(input.operation.metadata?.providerReference);
   const providerEventType =
     stringMetadataValue(input.operation.metadata?.providerEventType) ?? stringMetadataValue(input.operation.metadata?.stripeEventType);
-  return {
+  return withPaymentReconciliationCaseGuidance({
     id: `paycase_${crypto.randomUUID()}`,
     caseType: input.caseType,
     status: "open",
@@ -396,7 +401,7 @@ function buildPaymentReconciliationCase(input: CreatePaymentReconciliationCaseIn
     openedByUserId: input.actor.userId,
     openedAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 function updatePaymentReconciliationCase(
@@ -433,7 +438,7 @@ function updatePaymentReconciliationCase(
     (updated as { resolvedAt?: string }).resolvedAt = resolvedAt;
   }
 
-  return updated;
+  return withPaymentReconciliationCaseGuidance(updated);
 }
 
 function buildUpdateEvents(
@@ -521,7 +526,7 @@ async function insertPaymentReconciliationCaseEvent(
 }
 
 function mapPaymentReconciliationCaseRow(row: PaymentReconciliationCaseRow): PaymentReconciliationCase {
-  return {
+  return withPaymentReconciliationCaseGuidance({
     id: row.id,
     caseType: row.case_type,
     status: row.status,
@@ -538,7 +543,7 @@ function mapPaymentReconciliationCaseRow(row: PaymentReconciliationCaseRow): Pay
     openedAt: new Date(row.opened_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     ...(row.resolved_at ? { resolvedAt: new Date(row.resolved_at).toISOString() } : {}),
-  };
+  });
 }
 
 function mapPaymentReconciliationCaseEventRow(row: PaymentReconciliationCaseEventRow): PaymentReconciliationCaseEvent {
@@ -566,6 +571,116 @@ function parseMetadata(metadata: PaymentReconciliationCaseEventRow["metadata"]):
   }
 
   return metadata;
+}
+
+function withPaymentReconciliationCaseGuidance(record: PaymentReconciliationCaseRecord): PaymentReconciliationCase {
+  return {
+    ...record,
+    guidance: paymentReconciliationCaseGuidance(record),
+  };
+}
+
+function paymentReconciliationCaseGuidance(record: PaymentReconciliationCaseRecord): PaymentReconciliationCaseGuidance {
+  const closed = isClosedCaseStatus(record.status);
+  const waitingCustomer = record.status === "waiting_customer";
+  const waitingPartner = record.status === "waiting_partner";
+
+  if (closed) {
+    return {
+      runbookKey: `${record.caseType}.closed`,
+      recommendedAction: "archive_case",
+      actionLabel: "Archive evidence",
+      ownerTeam: "finance",
+      severity: "low",
+      slaHours: 72,
+      customerImpact: "No active customer action if the resolution notes are complete.",
+      nextStep: "Confirm the case has resolution notes, linked provider references, and no remaining payment blocker.",
+    };
+  }
+
+  if (waitingCustomer) {
+    return {
+      runbookKey: `${record.caseType}.waiting_customer`,
+      recommendedAction: "request_customer_retry",
+      actionLabel: "Ask customer to retry",
+      ownerTeam: "support",
+      severity: "medium",
+      slaHours: 24,
+      customerImpact: "Customer may be blocked from securing or completing the booking.",
+      nextStep: "Contact the customer with the booking reference and ask them to retry or confirm the payment method.",
+    };
+  }
+
+  if (waitingPartner) {
+    return {
+      runbookKey: `${record.caseType}.waiting_partner`,
+      recommendedAction: "request_partner_evidence",
+      actionLabel: "Request partner evidence",
+      ownerTeam: "partner_ops",
+      severity: "medium",
+      slaHours: 24,
+      customerImpact: "Customer status may be unclear until partner evidence is attached.",
+      nextStep: "Ask the partner for service proof, check-in/check-out evidence, and any terminal/provider receipt.",
+    };
+  }
+
+  switch (record.caseType) {
+    case "payment_failed":
+      return {
+        runbookKey: "payment_failed.open",
+        recommendedAction: "request_customer_retry",
+        actionLabel: "Customer payment retry",
+        ownerTeam: "support",
+        severity: "high",
+        slaHours: 4,
+        customerImpact: "Booking can remain unconfirmed or at risk if payment authorization failed.",
+        nextStep: "Verify the provider failure reason, then ask the customer to retry with a valid payment method before confirming service.",
+      };
+    case "stripe_dispute":
+      return {
+        runbookKey: "stripe_dispute.open",
+        recommendedAction: "prepare_dispute_evidence",
+        actionLabel: "Prepare Stripe evidence",
+        ownerTeam: "finance",
+        severity: "critical",
+        slaHours: 4,
+        customerImpact: "Funds may be reversed and the customer may need a support follow-up.",
+        nextStep: "Collect booking, payment, vehicle, service, partner, and message records before deciding refund, evidence submission, or write-off.",
+      };
+    case "invalid_transition":
+      return {
+        runbookKey: "invalid_transition.open",
+        recommendedAction: "escalate_engineering",
+        actionLabel: "Escalate payment state",
+        ownerTeam: "engineering",
+        severity: "high",
+        slaHours: 8,
+        customerImpact: "Customer and operator payment states may diverge if the transition is accepted manually.",
+        nextStep: "Do not mutate payment state manually. Compare local status, provider event, request id, and idempotency key before resolution.",
+      };
+    case "duplicate_event":
+      return {
+        runbookKey: "duplicate_event.open",
+        recommendedAction: "mark_provider_duplicate",
+        actionLabel: "Mark duplicate event",
+        ownerTeam: "finance",
+        severity: "low",
+        slaHours: 48,
+        customerImpact: "Usually no customer impact if the original event already reconciled.",
+        nextStep: "Confirm the original provider event was processed once, then resolve with the duplicate event id and original operation reference.",
+      };
+    case "provider_mismatch":
+      return {
+        runbookKey: "provider_mismatch.open",
+        recommendedAction: "reconcile_provider_state",
+        actionLabel: "Reconcile provider state",
+        ownerTeam: "finance",
+        severity: "high",
+        slaHours: 8,
+        customerImpact: "Customer payment, booking, or refund state may be wrong until local and provider records match.",
+        nextStep: "Compare provider status against local booking and payment state, then choose capture, void, refund, retry, or write-off through the approved path.",
+      };
+  }
 }
 
 function normalizeLimit(limit?: number): number {

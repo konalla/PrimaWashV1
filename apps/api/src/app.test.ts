@@ -3584,6 +3584,8 @@ describe("Prima Wash API", () => {
     assert.equal(createPayload.data.case.bookingId, booking.id);
     assert.equal(createPayload.data.case.paymentOperationId, authorizeOperation.id);
     assert.equal(createPayload.data.case.status, "open");
+    assert.equal(createPayload.data.case.guidance.recommendedAction, "reconcile_provider_state");
+    assert.equal(createPayload.data.case.guidance.ownerTeam, "finance");
     assert.equal(createPayload.data.events[0]?.eventType, "created");
     assert.equal(createPayload.data.events[0]?.note, "Initial finance review note.");
 
@@ -3609,6 +3611,15 @@ describe("Prima Wash API", () => {
 
     assert.equal(listResponse.status, 200);
     assert.ok(listPayload.data.some((item) => item.id === createPayload.data.case.id));
+    assert.ok(listPayload.data.every((item) => item.guidance));
+
+    const invalidResolveResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}`, {
+      method: "PATCH",
+      headers: { ...internalHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ status: "resolved" }),
+    });
+
+    assert.equal(invalidResolveResponse.status, 400);
   });
 
   it("protects payment reconciliation case writes with finance permissions", async () => {

@@ -4,6 +4,14 @@ Last updated: 2026-07-07
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
+Latest finance operations runbook work on 2026-07-07:
+
+- Payment reconciliation cases now include derived runbook guidance in the shared contract and API responses.
+- Guidance includes recommended action, owner team, severity, SLA, customer impact, and next step.
+- The internal Finance dashboard now shows case guidance and a resolution-action selector inside the case workflow.
+- Resolving or writing off a case from the dashboard can reuse the recommended action as resolution context.
+- `docs/delivery/payment-reconciliation.md` now includes operational runbooks for payment failures, Stripe disputes, invalid transitions, duplicate provider events, provider mismatches, customer follow-up, and partner evidence requests.
+
 Latest local environment hardening on 2026-07-07:
 
 - API CORS origins are now configurable through `CORS_ALLOWED_ORIGINS`.

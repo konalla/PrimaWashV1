@@ -346,6 +346,19 @@
         font-weight: 800;
       }
 
+      .finance-guidance {
+        display: grid;
+        gap: 8px;
+        border: 1px solid rgba(12, 91, 104, 0.24);
+        border-radius: var(--radius-sm);
+        background: var(--mist);
+        padding: 12px;
+      }
+
+      .finance-guidance strong {
+        color: var(--green-2);
+      }
+
       .split {
         grid-template-columns: 1.45fr 0.55fr;
       }
@@ -3942,6 +3955,13 @@
               <div class="finance-detail-meta">Reconciliation case</div>
               <div class="finance-detail-item"><span>Case type</span><strong>${formatStatus(linkedCase.caseType)}</strong></div>
               <div class="finance-detail-item"><span>Summary</span><strong>${escapeHtml(linkedCase.summary)}</strong></div>
+              ${renderPaymentCaseGuidance(linkedCase)}
+              <label>
+                Resolution action
+                <select name="resolutionAction">
+                  ${paymentCaseActionOptions(linkedCase)}
+                </select>
+              </label>
               <label>
                 Status
                 <select name="status">
@@ -3956,7 +3976,7 @@
               </label>
               <label>
                 Resolution notes
-                <textarea name="resolutionNotes" placeholder="Required when resolving without a note">${escapeHtml(linkedCase.resolutionNotes || "")}</textarea>
+                <textarea name="resolutionNotes" placeholder="${escapeHtml(paymentCaseResolutionPlaceholder(linkedCase))}">${escapeHtml(linkedCase.resolutionNotes || "")}</textarea>
               </label>
               <button class="action primary-command" type="submit">Update case</button>
             </form>
@@ -3983,6 +4003,48 @@
             <button class="action primary-command" type="submit">Open case</button>
           </form>
         `;
+      }
+
+      function renderPaymentCaseGuidance(linkedCase) {
+        const guidance = linkedCase.guidance;
+        if (!guidance) {
+          return "";
+        }
+
+        return `
+          <div class="finance-guidance">
+            <strong>${escapeHtml(guidance.actionLabel)}</strong>
+            <span class="finance-row-meta">Owner: ${formatStatus(guidance.ownerTeam)} - Severity: ${formatStatus(guidance.severity)} - SLA: ${escapeHtml(String(guidance.slaHours))}h</span>
+            <span>${escapeHtml(guidance.nextStep)}</span>
+            <span class="finance-row-meta">${escapeHtml(guidance.customerImpact)}</span>
+          </div>
+        `;
+      }
+
+      function paymentCaseActionOptions(linkedCase) {
+        const recommended = linkedCase.guidance?.recommendedAction || "document_resolution";
+        const actions = [
+          ["document_resolution", "Document resolution"],
+          ["request_customer_retry", "Ask customer to retry"],
+          ["request_partner_evidence", "Request partner evidence"],
+          ["prepare_dispute_evidence", "Prepare Stripe evidence"],
+          ["reconcile_provider_state", "Reconcile provider state"],
+          ["escalate_engineering", "Escalate payment state"],
+          ["mark_provider_duplicate", "Mark duplicate event"],
+          ["archive_case", "Archive evidence"],
+        ];
+        return actions
+          .map(([value, label]) => `<option value="${value}" ${value === recommended ? "selected" : ""}>${escapeHtml(label)}</option>`)
+          .join("");
+      }
+
+      function paymentCaseResolutionPlaceholder(linkedCase) {
+        const guidance = linkedCase.guidance;
+        if (!guidance) {
+          return "Required when resolving without a note";
+        }
+
+        return `Required when resolving. Recommended: ${guidance.actionLabel}. Record provider ref, booking impact, and final decision.`;
       }
 
       function recommendedCaseTypeOptions(operation) {
@@ -6667,10 +6729,18 @@
 
           try {
             const form = new FormData(paymentCaseUpdateForm);
+            const selectedCase = paymentReconciliationCasesCache.find((item) => item.id === paymentCaseUpdateForm.dataset.paymentCaseUpdate);
+            const status = String(form.get("status"));
+            const resolutionAction = String(form.get("resolutionAction") || "");
+            const note = String(form.get("note") || "").trim();
+            const manualResolutionNotes = String(form.get("resolutionNotes") || "").trim();
+            const fallbackResolutionNotes = ["resolved", "written_off"].includes(status) && selectedCase?.guidance
+              ? `${selectedCase.guidance.actionLabel}: ${selectedCase.guidance.nextStep}`
+              : "";
             await updatePaymentReconciliationCase(paymentCaseUpdateForm.dataset.paymentCaseUpdate, {
-              status: String(form.get("status")),
-              note: String(form.get("note") || "").trim(),
-              resolutionNotes: String(form.get("resolutionNotes") || "").trim(),
+              status,
+              note: [resolutionAction ? `Action: ${formatStatus(resolutionAction)}` : "", note].filter(Boolean).join(" - "),
+              resolutionNotes: manualResolutionNotes || fallbackResolutionNotes,
             });
             await refreshFinanceOperations();
             showToast("Payment reconciliation case updated.");

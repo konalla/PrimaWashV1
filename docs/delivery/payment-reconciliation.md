@@ -59,3 +59,71 @@ npm run reconcile:payments -- --provider=stripe --limit=500
 ```
 
 Backfills should be run by finance/operations staff only. They are safe to replay because provider-event finance cases are deduplicated while new evidence is appended as case events.
+
+## Case Guidance
+
+Every finance reconciliation case carries derived guidance in the API and Finance dashboard. Guidance is not stored as mutable case data; it is computed from case type and status so the runbook can improve without rewriting historical records.
+
+Standard guidance fields:
+
+- `runbookKey`: stable key for the active procedure.
+- `recommendedAction`: machine-readable action for the Finance dashboard.
+- `actionLabel`: user-facing action label.
+- `ownerTeam`: finance, support, partner operations, or engineering.
+- `severity`: low, medium, high, or critical.
+- `slaHours`: target time for first meaningful action.
+- `customerImpact`: plain-language risk to the customer or booking.
+- `nextStep`: first action expected from the case owner.
+
+## Operational Runbooks
+
+Payment failed:
+
+- Owner: support, with finance available for provider checks.
+- SLA: 4 hours during operating hours.
+- Action: verify provider failure reason, ask the customer to retry or use a different payment method, and do not confirm service until payment is authorized.
+- Resolution notes must include the provider reason, customer instruction sent, final payment outcome, and whether the booking remained active.
+
+Stripe dispute:
+
+- Owner: finance.
+- SLA: 4 hours for first evidence review.
+- Action: collect booking, payment, vehicle, service, partner, and message records before deciding evidence submission, refund, or write-off.
+- Do not refund, capture, or write off manually until the evidence bundle and Stripe dispute deadline are checked.
+- Resolution notes must include dispute reference, evidence decision, customer impact, and final money movement.
+
+Invalid payment transition:
+
+- Owner: engineering, with finance review.
+- SLA: 8 hours.
+- Action: compare local payment status, provider event type, request id, idempotency key, and previous ledger operations.
+- Do not manually mutate payment state before engineering confirms whether the event is stale, out of order, malformed, or a real integration defect.
+- Resolution notes must include root cause, affected booking/payment ids, and whether a code or data correction was required.
+
+Duplicate provider event:
+
+- Owner: finance.
+- SLA: 48 hours.
+- Action: confirm the original provider event was already processed once and no second customer charge, refund, capture, or status transition occurred.
+- Resolution notes must include duplicate event id, original processed operation id, and a no-customer-impact confirmation.
+
+Provider mismatch:
+
+- Owner: finance.
+- SLA: 8 hours.
+- Action: compare provider status against local booking and payment state, then choose the approved path: capture, void, refund, retry, write-off, or engineering escalation.
+- Resolution notes must include provider status, local status, final action, and whether the customer or partner was contacted.
+
+Waiting customer:
+
+- Owner: support.
+- SLA: 24 hours.
+- Action: contact the customer with the booking reference and requested action.
+- Resolution notes must include the customer message channel, time sent, and customer outcome.
+
+Waiting partner:
+
+- Owner: partner operations.
+- SLA: 24 hours.
+- Action: request service proof, check-in/check-out evidence, and any terminal/provider receipt from the partner.
+- Resolution notes must include partner response, evidence received, and operational decision.

@@ -990,6 +990,19 @@ export type PaymentReconciliationCaseStatus =
   | "resolved"
   | "written_off";
 
+export type PaymentReconciliationCaseSeverity = "low" | "medium" | "high" | "critical";
+
+export interface PaymentReconciliationCaseGuidance {
+  readonly runbookKey: string;
+  readonly recommendedAction: string;
+  readonly actionLabel: string;
+  readonly ownerTeam: "finance" | "support" | "partner_ops" | "engineering";
+  readonly severity: PaymentReconciliationCaseSeverity;
+  readonly slaHours: number;
+  readonly customerImpact: string;
+  readonly nextStep: string;
+}
+
 export interface PaymentReconciliationCase {
   readonly id: string;
   readonly caseType: PaymentReconciliationCaseType;
@@ -1007,6 +1020,7 @@ export interface PaymentReconciliationCase {
   readonly openedAt: string;
   readonly updatedAt: string;
   readonly resolvedAt?: string;
+  readonly guidance: PaymentReconciliationCaseGuidance;
 }
 
 export interface PaymentReconciliationCaseEvent {
