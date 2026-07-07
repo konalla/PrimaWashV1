@@ -74,6 +74,7 @@ export default function BookingDetailScreen() {
   const [messageBody, setMessageBody] = useState('');
   const [supportThread, setSupportThread] = useState<CommunicationThread>();
   const [supportMessages, setSupportMessages] = useState<readonly CommunicationMessage[]>([]);
+  const [financeRequestMessages, setFinanceRequestMessages] = useState<readonly CommunicationMessage[]>([]);
   const [supportMessageBody, setSupportMessageBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -96,19 +97,30 @@ export default function BookingDetailScreen() {
     setMessages(payload.messages);
   }, []);
 
-  const loadSupportMessages = useCallback(async (ownerId: string) => {
-    const threads = await primaApi.communicationThreads({ resourceType: 'owner', resourceId: ownerId });
-    const thread = threads.find((item) => item.type === 'prima_to_owner');
+  const loadSupportMessages = useCallback(async (ownerId: string, targetBookingId: string) => {
+    const [ownerThreads, bookingThreads] = await Promise.all([
+      primaApi.communicationThreads({ resourceType: 'owner', resourceId: ownerId }),
+      primaApi.communicationThreads({ resourceType: 'booking', resourceId: targetBookingId }),
+    ]);
+    const thread = ownerThreads.find((item) => item.type === 'prima_to_owner');
+    const bookingThread = bookingThreads.find((item) => item.type === 'prima_to_owner');
 
     if (!thread) {
       setSupportThread(undefined);
       setSupportMessages([]);
+    } else {
+      const payload = await primaApi.communicationThread(thread.id);
+      setSupportThread(payload.thread);
+      setSupportMessages(payload.messages);
+    }
+
+    if (!bookingThread) {
+      setFinanceRequestMessages([]);
       return;
     }
 
-    const payload = await primaApi.communicationThread(thread.id);
-    setSupportThread(payload.thread);
-    setSupportMessages(payload.messages);
+    const bookingPayload = await primaApi.communicationThread(bookingThread.id);
+    setFinanceRequestMessages(bookingPayload.messages.filter(isFinanceEvidenceRequestMessage));
   }, []);
 
   const load = useCallback(async () => {
@@ -137,7 +149,7 @@ export default function BookingDetailScreen() {
       setVehicle(vehicles.find((item) => item.id === nextBooking.vehicleId));
       setConsents(nextConsents);
       setHandovers(nextHandovers);
-      await Promise.all([loadMessages(nextBooking.id), loadSupportMessages(nextBooking.ownerId)]);
+      await Promise.all([loadMessages(nextBooking.id), loadSupportMessages(nextBooking.ownerId, nextBooking.id)]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Booking could not be loaded.');
     } finally {
@@ -263,7 +275,7 @@ export default function BookingDetailScreen() {
       }
 
       setSupportMessageBody('');
-      await loadSupportMessages(booking.ownerId);
+      await loadSupportMessages(booking.ownerId, booking.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Support message could not be sent.');
     } finally {
@@ -405,6 +417,19 @@ export default function BookingDetailScreen() {
               onPress={() => void sendBookingMessage()}
             />
           </Surface>
+
+          {financeRequestMessages.length ? (
+            <Surface accent>
+              <SectionHeading eyebrow="Prima Wash request" title="Information needed" />
+              <Text style={styles.body}>Finance is reviewing this booking. Reply in support if anything is unclear; messages cannot be deleted.</Text>
+              {financeRequestMessages.map((message) => (
+                <View key={message.id} style={styles.requestItem}>
+                  <Text style={styles.messageMeta}>{formatEvidenceRequestLabel(message.body)} - {formatMessageTime(message.createdAt)}</Text>
+                  <Text style={styles.messageText}>{firstMessageParagraph(message.body)}</Text>
+                </View>
+              ))}
+            </Surface>
+          ) : null}
 
           <Surface>
             <SectionHeading eyebrow="Support" title="Prima Wash conversation" />
@@ -653,6 +678,27 @@ function addressLabel(mode?: BookingOnsiteServiceMode) {
   if (mode === 'customer_property') return 'Service coordinator';
   return 'Partner address';
 }
+
+function isFinanceEvidenceRequestMessage(message: CommunicationMessage) {
+  return message.body.includes('Evidence item:');
+}
+
+function firstMessageParagraph(body: string) {
+  return body.split('\n\n')[0] || body;
+}
+
+function formatEvidenceRequestLabel(body: string) {
+  const evidenceKey = body.match(/Evidence item:\s*([^\n]+)/)?.[1]?.trim();
+
+  if (!evidenceKey) {
+    return 'Evidence request';
+  }
+
+  return evidenceKey
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   eyebrow: { flex: 1, color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
@@ -677,6 +723,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.md,
+    gap: spacing.xs,
+  },
+  requestItem: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.canvasRaised,
+    padding: spacing.md,
     gap: spacing.xs,
   },
   messageMeta: { color: colors.accent, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },

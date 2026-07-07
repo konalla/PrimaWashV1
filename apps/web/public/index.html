@@ -2456,6 +2456,7 @@
       let selectedBookingId = null;
       const bookingEvidenceCache = new Map();
       const bookingHandoverCache = new Map();
+      const bookingFinanceRequestCache = new Map();
       let communicationDialogHeaders = null;
       let capacityTemplates = [];
       const authSessions = new Map();
@@ -3121,7 +3122,9 @@
         paymentOperationsCache = paymentOperations;
         paymentReconciliationCasesCache = paymentReconciliationCases;
         paymentProviderReconciliationRunsCache = paymentProviderReconciliationRuns;
+        bookingFinanceRequestCache.clear();
         renderDashboard(dashboard, mavo);
+        void loadFinanceRequestsForBookings(dashboard.queue.map((item) => item.bookingId));
         renderFinance(paymentOperationsCache);
         syncInvitationForm();
         renderAccessInvitations(accessInvitationsCache);
@@ -3625,6 +3628,7 @@
                         <span class="muted">${isAdminMode ? escapeHtml(item.partnerLocation?.name || "Partner location") : "Vehicle appointment"} · Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
                         <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
                         ${renderOperationalExceptionChip(item)}
+                        ${renderFinanceRequestChip(item)}
                         ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
                       </div>
                       <div class="queue-status">
@@ -4613,6 +4617,7 @@
                         <span class="muted">Condo day booking - Ref ${item.bookingId.slice(-6).toUpperCase()}</span>
                         <br /><span class="payment-chip ${paymentTone(item.paymentStatus)}">${formatPaymentStatus(item.paymentStatus)}</span>
                         ${renderOperationalExceptionChip(item)}
+                        ${renderFinanceRequestChip(item)}
                         ${item.paymentAmount ? `<span class="price"> ${formatMoney(item.paymentAmount)}</span>` : ""}
                       </div>
                       <div class="queue-status">
@@ -4781,6 +4786,152 @@
             <br /><button class="action" type="button" data-switch-queue-filter="all">Show all bookings</button>
           </div>
         `;
+      }
+
+      async function loadFinanceRequestsForBookings(bookingIds) {
+        const uniqueBookingIds = [...new Set(bookingIds.filter(Boolean))];
+
+        await Promise.all(
+          uniqueBookingIds.map(async (bookingId) => {
+            try {
+              const threads = await communicationRequestJson(
+                `/v1/communication/threads?resourceType=booking&resourceId=${encodeURIComponent(bookingId)}`,
+                {},
+                workspaceHeaders("operations_read"),
+              );
+              const thread = threads.find((item) => item.type === "prima_to_partner");
+
+              if (!thread) {
+                bookingFinanceRequestCache.set(bookingId, []);
+                return;
+              }
+
+              const payload = await communicationRequestJson(`/v1/communication/threads/${thread.id}`, {}, workspaceHeaders("operations_read"));
+              bookingFinanceRequestCache.set(bookingId, extractFinanceEvidenceRequests(payload.messages));
+            } catch {
+              bookingFinanceRequestCache.set(bookingId, []);
+            }
+          }),
+        );
+
+        if (dashboardCache) {
+          renderDashboard(dashboardCache.data, dashboardCache.mavo);
+        }
+
+        if (selectedBookingId) {
+          renderBookingDrawer();
+        }
+      }
+
+      function extractFinanceEvidenceRequests(messages) {
+        return messages
+          .map(parseFinanceEvidenceRequestMessage)
+          .filter(Boolean)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      }
+
+      function parseFinanceEvidenceRequestMessage(message) {
+        if (!message.body.includes("Evidence item:")) {
+          return null;
+        }
+
+        const evidenceKey = (message.body.match(/Evidence item:\s*([^\n]+)/) || [])[1]?.trim();
+
+        if (!evidenceKey) {
+          return null;
+        }
+
+        return {
+          id: message.id,
+          evidenceKey,
+          evidenceType: evidenceRequestToBookingEvidenceType(evidenceKey),
+          label: financeEvidenceLabel(evidenceKey),
+          body: message.body.split("\n\n")[0] || message.body,
+          createdAt: message.createdAt,
+        };
+      }
+
+      function evidenceRequestToBookingEvidenceType(evidenceKey) {
+        if (evidenceKey === "before_evidence") {
+          return "before";
+        }
+
+        if (evidenceKey === "after_evidence") {
+          return "after";
+        }
+
+        if (evidenceKey === "damage_evidence") {
+          return "damage";
+        }
+
+        if (["pickup_handover", "return_handover", "onsite_receipt", "onsite_release"].includes(evidenceKey)) {
+          return "handover";
+        }
+
+        return "other";
+      }
+
+      function financeEvidenceLabel(evidenceKey) {
+        return {
+          before_evidence: "Before-service evidence",
+          after_evidence: "After-service evidence",
+          damage_evidence: "Damage evidence",
+          pickup_handover: "Pickup handover evidence",
+          return_handover: "Return handover evidence",
+          onsite_receipt: "Onsite receipt evidence",
+          onsite_release: "Onsite release evidence",
+          service_record: "Completed service record",
+        }[evidenceKey] || formatStatus(evidenceKey);
+      }
+
+      function renderFinanceRequestChip(item) {
+        const requests = bookingFinanceRequestCache.get(item.bookingId) || [];
+        const openRequests = requests.filter((request) => !isFinanceEvidenceRequestSatisfied(item, request));
+
+        if (!openRequests.length) {
+          return "";
+        }
+
+        return `<span class="payment-chip is-blocked">${openRequests.length} evidence request${openRequests.length === 1 ? "" : "s"}</span>`;
+      }
+
+      function isFinanceEvidenceRequestSatisfied(item, request) {
+        const evidenceSummary = getEvidenceSummary(item);
+        const handoverSummary = getHandoverSummary(item);
+
+        if (request.evidenceKey === "before_evidence") {
+          return evidenceSummary.beforeCount > 0;
+        }
+
+        if (request.evidenceKey === "after_evidence") {
+          return evidenceSummary.afterCount > 0;
+        }
+
+        if (request.evidenceKey === "damage_evidence") {
+          return evidenceSummary.damageCount > 0;
+        }
+
+        if (request.evidenceKey === "pickup_handover") {
+          return handoverSummary.pickupCount > 0 || evidenceSummary.handoverCount > 0;
+        }
+
+        if (request.evidenceKey === "return_handover") {
+          return handoverSummary.returnCount > 0 || evidenceSummary.handoverCount > 0;
+        }
+
+        if (request.evidenceKey === "onsite_receipt") {
+          return handoverSummary.onsiteReceiptCount > 0 || evidenceSummary.handoverCount > 0;
+        }
+
+        if (request.evidenceKey === "onsite_release") {
+          return handoverSummary.onsiteReleaseCount > 0 || evidenceSummary.handoverCount > 0;
+        }
+
+        if (request.evidenceKey === "service_record") {
+          return item.status === "completed";
+        }
+
+        return false;
       }
 
       function filterQueue(queue, filter) {
@@ -5037,6 +5188,7 @@
             ${renderSiteInstructions(item)}
             ${renderOperationalExceptionPanel(item, executionDisabled)}
             ${renderHandoverPanel(item, executionDisabled)}
+            ${renderFinanceEvidenceRequestPanel(item, executionDisabled)}
             ${renderEvidencePanel(item, executionDisabled)}
 
             <section>
@@ -5158,6 +5310,47 @@
         };
 
         return labels[mode] || formatStatus(mode);
+      }
+
+      function renderFinanceEvidenceRequestPanel(item, executionDisabled) {
+        const requests = bookingFinanceRequestCache.get(item.bookingId) || [];
+        const openRequests = requests.filter((request) => !isFinanceEvidenceRequestSatisfied(item, request));
+
+        if (!requests.length) {
+          return "";
+        }
+
+        return `
+          <section class="work-order-card">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Finance evidence request</p>
+                <h3>Requested proof</h3>
+                <p class="section-description">Prima Wash finance is waiting for these append-only records. Upload evidence or add the matching handover/service notes below.</p>
+              </div>
+              <span class="payment-chip ${openRequests.length ? "is-blocked" : "is-authorized"}">${openRequests.length ? `${openRequests.length} open` : "Proof received"}</span>
+            </div>
+            <div class="work-order-list">
+              ${requests
+                .map((request) => {
+                  const satisfied = isFinanceEvidenceRequestSatisfied(item, request);
+
+                  return `
+                    <div class="work-order-line">
+                      <strong>${escapeHtml(request.label)}</strong>
+                      <span>${escapeHtml(request.body)}</span>
+                      <small>${satisfied ? "Matching proof is now present" : `Requested ${formatRelativeTime(request.createdAt)}`}</small>
+                      <div class="dialog-actions">
+                        <span class="payment-chip ${satisfied ? "is-authorized" : "is-blocked"}">${satisfied ? "Received" : "Open"}</span>
+                        <button class="action" type="button" data-prefill-evidence-request="${item.bookingId}" data-evidence-type="${request.evidenceType}" data-evidence-label="${escapeHtml(request.label)}" ${executionDisabled || satisfied ? "disabled" : ""}>Prepare upload</button>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join("")}
+            </div>
+          </section>
+        `;
       }
 
       function renderServiceModeWorkOrder(item) {
@@ -6248,6 +6441,9 @@
           if (selectedBookingId === bookingId) {
             renderBookingDrawer();
           }
+          if (dashboardCache) {
+            renderDashboard(dashboardCache.data, dashboardCache.mavo);
+          }
         } catch (error) {
           showToast(error.message, "error");
         }
@@ -6259,6 +6455,9 @@
           bookingHandoverCache.set(bookingId, handovers);
           if (selectedBookingId === bookingId) {
             renderBookingDrawer();
+          }
+          if (dashboardCache) {
+            renderDashboard(dashboardCache.data, dashboardCache.mavo);
           }
         } catch (error) {
           showToast(error.message, "error");
@@ -6833,6 +7032,23 @@
             evidenceRequestButton.disabled = false;
           }
 
+          return;
+        }
+
+        const prefillEvidenceRequestButton = event.target.closest("button[data-prefill-evidence-request]");
+
+        if (prefillEvidenceRequestButton) {
+          const form = document.querySelector("#booking-evidence-form");
+
+          if (!form) {
+            showToast("Open the booking evidence form first.", "error");
+            return;
+          }
+
+          form.elements.evidenceType.value = prefillEvidenceRequestButton.dataset.evidenceType || "other";
+          form.elements.notes.value = `${prefillEvidenceRequestButton.dataset.evidenceLabel || "Finance evidence"} for finance reconciliation.`;
+          form.scrollIntoView({ behavior: "smooth", block: "center" });
+          showToast("Evidence form prepared.");
           return;
         }
 
