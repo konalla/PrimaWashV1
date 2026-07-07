@@ -1050,6 +1050,19 @@ export interface UpdatePaymentReconciliationCaseRequest {
   readonly resolutionNotes?: string;
 }
 
+export type PaymentReconciliationEvidenceRequestTarget = "partner" | "customer";
+
+export interface CreatePaymentReconciliationEvidenceRequest {
+  readonly target: PaymentReconciliationEvidenceRequestTarget;
+  readonly evidenceKey: string;
+  readonly message: string;
+}
+
+export interface PaymentReconciliationEvidenceRequestResponse {
+  readonly caseDetail: PaymentReconciliationCaseDetail;
+  readonly thread: CommunicationThreadWithMessages;
+}
+
 export interface PaymentReconciliationCaseDetail {
   readonly case: PaymentReconciliationCase;
   readonly events: readonly PaymentReconciliationCaseEvent[];

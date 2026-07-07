@@ -36,6 +36,8 @@ import type {
   ListAccessMembershipsResponse,
   PartnerBookingDecisionRequest,
   CreatePaymentIntentRequest,
+  CreatePaymentReconciliationEvidenceRequest,
+  PaymentReconciliationEvidenceRequestResponse,
   CreatePaymentReconciliationCaseRequest,
   CreatePropertyInterestRequest,
   CreatePrimaWashDayRequest,
@@ -2403,6 +2405,47 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     const reconciliationCaseEvidencePackMatch = requestUrl.pathname.match(
       /^\/v1\/internal\/payment-reconciliation-cases\/([^/]+)\/evidence-pack$/,
     );
+    const reconciliationCaseEvidenceRequestMatch = requestUrl.pathname.match(
+      /^\/v1\/internal\/payment-reconciliation-cases\/([^/]+)\/evidence-requests$/,
+    );
+
+    if (reconciliationCaseEvidenceRequestMatch && request.method === "POST") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_write");
+        const caseId = decodeURIComponent(reconciliationCaseEvidenceRequestMatch[1] ?? "");
+        const detail = await options.repositories.paymentReconciliationCases.get(caseId);
+
+        if (!detail) {
+          sendError(response, 404, "payment_reconciliation_case_not_found", "Payment reconciliation case does not exist");
+          return;
+        }
+
+        const input = await readJsonBody<CreatePaymentReconciliationEvidenceRequest>(request);
+        const errors = validatePaymentReconciliationEvidenceRequest(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Evidence request payload is invalid", errors);
+          return;
+        }
+
+        const result = await createPaymentReconciliationEvidenceRequest(
+          options.repositories,
+          actor,
+          detail,
+          input,
+          requestContext.requestId,
+        );
+
+        sendJson(response, 201, { data: result });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          sendError(response, 400, "invalid_request", "Evidence request could not be created", String(error));
+        }
+      }
+
+      return;
+    }
 
     if (reconciliationCaseEvidencePackMatch && request.method === "GET") {
       try {
@@ -4429,6 +4472,98 @@ async function canAccessCommunicationThread(
   } catch {
     return false;
   }
+}
+
+function validatePaymentReconciliationEvidenceRequest(input: Partial<CreatePaymentReconciliationEvidenceRequest>): readonly string[] {
+  const errors: string[] = [];
+
+  if (input.target !== "partner" && input.target !== "customer") {
+    errors.push("target must be partner or customer");
+  }
+
+  if (!input.evidenceKey?.trim()) {
+    errors.push("evidenceKey is required");
+  } else if (input.evidenceKey.trim().length > 80) {
+    errors.push("evidenceKey must be 80 characters or fewer");
+  }
+
+  if (!input.message?.trim()) {
+    errors.push("message is required");
+  } else if (input.message.trim().length > 2000) {
+    errors.push("message must be 2000 characters or fewer");
+  }
+
+  return errors;
+}
+
+async function createPaymentReconciliationEvidenceRequest(
+  repositories: Repositories,
+  actor: Actor,
+  detail: PaymentReconciliationCaseDetail,
+  input: CreatePaymentReconciliationEvidenceRequest,
+  requestId: string,
+): Promise<PaymentReconciliationEvidenceRequestResponse> {
+  const reconciliationCase = detail.case;
+  const booking = await repositories.bookings.get(reconciliationCase.bookingId);
+
+  if (!booking) {
+    throw new Error("booking_not_found");
+  }
+
+  const target = input.target;
+  const evidenceKey = input.evidenceKey.trim();
+  const message = input.message.trim();
+  const threadType: CommunicationThreadType = target === "partner" ? "prima_to_partner" : "prima_to_owner";
+  const subject = target === "partner"
+    ? `Evidence request for booking ${booking.id.slice(-8).toUpperCase()}`
+    : `Prima Wash evidence request for booking ${booking.id.slice(-8).toUpperCase()}`;
+  const body = [
+    message,
+    "",
+    `Evidence item: ${evidenceKey}`,
+    `Finance case: ${reconciliationCase.id}`,
+    `Booking: ${booking.id}`,
+  ].join("\n");
+  const thread = await repositories.communications.create({
+    type: threadType,
+    resourceType: "booking",
+    resourceId: booking.id,
+    subject,
+    actor,
+    initialMessage: body,
+  });
+  const messages = await repositories.communications.getMessages(thread.id);
+  const nextStatus = target === "partner" ? "waiting_partner" : "waiting_customer";
+  const note = `Evidence requested from ${target}: ${evidenceKey}`;
+  const updatedCase = await repositories.paymentReconciliationCases.update(reconciliationCase.id, {
+    actor,
+    status: nextStatus,
+    note,
+  });
+
+  if (!updatedCase) {
+    throw new Error("payment_reconciliation_case_not_found");
+  }
+
+  await repositories.audit.record({
+    actor,
+    action: "payment_reconciliation_case.evidence_requested",
+    resourceType: "booking",
+    resourceId: booking.id,
+    requestId,
+    metadata: {
+      caseId: reconciliationCase.id,
+      evidenceKey,
+      target,
+      threadId: thread.id,
+      nextStatus,
+    },
+  });
+
+  return {
+    caseDetail: updatedCase,
+    thread: { thread, messages },
+  };
 }
 
 async function buildPaymentReconciliationEvidencePack(

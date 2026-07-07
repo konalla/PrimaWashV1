@@ -21,6 +21,7 @@ Latest finance evidence-pack work on 2026-07-07:
 - The internal Finance dashboard can now load and show the evidence pack from a linked reconciliation case.
 - The Finance dashboard evidence-pack view now exposes booking, party, payment, operational proof, communication, and linked audit records behind the checklist.
 - Finance users can download a text evidence-pack summary for internal review or Stripe dispute preparation.
+- Finance users with `finance_write` can request missing partner/customer evidence from the pack view. Requests append a booking-scoped communication, add a case event/audit trail, and move the case to `waiting_partner` or `waiting_customer`.
 
 Latest local environment hardening on 2026-07-07:
 

@@ -3735,6 +3735,24 @@
         return payload.data;
       }
 
+      async function createPaymentEvidenceRequest(caseId, input) {
+        const response = await fetch(`${apiBase}/v1/internal/payment-reconciliation-cases/${encodeURIComponent(caseId)}/evidence-requests`, {
+          method: "POST",
+          headers: {
+            ...adminHeaders("finance_write"),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.message || "Evidence request could not be created");
+        }
+
+        return payload.data;
+      }
+
       async function runProviderReconciliation(provider) {
         const response = await fetch(`${apiBase}/v1/internal/payment-provider-reconciliation-runs`, {
           method: "POST",
@@ -4088,15 +4106,27 @@
         const missingCount = pack.checklist.filter((item) => item.status === "missing").length;
         const presentCount = pack.checklist.filter((item) => item.status === "present").length;
         const checklistRows = pack.checklist
-          .map((item) => `
+          .map((item) => {
+            const requestTarget = paymentEvidenceRequestTarget(item.key);
+            const requestAction = item.status === "missing" && requestTarget
+              ? canUseAdmin("finance_write")
+                ? `<button class="action" type="button" data-payment-evidence-request="${linkedCase.id}" data-evidence-key="${escapeHtml(item.key)}" data-evidence-label="${escapeHtml(item.label)}" data-evidence-target="${requestTarget}">${requestTarget === "partner" ? "Request partner evidence" : "Request customer info"}</button>`
+                : permissionBlockedButton("Request evidence", "finance_write")
+              : "";
+
+            return `
             <div class="evidence-pack-row">
               <div>
                 <strong>${escapeHtml(item.label)}</strong>
                 ${item.detail ? `<span>${escapeHtml(item.detail)}</span>` : ""}
               </div>
-              <span class="payment-chip ${item.status === "missing" ? "is-blocked" : item.status === "present" ? "is-authorized" : "is-refunded"}">${formatStatus(item.status)}</span>
+              <div class="dialog-actions">
+                <span class="payment-chip ${item.status === "missing" ? "is-blocked" : item.status === "present" ? "is-authorized" : "is-refunded"}">${formatStatus(item.status)}</span>
+                ${requestAction}
+              </div>
             </div>
-          `)
+          `;
+          })
           .join("");
 
         return `
@@ -4114,6 +4144,49 @@
             ${renderEvidencePackRecords(pack)}
           </div>
         `;
+      }
+
+      function paymentEvidenceRequestTarget(evidenceKey) {
+        if (["customer_consent", "communications"].includes(evidenceKey)) {
+          return "customer";
+        }
+
+        if ([
+          "before_evidence",
+          "after_evidence",
+          "damage_evidence",
+          "pickup_handover",
+          "return_handover",
+          "onsite_receipt",
+          "onsite_release",
+          "service_record",
+        ].includes(evidenceKey)) {
+          return "partner";
+        }
+
+        return "";
+      }
+
+      function paymentEvidenceRequestMessage(pack, item, target) {
+        const bookingRef = pack.booking?.id || pack.case.bookingId;
+        const service = pack.booking ? formatService(pack.booking.serviceCode) : "the booked service";
+        const scheduled = pack.booking ? formatDateTime(pack.booking.scheduledStartAt) : "the scheduled appointment";
+
+        if (target === "partner") {
+          return `Please upload or confirm the missing ${item.label.toLowerCase()} for ${service} on ${scheduled}. This is required for Prima Wash finance reconciliation case ${pack.case.id}. Booking reference: ${bookingRef}.`;
+        }
+
+        return `Please confirm or provide the missing ${item.label.toLowerCase()} for your Prima Wash booking on ${scheduled}. This is required so Prima Wash can complete the payment review. Booking reference: ${bookingRef}.`;
+      }
+
+      function replacePaymentReconciliationCase(caseDetail) {
+        paymentReconciliationCasesCache = paymentReconciliationCasesCache.map((item) =>
+          item.id === caseDetail.case.id ? caseDetail.case : item,
+        );
+
+        if (!paymentReconciliationCasesCache.some((item) => item.id === caseDetail.case.id)) {
+          paymentReconciliationCasesCache = [caseDetail.case, ...paymentReconciliationCasesCache];
+        }
       }
 
       function renderEvidencePackRecords(pack) {
@@ -6722,6 +6795,42 @@
             showToast(error.message, "error");
           } finally {
             evidencePackButton.disabled = false;
+          }
+
+          return;
+        }
+
+        const evidenceRequestButton = event.target.closest("button[data-payment-evidence-request]");
+
+        if (evidenceRequestButton) {
+          const caseId = evidenceRequestButton.dataset.paymentEvidenceRequest;
+          const pack = paymentEvidencePacksCache.get(caseId);
+          const evidenceKey = evidenceRequestButton.dataset.evidenceKey;
+          const target = evidenceRequestButton.dataset.evidenceTarget;
+          const item = pack?.checklist.find((entry) => entry.key === evidenceKey);
+
+          if (!pack || !item || !target) {
+            showToast("Load the evidence pack before requesting evidence.", "error");
+            return;
+          }
+
+          evidenceRequestButton.disabled = true;
+
+          try {
+            const result = await createPaymentEvidenceRequest(caseId, {
+              target,
+              evidenceKey,
+              message: paymentEvidenceRequestMessage(pack, item, target),
+            });
+            replacePaymentReconciliationCase(result.caseDetail);
+            const refreshedPack = await fetchPaymentEvidencePack(caseId);
+            paymentEvidencePacksCache.set(caseId, refreshedPack);
+            renderFinance(paymentOperationsCache);
+            showToast(`Evidence requested from ${target}.`);
+          } catch (error) {
+            showToast(error.message, "error");
+          } finally {
+            evidenceRequestButton.disabled = false;
           }
 
           return;

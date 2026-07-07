@@ -35,6 +35,7 @@ import type {
   PaymentOperation,
   PaymentReconciliationCase,
   PaymentReconciliationCaseDetail,
+  PaymentReconciliationEvidenceRequestResponse,
   PaymentReconciliationEvidencePack,
   PaymentProviderReconciliationRun,
   PrimaWashDayBookingItem,
@@ -3649,6 +3650,49 @@ describe("Prima Wash API", () => {
     assert.ok(evidencePackPayload.data.communicationThreads.some((thread) => thread.messages.length > 0));
     assert.ok(evidencePackPayload.data.checklist.some((item) => item.key === "after_evidence" && item.status === "missing"));
     assert.ok(evidencePackPayload.data.checklist.some((item) => item.key === "payment_ledger" && item.status === "present"));
+
+    const evidenceRequestResponse = await fetch(
+      `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-requests`,
+      {
+        method: "POST",
+        headers: { ...internalHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          target: "partner",
+          evidenceKey: "after_evidence",
+          message: "Please upload after-service evidence for finance review.",
+        }),
+      },
+    );
+    const evidenceRequestPayload = (await evidenceRequestResponse.json()) as ApiResponse<PaymentReconciliationEvidenceRequestResponse>;
+
+    assert.equal(evidenceRequestResponse.status, 201);
+    assert.equal(evidenceRequestPayload.data.caseDetail.case.status, "waiting_partner");
+    assert.equal(evidenceRequestPayload.data.thread.thread.resourceType, "booking");
+    assert.equal(evidenceRequestPayload.data.thread.thread.resourceId, booking.id);
+    assert.equal(evidenceRequestPayload.data.thread.thread.type, "prima_to_partner");
+    assert.ok(
+      evidenceRequestPayload.data.thread.messages.some((message) =>
+        message.body.includes("Please upload after-service evidence") && message.body.includes("after_evidence"),
+      ),
+    );
+    assert.ok(
+      evidenceRequestPayload.data.caseDetail.events.some((event) => event.note === "Evidence requested from partner: after_evidence"),
+    );
+
+    const invalidEvidenceRequestResponse = await fetch(
+      `${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}/evidence-requests`,
+      {
+        method: "POST",
+        headers: { ...internalHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          target: "partner",
+          evidenceKey: "",
+          message: "",
+        }),
+      },
+    );
+
+    assert.equal(invalidEvidenceRequestResponse.status, 400);
 
     const invalidResolveResponse = await fetch(`${baseUrl}/v1/internal/payment-reconciliation-cases/${createPayload.data.case.id}`, {
       method: "PATCH",
