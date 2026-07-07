@@ -2325,6 +2325,16 @@
     <script>
       const urlParams = new URLSearchParams(location.search);
       const apiBase = urlParams.get("api") || "http://127.0.0.1:3001";
+      const localPreviewHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
+      const isLocalPreview = localPreviewHostnames.has(location.hostname);
+      const demoControlsEnabled = isLocalPreview && urlParams.get("demo") !== "false";
+      const suppliedAccessToken = urlParams.get("accessToken");
+      if (suppliedAccessToken) {
+        sessionStorage.setItem("primaWebAccessToken", suppliedAccessToken);
+        const sanitizedUrl = new URL(window.location.href);
+        sanitizedUrl.searchParams.delete("accessToken");
+        window.history.replaceState({}, "", sanitizedUrl);
+      }
       const portalMode = urlParams.get("portal") || "admin";
       const isAdminMode = portalMode === "admin";
       const managementPropertyId = urlParams.get("propertyId") || "prop_sg_marina_one";
@@ -2360,7 +2370,9 @@
           identifier: "property.ops@primawash.local",
         },
       };
-      let selectedAdminPermissionProfile = urlParams.get("permissions") || "super_admin";
+      let selectedAdminPermissionProfile = demoControlsEnabled
+        ? urlParams.get("permissions") || "super_admin"
+        : "super_admin";
       if (!adminPermissionProfiles[selectedAdminPermissionProfile]) {
         selectedAdminPermissionProfile = "super_admin";
       }
@@ -2473,11 +2485,13 @@
       let workspaceSession = null;
       let managementSession = null;
       let selectedPartnerLocationId =
-        urlParams.get("partnerLocationId") || partnerLocationSelect.value;
+        urlParams.get("partnerLocationId") || (demoControlsEnabled ? partnerLocationSelect.value : "");
       if (!partnerLocations[selectedPartnerLocationId]) {
-        selectedPartnerLocationId = "loc_demo_001";
+        selectedPartnerLocationId = demoControlsEnabled ? "loc_demo_001" : "";
       }
-      partnerLocationSelect.value = selectedPartnerLocationId;
+      if (selectedPartnerLocationId) {
+        partnerLocationSelect.value = selectedPartnerLocationId;
+      }
 
       const nextStatusByStatus = {
         pending_payment: { status: "confirmed", label: "Confirm booking" },
@@ -2502,7 +2516,8 @@
       ];
 
       adminPermissionSelect.value = selectedAdminPermissionProfile;
-      adminPermissionSelect.hidden = !isAdminMode;
+      adminPermissionSelect.hidden = !isAdminMode || !demoControlsEnabled;
+      partnerLocationSelect.hidden = isAdminMode || !demoControlsEnabled;
       workspaceKickerEl.textContent = isAdminMode ? "Capacity location" : "Current location";
       portalModePillEl.textContent = isAdminMode ? "Internal admin" : "Partner portal";
 
@@ -2517,6 +2532,10 @@
       }
 
       adminPermissionSelect.addEventListener("change", async () => {
+        if (!demoControlsEnabled) {
+          return;
+        }
+
         selectedAdminPermissionProfile = adminPermissionSelect.value;
         const url = new URL(window.location.href);
         url.searchParams.set("portal", "admin");
@@ -2601,6 +2620,10 @@
       });
 
       async function requestAuthSession(identifier) {
+        if (!demoControlsEnabled) {
+          throw new Error("Authenticated session required. Sign in through the production access flow before opening this portal.");
+        }
+
         if (authSessions.has(identifier)) {
           return authSessions.get(identifier);
         }
@@ -2635,15 +2658,41 @@
       }
 
       function activeWorkspaceIdentifier() {
+        if (!demoControlsEnabled) {
+          return "";
+        }
+
         return isAdminMode ? activeAdminProfile().identifier : partnerLocations[selectedPartnerLocationId].identifier;
       }
 
+      function authenticatedWebSession() {
+        const accessToken =
+          sessionStorage.getItem("primaWebAccessToken") ||
+          localStorage.getItem("primaWebAccessToken");
+
+        if (!accessToken) {
+          throw new Error("Authenticated session required. Sign in through the production access flow before opening this portal.");
+        }
+
+        return { accessToken };
+      }
+
       async function ensureWorkspaceSession() {
+        if (!demoControlsEnabled) {
+          workspaceSession = authenticatedWebSession();
+          return workspaceSession;
+        }
+
         workspaceSession = await requestAuthSession(activeWorkspaceIdentifier());
         return workspaceSession;
       }
 
       async function ensureManagementSession() {
+        if (!demoControlsEnabled) {
+          managementSession = authenticatedWebSession();
+          return managementSession;
+        }
+
         managementSession = await requestAuthSession("manager.marina@primawash.local");
         return managementSession;
       }
@@ -2679,6 +2728,10 @@
       }
 
       function hasAdminPermission(permission) {
+        if (!demoControlsEnabled) {
+          return true;
+        }
+
         const permissions = activeAdminPermissions().split(",").map((item) => item.trim());
         return permissions.includes("super_admin") || permissions.includes(permission);
       }
@@ -3034,6 +3087,10 @@
       }
 
       function partnerQuery() {
+        if (!selectedPartnerLocationId) {
+          throw new Error("Partner location is required for this portal session.");
+        }
+
         return `partnerLocationId=${encodeURIComponent(selectedPartnerLocationId)}`;
       }
 
@@ -8011,6 +8068,10 @@
       });
 
       partnerLocationSelect.addEventListener("change", async () => {
+        if (!demoControlsEnabled) {
+          return;
+        }
+
         selectedPartnerLocationId = partnerLocationSelect.value;
         selectedBookingId = null;
         selectedPrimaWashDayQueueId = null;
@@ -8035,7 +8096,7 @@
           document.body.innerHTML = `
             <main style="margin: 0 auto; padding: 28px 0 48px;">
               <div class="error">
-                ${escapeHtml(error.message)}. Confirm the API is running at ${apiBase}, then refresh.
+                ${escapeHtml(error.message)}${demoControlsEnabled ? `. Confirm the API is running at ${apiBase}, then refresh.` : ""}
               </div>
             </main>
           `;
@@ -8044,8 +8105,8 @@
         loadDashboard().catch((error) => {
           metricsEl.innerHTML = `
             <div class="error">
-              ${error.message}. Confirm the API is running at ${apiBase}, then refresh. If this is a local browser
-              CORS issue, restart the API after pulling the latest code.
+              ${escapeHtml(error.message)}${demoControlsEnabled ? `. Confirm the API is running at ${apiBase}, then refresh. If this is a local browser
+              CORS issue, restart the API after pulling the latest code.` : ""}
             </div>
           `;
         });

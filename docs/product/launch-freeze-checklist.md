@@ -39,6 +39,8 @@ These are the only implementation buckets that should remain before pilot.
 
 Why: the current web portal still has local testing affordances such as partner-location switching, internal permission profile switching, and hardcoded local demo identifiers. These are useful locally but unacceptable in a real partner/admin/property environment.
 
+Status: implemented on 2026-07-07 for the web portal shell. Demo auth-code login, partner-location switching, and internal permission switching are now available only on localhost/127.0.0.1 unless explicitly disabled with `?demo=false`. Non-local web origins require an issued bearer access token in `sessionStorage.primaWebAccessToken`, `localStorage.primaWebAccessToken`, or a one-time `accessToken` query parameter that is immediately removed from the URL.
+
 Done when:
 
 - Real deployments do not auto-login demo users.
@@ -171,4 +173,3 @@ Do not work on these until the pilot is live and stable:
 ## Stop Rule
 
 If a proposed task does not directly complete one of the Must Fix items, it is post-pilot by default.
-
