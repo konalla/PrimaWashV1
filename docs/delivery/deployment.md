@@ -119,6 +119,8 @@ Environment contract:
 - `PAYMENT_PROVIDER`: `local` for development or `stripe` for Stripe-backed payment operations.
 - `STRIPE_SECRET_KEY`: Stripe API secret key when `PAYMENT_PROVIDER=stripe`.
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `/v1/webhooks/stripe`.
+- `REFERRAL_SHARE_BASE_URL`: optional API-generated referral link base URL. The API appends `?ref=CODE` or `&ref=CODE`.
+- `EXPO_PUBLIC_REFERRAL_SHARE_BASE_URL`: mobile share-message referral link base URL. Set this to the public app/invite URL in staging and production.
 - `EVIDENCE_STORAGE_PROVIDER`: `local` for development or `s3` for S3-compatible durable evidence storage. Production must use `s3`.
 - `EVIDENCE_STORAGE_DIRECTORY`: local evidence upload directory when `EVIDENCE_STORAGE_PROVIDER=local`. Default `var/uploads`.
 - `EVIDENCE_PUBLIC_BASE_URL`: optional public/CDN base URL for returned evidence URLs.

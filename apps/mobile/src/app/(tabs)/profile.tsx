@@ -10,6 +10,8 @@ import { useAuth } from '@/context/auth-context';
 import { primaApi } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 
+const defaultReferralShareBaseUrl = 'https://primawash.app/invite';
+
 export default function ProfileScreen() {
   const { logout, session } = useAuth();
   const [profile, setProfile] = useState<CustomerProfile>();
@@ -51,10 +53,16 @@ export default function ProfileScreen() {
       return;
     }
 
-    const shareTarget = referrals.code.shareUrl ?? referrals.code.code;
+    const shareUrl = referrals.code.shareUrl ?? buildReferralShareUrl(referrals.code.code);
     await Share.share({
       title: 'Prima Wash invite',
-      message: `Use my Prima Wash invite code ${referrals.code.code} for your first booking: ${shareTarget}`,
+      url: shareUrl,
+      message: [
+        'I thought you might like Prima Wash for your car care.',
+        'You can book quality-checked vehicle care with upfront pricing, verified partners, and Prima Wash support on every booking.',
+        `Use my invite code ${referrals.code.code} when you book:`,
+        shareUrl,
+      ].join('\n\n'),
     });
   }
 
@@ -135,6 +143,12 @@ export default function ProfileScreen() {
 
 function Field({ label, ...props }: { readonly label: string } & React.ComponentProps<typeof TextInput>) {
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput placeholderTextColor={colors.subtle} style={styles.input} {...props} /></View>;
+}
+
+function buildReferralShareUrl(code: string): string {
+  const configuredBaseUrl = process.env.EXPO_PUBLIC_REFERRAL_SHARE_BASE_URL?.trim() || defaultReferralShareBaseUrl;
+  const separator = configuredBaseUrl.includes('?') ? '&' : '?';
+  return `${configuredBaseUrl}${separator}ref=${encodeURIComponent(code)}`;
 }
 
 function Setting({
