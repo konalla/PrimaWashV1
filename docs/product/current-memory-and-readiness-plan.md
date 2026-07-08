@@ -11,6 +11,7 @@ Launch brand-system update on 2026-07-08:
 - Confirmed a light-first Prima Wash identity: near-black text, warm white canvas, petrol-teal trust/operations color, and copper-orange action/reward accent.
 - Kept Manrope as the launch typeface across web and mobile because it is premium, readable, broad-audience, and production-safe.
 - Updated web and mobile design tokens so primary actions use copper, trust/selected states use petrol teal, and the app avoids returning to dark green full-page UI.
+- Added a visible shell-level UI pass after tokenization: elevated mobile cards, premium mobile background treatment, floating mobile tab bar, stronger web sidebar treatment, web hero identity mark, and more deliberate web card/queue/metric hover hierarchy.
 
 Launch-freeze payment update on 2026-07-08:
 
