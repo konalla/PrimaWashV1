@@ -56,7 +56,6 @@ export default function ProfileScreen() {
     const shareUrl = referrals.code.shareUrl ?? buildReferralShareUrl(referrals.code.code);
     await Share.share({
       title: 'Prima Wash invite',
-      url: shareUrl,
       message: [
         'I thought you might like Prima Wash for your car care.',
         'You can book quality-checked vehicle care with upfront pricing, verified partners, and Prima Wash support on every booking.',
