@@ -10,6 +10,8 @@ Launch-freeze payment update on 2026-07-08:
 - The rehearsal logs in through the production-like auth delivery path, creates a customer vehicle, creates partner availability, creates two real bookings, creates Stripe-backed PaymentIntents, confirms them against Stripe test mode, authorizes through the Prima Wash API, completes the operational checklist for one booking, verifies capture, refunds from the internal finance path, then cancels the second booking to verify authorization voiding.
 - The rehearsal also checks that partner queue scope remains limited to the configured partner location.
 - This command requires `PAYMENT_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, webhook/auth delivery staging configuration, and Mailpit or staging delivery capture for auth-code retrieval.
+- The Stripe rehearsal passed locally on 2026-07-08 against the isolated webhook-auth API on port `3012`, Mailpit, delivery relay, Postgres persistence, and Stripe test mode. The run verified capture/refund booking `book_22cc8dc8-bac7-441e-b1a6-b89b5709a4c4` with provider reference `pi_3TqoYi9nVwFNenFq1txNJHdp`, and void booking `book_2013565a-04a0-4671-87ef-b31670e4578e` with provider reference `pi_3TqoYn9nVwFNenFq0ytB1AIP`.
+- The delivery relay SMTP client now treats STARTTLS as opportunistic for unauthenticated SMTP servers such as Mailpit, while still refusing to send SMTP credentials when STARTTLS is unavailable.
 
 Launch-freeze update on 2026-07-07:
 

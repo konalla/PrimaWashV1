@@ -22,9 +22,14 @@ export async function sendSmtpMessage(message: SmtpMessage): Promise<void> {
     await client.command(`EHLO ${smtpHostName()}`, 250);
 
     if (!message.secure) {
-      await client.command("STARTTLS", 220);
-      client.upgradeToTls(message.host);
-      await client.command(`EHLO ${smtpHostName()}`, 250);
+      const startTlsResponse = await client.command("STARTTLS", [220, 500, 502, 504]);
+
+      if (startTlsResponse.startsWith("220")) {
+        client.upgradeToTls(message.host);
+        await client.command(`EHLO ${smtpHostName()}`, 250);
+      } else if (message.username || message.password) {
+        throw new Error("smtp_starttls_unavailable");
+      }
     }
 
     if (message.username && message.password) {

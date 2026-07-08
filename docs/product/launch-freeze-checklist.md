@@ -67,7 +67,7 @@ Done when:
 
 Why: Stripe provider code and webhooks exist, but the pilot must prove the real provider path end to end before taking real bookings.
 
-Status: an automated rehearsal command was added on 2026-07-08. `npm run payments:stripe:rehearse` exercises auth delivery, partner availability, customer booking, Stripe PaymentIntent creation/confirmation, API authorization, operational completion capture, internal refund, authorization voiding on cancellation, and partner queue scope checks. It still must be run successfully in staging with Stripe test-mode secrets and production-like auth delivery before this item is complete.
+Status: an automated rehearsal command was added on 2026-07-08. `npm run payments:stripe:rehearse` exercises auth delivery, partner availability, customer booking, Stripe PaymentIntent creation/confirmation, API authorization, operational completion capture, internal refund, authorization voiding on cancellation, and partner queue scope checks. The rehearsal passed locally on 2026-07-08 against Postgres persistence, webhook auth delivery, Mailpit, the delivery relay, and Stripe test mode. A deployed staging run with managed secrets and Stripe webhook monitoring is still required before production signoff.
 
 Done when:
 
