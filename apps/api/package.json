@@ -12,6 +12,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "db:smoke": "tsx src/db/smoke-test.ts",
     "auth:cleanup": "tsx src/db/auth-cleanup.ts",
+    "auth:delivery:rehearse": "tsx src/scripts/rehearse-auth-delivery.ts",
     "reconcile:payments": "tsx src/jobs/reconcile-payments.ts",
     "reconcile:payments:loop": "tsx src/jobs/reconcile-payments.ts --mode=loop",
     "test:postgres": "tsx --test \"src/**/*.integration.ts\"",

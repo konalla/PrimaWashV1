@@ -14,6 +14,7 @@ Launch-freeze update on 2026-07-07:
 - Auth-code webhook delivery now has bounded timeout/retry behavior, a stable delivery id for idempotent email/SMS relay handling, delivery attempt headers, channel metadata, and tests proving webhook delivery does not expose development codes.
 - Added `@prima-wash/delivery-relay`, a deployable webhook receiver that sends auth and invitation codes through SMTP for email recipients and optionally forwards SMS recipients to an external SMS webhook. Staging still needs real SMTP/SMS secrets and end-to-end invitation rehearsal.
 - Added `compose.staging-auth.yaml` and `npm run compose:auth-staging` to rehearse production-like auth delivery locally with Mailpit while `SHOW_DEV_AUTH_CODE=false` and `ALLOW_DEV_HEADER_AUTH=false`.
+- Added `npm run auth:delivery:rehearse` to automate customer login, seeded internal admin login, partner invitation creation, Mailpit code retrieval, and partner invitation acceptance through the production-like auth delivery path.
 
 Latest finance operations runbook work on 2026-07-07:
 

@@ -36,6 +36,24 @@ This starts the normal local stack plus:
 
 Use this mode to rehearse real auth-code and invitation delivery without exposing codes through API responses. Request a login or access invitation, then read the delivered code from Mailpit. In staging, replace Mailpit with real SMTP/SMS provider secrets and keep the same API-to-relay webhook shape.
 
+Automated auth delivery rehearsal:
+
+```bash
+npm run auth:delivery:rehearse
+```
+
+Run this while `npm run compose:auth-staging` is up. The rehearsal:
+
+- Requests a customer login code.
+- Confirms the API response does not include `devCode`.
+- Reads the code from Mailpit.
+- Verifies the customer session.
+- Logs in the seeded internal admin through the same Mailpit path.
+- Creates a partner invitation.
+- Confirms the invitation API response does not include `devCode`.
+- Reads the invitation code from Mailpit.
+- Accepts the invitation and confirms the resulting partner session.
+
 Local manual preview flow:
 
 ```powershell

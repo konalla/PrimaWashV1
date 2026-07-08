@@ -22,6 +22,7 @@
     "dev:mobile:web": "npm run web --workspace @prima-wash/mobile",
     "dev:web": "npm run dev --workspace @prima-wash/web",
     "dev:delivery-relay": "npm run dev --workspace @prima-wash/delivery-relay",
+    "auth:delivery:rehearse": "npm run auth:delivery:rehearse --workspace @prima-wash/api",
     "test": "npm run test --workspaces --if-present",
     "test:postgres": "npm run test:postgres --workspace @prima-wash/api"
   },
