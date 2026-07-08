@@ -20,6 +20,22 @@ Then open:
 - Customer preview: `http://127.0.0.1:3001/`
 - Partner dashboard: `http://127.0.0.1:3000/?api=http://127.0.0.1:3001`
 
+Production-like auth delivery rehearsal:
+
+```bash
+npm run compose:auth-staging
+```
+
+This starts the normal local stack plus:
+
+- `delivery-relay` at `http://127.0.0.1:3025/healthz`
+- Mailpit SMTP capture at `http://127.0.0.1:8025`
+- API auth delivery set to `AUTH_CODE_DELIVERY_PROVIDER=webhook`
+- `SHOW_DEV_AUTH_CODE=false`
+- `ALLOW_DEV_HEADER_AUTH=false`
+
+Use this mode to rehearse real auth-code and invitation delivery without exposing codes through API responses. Request a login or access invitation, then read the delivered code from Mailpit. In staging, replace Mailpit with real SMTP/SMS provider secrets and keep the same API-to-relay webhook shape.
+
 Local manual preview flow:
 
 ```powershell

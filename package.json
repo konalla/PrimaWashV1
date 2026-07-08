@@ -11,6 +11,7 @@
     "check": "npm run check --workspace @prima-wash/contracts && npm run build --workspace @prima-wash/contracts && npm run check --workspace @prima-wash/api && npm run check --workspace @prima-wash/web && npm run check --workspace @prima-wash/mobile && npm run check --workspace @prima-wash/delivery-relay",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
+    "compose:auth-staging": "docker compose -f compose.yaml -f compose.staging-auth.yaml up --build",
     "db:migrate": "npm run migrate --workspace @prima-wash/api",
     "db:smoke": "npm run db:smoke --workspace @prima-wash/api",
     "reconcile:payments": "npm run reconcile:payments --workspace @prima-wash/api --",

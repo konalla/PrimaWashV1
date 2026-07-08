@@ -13,6 +13,7 @@ Launch-freeze update on 2026-07-07:
 - Web portal demo auth-code login, partner-location switching, and internal permission switching are now localhost-only safeguards. Non-local web origins require an issued bearer access token and no longer auto-login as demo users.
 - Auth-code webhook delivery now has bounded timeout/retry behavior, a stable delivery id for idempotent email/SMS relay handling, delivery attempt headers, channel metadata, and tests proving webhook delivery does not expose development codes.
 - Added `@prima-wash/delivery-relay`, a deployable webhook receiver that sends auth and invitation codes through SMTP for email recipients and optionally forwards SMS recipients to an external SMS webhook. Staging still needs real SMTP/SMS secrets and end-to-end invitation rehearsal.
+- Added `compose.staging-auth.yaml` and `npm run compose:auth-staging` to rehearse production-like auth delivery locally with Mailpit while `SHOW_DEV_AUTH_CODE=false` and `ALLOW_DEV_HEADER_AUTH=false`.
 
 Latest finance operations runbook work on 2026-07-07:
 

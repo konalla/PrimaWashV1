@@ -1,0 +1,37 @@
+services:
+  mailpit:
+    image: axllent/mailpit:v1.20
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+
+  delivery-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.delivery-relay
+    environment:
+      PORT: 3025
+      PRIMA_DELIVERY_WEBHOOK_SECRET: ${PRIMA_DELIVERY_WEBHOOK_SECRET:-prima-wash-local-delivery-secret}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: ${SMTP_FROM:-Prima Wash <no-reply@primawash.local>}
+      SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
+    ports:
+      - "${DELIVERY_RELAY_PORT:-3025}:3025"
+    depends_on:
+      - mailpit
+
+  api:
+    environment:
+      AUTH_CODE_DELIVERY_PROVIDER: webhook
+      AUTH_CODE_DELIVERY_WEBHOOK_URL: http://delivery-relay:3025/auth-code
+      AUTH_CODE_DELIVERY_WEBHOOK_SECRET: ${PRIMA_DELIVERY_WEBHOOK_SECRET:-prima-wash-local-delivery-secret}
+      AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS: ${AUTH_CODE_DELIVERY_WEBHOOK_TIMEOUT_MS:-5000}
+      AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS: ${AUTH_CODE_DELIVERY_WEBHOOK_MAX_ATTEMPTS:-3}
+      ALLOW_DEV_HEADER_AUTH: "false"
+      SHOW_DEV_AUTH_CODE: "false"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      delivery-relay:
+        condition: service_started
