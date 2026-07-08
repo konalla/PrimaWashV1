@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, Surface } from '@/components/prima-ui';
-import { colors, spacing } from '@/constants/design';
+import { colors, radius, spacing } from '@/constants/design';
 import { useBooking } from '@/context/booking-context';
 import { useNotifications } from '@/context/notification-context';
 import { primaApi } from '@/lib/api';
@@ -80,14 +80,19 @@ export default function ReviewScreen() {
 
   return (
     <AppScreen eyebrow={draft.primaWashDay ? 'Step 3 of 3' : 'Step 4 of 4'} title="Review and pay">
-      <Surface accent>
-        <SectionHeading eyebrow={draft.primaWashDay ? 'Condo service day' : 'Verified partner'} title={locationName ?? 'Choose a location'} />
-        <Text style={styles.rating}>
+      <View style={styles.checkoutHero}>
+        <Text style={styles.heroEyebrow}>{draft.primaWashDay ? 'Condo service day' : 'Verified partner'}</Text>
+        <Text style={styles.heroTitle}>{locationName ?? 'Choose a location'}</Text>
+        <Text style={styles.heroBody}>
           {draft.primaWashDay
             ? `${draft.primaWashDay.approvedServiceArea} - management-approved operating window`
             : `${draft.partner?.rating.toFixed(1) ?? '-'} stars - Quality checked - ${draft.partner?.distanceKm.toFixed(1) ?? '-'} km away`}
         </Text>
-      </Surface>
+        <View style={styles.heroMetaRow}>
+          <View style={styles.heroMeta}><Text style={styles.heroMetaLabel}>Service</Text><Text style={styles.heroMetaValue}>{draft.service?.name ?? 'Choose'}</Text></View>
+          <View style={styles.heroMeta}><Text style={styles.heroMetaLabel}>Total</Text><Text style={styles.heroMetaValue}>{draft.service ? formatMoney(draft.service.price) : '$0.00'}</Text></View>
+        </View>
+      </View>
       <Surface>
         <SectionHeading
           eyebrow="Vehicle for this booking"
@@ -167,6 +172,11 @@ export default function ReviewScreen() {
         <Text style={styles.payment}>
           We will create a secure payment authorization next. Payment is captured only after care is completed.
         </Text>
+        <View style={styles.trustStrip}>
+          <Text style={styles.trustItem}>No surprise charges</Text>
+          <Text style={styles.trustItem}>Verified partner</Text>
+          <Text style={styles.trustItem}>Prima support</Text>
+        </View>
       </Surface>
       <Surface>
         <SectionHeading eyebrow="Reminders" title={preferences.appointmentReminders ? 'Reminder enabled' : 'Reminder off'} />
@@ -250,6 +260,21 @@ function formatVehicleName(vehicle: Vehicle) {
 }
 
 const styles = StyleSheet.create({
+  checkoutHero: {
+    borderWidth: 1,
+    borderColor: '#C7D6D2',
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceStrong,
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  heroEyebrow: { color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2, textTransform: 'uppercase' },
+  heroTitle: { color: colors.text, fontSize: 24, fontWeight: '900', lineHeight: 29 },
+  heroBody: { color: colors.muted, fontSize: 13, lineHeight: 20 },
+  heroMetaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  heroMeta: { flex: 1, borderWidth: 1, borderColor: '#C7D6D2', borderRadius: radius.md, backgroundColor: colors.canvasRaised, padding: spacing.md },
+  heroMetaLabel: { color: colors.subtle, fontSize: 10, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
+  heroMetaValue: { color: colors.text, fontSize: 14, fontWeight: '900', marginTop: 4 },
   rating: { color: colors.muted, fontSize: 13 },
   changeAction: { color: colors.accent, fontSize: 12, fontWeight: '900', paddingVertical: spacing.sm },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xl },
@@ -258,6 +283,8 @@ const styles = StyleSheet.create({
   strong: { color: colors.accent, fontSize: 18, fontWeight: '900' },
   divider: { height: 1, backgroundColor: colors.border },
   payment: { color: colors.muted, fontSize: 13, lineHeight: 20 },
+  trustStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  trustItem: { overflow: 'hidden', borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, color: colors.accent, fontSize: 11, fontWeight: '900', paddingHorizontal: spacing.sm, paddingVertical: 6 },
   errorTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
   consentRow: {
     flexDirection: 'row',

@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
-import { colors, spacing } from '@/constants/design';
+import { colors, radius, spacing } from '@/constants/design';
 import { useBooking } from '@/context/booking-context';
 import { useNotifications } from '@/context/notification-context';
 import { primaApi } from '@/lib/api';
@@ -129,7 +129,7 @@ export default function CheckoutScreen() {
       ) : null}
 
       {booking ? (
-        <Surface accent>
+        <View style={styles.checkoutHero}>
           <View style={styles.row}>
             <Text style={styles.service}>{formatService(booking.serviceCode)}</Text>
             <StatusChip>{payment?.provider ?? 'local'}</StatusChip>
@@ -137,7 +137,7 @@ export default function CheckoutScreen() {
           <Text style={styles.body}>{formatAppointment(booking.scheduledStartAt)}</Text>
           <Text style={styles.price}>{formatMoney(booking.acceptedPrice)}</Text>
           <Text style={styles.reference}>Reference {booking.id.slice(-8).toUpperCase()}</Text>
-        </Surface>
+        </View>
       ) : null}
 
       <Surface>
@@ -152,6 +152,10 @@ export default function CheckoutScreen() {
           Prima Wash only captures payment when the service is completed. If the booking is cancelled before service starts,
           the authorization is released.
         </Text>
+        <View style={styles.protectionGrid}>
+          <View style={styles.protectionItem}><Text style={styles.protectionTitle}>Authorize now</Text><Text style={styles.protectionBody}>Secure hold only</Text></View>
+          <View style={styles.protectionItem}><Text style={styles.protectionTitle}>Capture later</Text><Text style={styles.protectionBody}>After completion</Text></View>
+        </View>
       </Surface>
 
       {error ? (
@@ -203,12 +207,17 @@ function paymentBody(payment?: PaymentIntent) {
 }
 
 const styles = StyleSheet.create({
+  checkoutHero: { borderWidth: 1, borderColor: '#C7D6D2', borderRadius: radius.xl, backgroundColor: colors.surfaceStrong, padding: spacing.xl, gap: spacing.md },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   title: { color: colors.text, fontSize: 18, fontWeight: '900' },
   service: { flex: 1, color: colors.text, fontSize: 20, fontWeight: '900' },
   body: { color: colors.muted, fontSize: 14, lineHeight: 21 },
-  price: { color: colors.text, fontSize: 24, fontWeight: '900' },
+  price: { color: colors.accent, fontSize: 30, fontWeight: '900' },
   reference: { color: colors.subtle, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  protectionGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  protectionItem: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.canvasRaised, padding: spacing.md },
+  protectionTitle: { color: colors.text, fontSize: 12, fontWeight: '900' },
+  protectionBody: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 3 },
   errorTitle: { color: colors.text, fontSize: 17, fontWeight: '900' },
   link: { color: colors.accent, fontSize: 13, fontWeight: '900', paddingVertical: spacing.sm },
 });

@@ -35,51 +35,53 @@ export default function ServiceDetailsScreen() {
         <Text style={styles.body}>{config.body}</Text>
       </Surface>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>{config.primaryLabel}</Text>
-        <TextInput
-          multiline
-          onChangeText={setPrimary}
-          placeholder={config.primaryPlaceholder}
-          placeholderTextColor={colors.subtle}
-          style={[styles.input, styles.textArea]}
-          value={primary}
-        />
-      </View>
+      <View style={styles.formCard}>
+        <View style={styles.field}>
+          <Text style={styles.label}>{config.primaryLabel}</Text>
+          <TextInput
+            multiline
+            onChangeText={setPrimary}
+            placeholder={config.primaryPlaceholder}
+            placeholderTextColor={colors.subtle}
+            style={[styles.input, styles.textArea]}
+            value={primary}
+          />
+        </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>{config.secondaryLabel}</Text>
-        <TextInput
-          multiline
-          onChangeText={setSecondary}
-          placeholder={config.secondaryPlaceholder}
-          placeholderTextColor={colors.subtle}
-          style={[styles.input, styles.textArea]}
-          value={secondary}
-        />
-      </View>
+        <View style={styles.field}>
+          <Text style={styles.label}>{config.secondaryLabel}</Text>
+          <TextInput
+            multiline
+            onChangeText={setSecondary}
+            placeholder={config.secondaryPlaceholder}
+            placeholderTextColor={colors.subtle}
+            style={[styles.input, styles.textArea]}
+            value={secondary}
+          />
+        </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>{config.contactLabel}</Text>
-        <TextInput
-          onChangeText={setContact}
-          placeholder={config.contactPlaceholder}
-          placeholderTextColor={colors.subtle}
-          style={styles.input}
-          value={contact}
-        />
-      </View>
+        <View style={styles.field}>
+          <Text style={styles.label}>{config.contactLabel}</Text>
+          <TextInput
+            onChangeText={setContact}
+            placeholder={config.contactPlaceholder}
+            placeholderTextColor={colors.subtle}
+            style={styles.input}
+            value={contact}
+          />
+        </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Additional notes</Text>
-        <TextInput
-          multiline
-          onChangeText={setNotes}
-          placeholder={config.notesPlaceholder}
-          placeholderTextColor={colors.subtle}
-          style={[styles.input, styles.textArea]}
-          value={notes}
-        />
+        <View style={styles.field}>
+          <Text style={styles.label}>Additional notes</Text>
+          <TextInput
+            multiline
+            onChangeText={setNotes}
+            placeholder={config.notesPlaceholder}
+            placeholderTextColor={colors.subtle}
+            style={[styles.input, styles.textArea]}
+            value={notes}
+          />
+        </View>
       </View>
 
       <PrimaryButton label={draft.primaWashDay ? 'Review booking' : 'Choose appointment time'} onPress={continueFlow} />
@@ -183,6 +185,7 @@ function parseExecutionNotes(value?: string) {
 
 const styles = StyleSheet.create({
   body: { color: colors.muted, fontSize: 13, lineHeight: 20 },
+  formCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.lg },
   field: { gap: spacing.sm },
   label: { color: colors.text, fontSize: 13, fontWeight: '800' },
   input: {

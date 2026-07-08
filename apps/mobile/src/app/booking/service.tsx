@@ -58,13 +58,19 @@ export default function ServiceScreen() {
 
   return (
     <AppScreen eyebrow="Step 1 of 4" title="Choose your care">
-      <Text style={styles.intro}>
-        {draft.primaWashDay
-          ? `${formatServiceMode(serviceMode)} - ${draft.primaWashDay.propertyName} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
-          : draft.partner
-            ? `${formatServiceMode(serviceMode)} - ${draft.partner.name} - ${draft.partner.rating.toFixed(1)} stars - ${draft.partner.distanceKm.toFixed(1)} km`
-            : 'Choose a verified partner before selecting your care.'}
-      </Text>
+      <View style={styles.bookingContext}>
+        <Text style={styles.contextEyebrow}>Booking context</Text>
+        <Text style={styles.contextTitle}>
+          {draft.primaWashDay ? draft.primaWashDay.propertyName : draft.partner?.name ?? 'Choose a verified partner'}
+        </Text>
+        <Text style={styles.intro}>
+          {draft.primaWashDay
+            ? `${formatServiceMode(serviceMode)} - ${new Date(draft.primaWashDay.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
+            : draft.partner
+              ? `${formatServiceMode(serviceMode)} - ${draft.partner.rating.toFixed(1)} stars - ${draft.partner.distanceKm.toFixed(1)} km`
+              : 'Compare ratings, distance, services, and live availability before choosing care.'}
+        </Text>
+      </View>
       {!draft.partner && !draft.primaWashDay ? (
         <Pressable onPress={() => router.replace('/partners')} style={styles.addVehicle}>
           <Text style={styles.name}>Choose a partner</Text>
@@ -87,7 +93,7 @@ export default function ServiceScreen() {
             </Text>
           </View>
           <View style={styles.selectedBadge}>
-            <Text style={styles.selectedBadgeText}>Booked</Text>
+            <Text style={styles.selectedBadgeText}>Selected</Text>
           </View>
         </View>
       ) : null}
@@ -141,15 +147,17 @@ export default function ServiceScreen() {
               onPress={() => setService(service)}
               style={({ pressed }) => [styles.card, selected && styles.cardSelected, pressed && styles.pressed]}>
               <View style={styles.topRow}>
-                <Text style={styles.name}>{service.name}</Text>
+                <View style={styles.serviceTitleBlock}>
+                  <Text style={styles.name}>{service.name}</Text>
+                  <Text style={styles.duration}>{service.durationMinutes} min service</Text>
+                </View>
                 {index === 1 ? <StatusChip>Most popular</StatusChip> : null}
               </View>
               <Text style={styles.description}>{descriptions[service.code]}</Text>
               <View style={styles.bottomRow}>
-                <Text style={styles.duration}>{service.durationMinutes} min</Text>
                 <Text style={styles.price}>{formatMoney(service.price)}</Text>
+                <Text style={[styles.selected, selected && styles.selectedStrong]}>{selected ? 'Selected for checkout' : 'Tap to select'}</Text>
               </View>
-              {selected ? <Text style={styles.selected}>Selected</Text> : null}
             </Pressable>
           );
         })}
@@ -174,14 +182,17 @@ function formatServiceMode(mode: BookingOnsiteServiceMode) {
 }
 
 const styles = StyleSheet.create({
-  intro: { color: colors.muted, fontSize: 14, lineHeight: 21, marginTop: -spacing.sm },
+  bookingContext: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.sm },
+  contextEyebrow: { color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2, textTransform: 'uppercase' },
+  contextTitle: { color: colors.text, fontSize: 20, fontWeight: '900' },
+  intro: { color: colors.muted, fontSize: 14, lineHeight: 21 },
   list: { gap: spacing.md },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
   groupLabel: { color: colors.text, fontSize: 14, fontWeight: '800' },
   headerAction: { color: colors.accent, fontSize: 12, fontWeight: '900' },
   selectedVehicleCard: {
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: '#C7D6D2',
     borderRadius: radius.lg,
     backgroundColor: colors.surfaceStrong,
     padding: spacing.lg,
@@ -203,16 +214,18 @@ const styles = StyleSheet.create({
   vehicleAction: { color: colors.accent, fontSize: 11, fontWeight: '900', marginTop: spacing.sm },
   vehicleActionSelected: { color: colors.text },
   addVehicle: { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.accent, borderRadius: radius.lg, padding: spacing.lg, backgroundColor: colors.surface },
-  card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.md },
+  card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.md, shadowColor: colors.black, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 1 },
   cardSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceStrong },
   pressed: { opacity: 0.84 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
+  serviceTitleBlock: { flex: 1, gap: 3 },
   name: { flex: 1, color: colors.text, fontSize: 18, fontWeight: '800' },
   description: { color: colors.muted, fontSize: 13, lineHeight: 19 },
-  bottomRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
   duration: { color: colors.subtle, fontSize: 12, fontWeight: '700' },
-  price: { color: colors.accent, fontSize: 17, fontWeight: '900' },
+  price: { color: colors.accent, fontSize: 20, fontWeight: '900' },
   selected: { color: colors.accent, fontSize: 12, fontWeight: '800' },
+  selectedStrong: { color: colors.text },
   errorCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.sm },
   errorTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
   retry: { color: colors.accent, fontSize: 13, fontWeight: '800', paddingVertical: spacing.sm },

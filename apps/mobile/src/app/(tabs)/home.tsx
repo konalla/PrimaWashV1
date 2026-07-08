@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import type { BookingOnsiteServiceMode, CustomerProfile, PrimaWashDay, Vehicle } from '@prima-wash/contracts';
 
 import { AppScreen } from '@/components/app-screen';
+import { BrandLogo } from '@/components/brand-logo';
 import { PrimaryButton, SectionHeading, StatusChip, Surface } from '@/components/prima-ui';
 import { colors, radius, spacing } from '@/constants/design';
 import { useBooking } from '@/context/booking-context';
@@ -77,6 +78,33 @@ export default function HomeScreen() {
           <Text style={styles.avatarText}>{profileName.slice(0, 1).toUpperCase()}</Text>
         </View>
       }>
+      <View style={styles.brandStrip}>
+        <BrandLogo compact />
+        <Text style={styles.brandStripText}>Verified vehicle care, coordinated end to end.</Text>
+      </View>
+
+      <View style={styles.vehicleHero}>
+        <View style={styles.vehicleTop}>
+          <View style={styles.vehicleCopy}>
+            <Text style={styles.caption}>Your vehicle</Text>
+            <Text style={styles.vehicleName}>
+              {vehicle ? `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || 'Vehicle' : 'Add your first vehicle'}
+            </Text>
+            <View style={styles.platePill}>
+              <Text style={styles.plate}>{vehicle?.plateNumber ?? 'GARAGE EMPTY'}</Text>
+            </View>
+          </View>
+          <View style={styles.vehicleMark}>
+            <Text style={styles.vehicleMarkText}>{vehicle?.make?.slice(0, 1).toUpperCase() ?? '+'}</Text>
+          </View>
+        </View>
+        <View style={styles.heroDivider} />
+        <View style={styles.healthRow}>
+          <Text style={styles.health}>{vehicle ? 'Care profile active' : 'Create a reusable vehicle profile'}</Text>
+          <Text onPress={() => router.push('/(tabs)/garage')} style={styles.manage}>Manage garage</Text>
+        </View>
+      </View>
+
       {!profile?.residentialProfile ? (
         <Surface accent>
           <Text style={styles.cardEyebrow}>RESIDENTIAL SETUP</Text>
@@ -128,25 +156,6 @@ export default function HomeScreen() {
           </Surface>
         </Pressable>
       ) : null}
-
-      <Surface accent>
-        <View style={styles.vehicleTop}>
-          <View>
-            <Text style={styles.caption}>Primary vehicle</Text>
-            <Text style={styles.vehicleName}>
-              {vehicle ? `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim() || 'Vehicle' : 'Add your first vehicle'}
-            </Text>
-            <Text style={styles.plate}>{vehicle?.plateNumber ?? 'GARAGE EMPTY'}</Text>
-          </View>
-          <View style={styles.vehicleMark}>
-            <Text style={styles.vehicleMarkText}>{vehicle?.make?.slice(0, 1).toUpperCase() ?? '+'}</Text>
-          </View>
-        </View>
-        <View style={styles.healthRow}>
-          <Text style={styles.health}>{vehicle ? 'Care profile active' : 'Create a reusable vehicle profile'}</Text>
-          <Text onPress={() => router.push('/(tabs)/garage')} style={styles.manage}>Manage</Text>
-        </View>
-      </Surface>
 
       {latestBooking ? (
         <Pressable onPress={() => router.push('/(tabs)/bookings')}>
@@ -224,18 +233,36 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.surfaceStrong, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.accent, fontSize: 17, fontWeight: '800' },
+  brandStrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: -spacing.md },
+  brandStripText: { flex: 1, color: colors.subtle, fontSize: 11, lineHeight: 16, textAlign: 'right' },
+  vehicleHero: {
+    borderWidth: 1,
+    borderColor: '#C7D6D2',
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceStrong,
+    padding: spacing.xl,
+    gap: spacing.lg,
+    shadowColor: colors.black,
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 4,
+  },
   vehicleTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  vehicleCopy: { flex: 1, paddingRight: spacing.md },
   caption: { color: colors.muted, fontSize: 12 },
-  vehicleName: { color: colors.text, fontSize: 28, fontWeight: '800', letterSpacing: 0, marginTop: spacing.xs },
-  plate: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginTop: spacing.sm },
-  vehicleMark: { width: 72, height: 72, borderRadius: radius.lg, backgroundColor: colors.surfaceStrong, alignItems: 'center', justifyContent: 'center' },
+  vehicleName: { color: colors.text, fontSize: 30, lineHeight: 34, fontWeight: '900', letterSpacing: 0, marginTop: spacing.xs },
+  platePill: { alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, backgroundColor: colors.canvasRaised, paddingHorizontal: spacing.sm, paddingVertical: 5, marginTop: spacing.sm },
+  plate: { color: colors.muted, fontSize: 11, fontWeight: '900', letterSpacing: 1.5 },
+  vehicleMark: { width: 76, height: 76, borderWidth: 1, borderColor: '#C7D6D2', borderRadius: radius.lg, backgroundColor: colors.canvasRaised, alignItems: 'center', justifyContent: 'center' },
   vehicleMarkText: { color: colors.accent, fontSize: 22, fontWeight: '900' },
-  healthRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, flexDirection: 'row', justifyContent: 'space-between' },
-  health: { color: colors.accent, fontSize: 12, fontWeight: '700' },
-  manage: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  heroDivider: { height: 1, backgroundColor: '#D6E0DD' },
+  healthRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
+  health: { color: colors.accent, fontSize: 12, fontWeight: '900' },
+  manage: { color: colors.accent, fontSize: 12, fontWeight: '900' },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  actionCard: { flexGrow: 1, flexBasis: '47%', minHeight: 162, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg },
-  actionIcon: { color: colors.accent, fontSize: 13, fontWeight: '900', marginBottom: spacing.lg },
+  actionCard: { flexGrow: 1, flexBasis: '47%', minHeight: 162, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, shadowColor: colors.black, shadowOpacity: 0.04, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 1 },
+  actionIcon: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, color: colors.accent, fontSize: 11, fontWeight: '900', marginBottom: spacing.lg, paddingHorizontal: spacing.sm, paddingVertical: 5 },
   actionTitle: { color: colors.text, fontSize: 16, fontWeight: '800', lineHeight: 21 },
   actionBody: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: spacing.sm },
   pressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },

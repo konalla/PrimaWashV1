@@ -90,9 +90,13 @@ export default function TimeScreen() {
 
   return (
     <AppScreen eyebrow="Step 3 of 4" title="Choose a time">
-      <Text style={styles.intro}>
-        {formatServiceMode(serviceMode)} - {draft.partner?.name ?? 'Selected partner'} - {draft.service?.name ?? 'Selected service'} - Times shown in partner local time.
-      </Text>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryEyebrow}>Appointment search</Text>
+        <Text style={styles.summaryTitle}>{draft.service?.name ?? 'Selected service'}</Text>
+        <Text style={styles.intro}>
+          {formatServiceMode(serviceMode)} - {draft.partner?.name ?? 'Selected partner'} - Times shown in partner local time.
+        </Text>
+      </View>
 
       <View style={styles.dateRail}>
         {dateOptions.map((option) => {
@@ -125,7 +129,7 @@ export default function TimeScreen() {
             <Text style={styles.dayTitle}>Available appointments</Text>
             <Text style={styles.dayMeta}>{slots.length} options</Text>
           </View>
-          <View style={styles.slotGrid}>
+          <View style={styles.slotList}>
             {slots.map((slot) => {
               const selected = activeHoldForSelectedDate?.startsAt === slot.startsAt;
               const holding = holdingSlotKey === slot.startsAt;
@@ -135,12 +139,15 @@ export default function TimeScreen() {
                   disabled={Boolean(holdingSlotKey)}
                   onPress={() => void holdAndContinue(slot)}
                   style={({ pressed }) => [styles.slot, selected && styles.slotSelected, pressed && styles.pressed]}>
-                  <Text style={[styles.slotTime, selected && styles.slotTimeSelected]}>
-                    {formatTime(slot.startsAt)}
-                  </Text>
-                  <Text style={[styles.slotCapacity, selected && styles.slotTimeSelected]}>
-                    {holding ? 'Holding…' : `${slot.availableCount} available`}
-                  </Text>
+                  <View>
+                    <Text style={[styles.slotTime, selected && styles.slotTimeSelected]}>
+                      {formatTime(slot.startsAt)} - {formatTime(slot.endsAt)}
+                    </Text>
+                    <Text style={[styles.slotCapacity, selected && styles.slotTimeSelected]}>
+                      {holding ? 'Holding appointment...' : `${slot.availableCount} appointment${slot.availableCount === 1 ? '' : 's'} open`}
+                    </Text>
+                  </View>
+                  <Text style={[styles.slotAction, selected && styles.slotTimeSelected]}>{selected ? 'Held' : 'Hold'}</Text>
                 </Pressable>
               );
             })}
@@ -163,7 +170,7 @@ export default function TimeScreen() {
 
       <PrimaryButton
         disabled={!draft.partner || !draft.service || !draft.vehicle || !activeHoldForSelectedDate || loading || Boolean(error)}
-        label={activeHoldForSelectedDate ? 'Review held appointment' : holdingSlotKey ? 'Holding appointment…' : 'Select a time to continue'}
+        label={activeHoldForSelectedDate ? 'Review held appointment' : holdingSlotKey ? 'Holding appointment...' : 'Select a time to continue'}
         loading={Boolean(holdingSlotKey)}
         onPress={() => router.push('/booking/review')}
       />
@@ -202,7 +209,10 @@ function formatServiceMode(mode: BookingOnsiteServiceMode) {
 }
 
 const styles = StyleSheet.create({
-  intro: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: -spacing.sm },
+  summaryCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface, padding: spacing.lg, gap: spacing.sm },
+  summaryEyebrow: { color: colors.accent, fontSize: 10, fontWeight: '900', letterSpacing: 1.2, textTransform: 'uppercase' },
+  summaryTitle: { color: colors.text, fontSize: 20, fontWeight: '900' },
+  intro: { color: colors.muted, fontSize: 13, lineHeight: 20 },
   dateRail: { flexDirection: 'row', gap: spacing.sm },
   dateChip: {
     minWidth: 76,
@@ -222,22 +232,23 @@ const styles = StyleSheet.create({
   dayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   dayTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
   dayMeta: { color: colors.subtle, fontSize: 12, fontWeight: '700' },
-  slotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  slotList: { gap: spacing.sm },
   slot: {
-    minWidth: 104,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
+    padding: spacing.lg,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   slotSelected: { borderColor: colors.accent, backgroundColor: colors.accent },
-  slotTime: { color: colors.text, fontSize: 13, fontWeight: '800' },
+  slotTime: { color: colors.text, fontSize: 15, fontWeight: '900' },
   slotTimeSelected: { color: colors.onAccent },
-  slotCapacity: { color: colors.subtle, fontSize: 11, fontWeight: '700' },
+  slotCapacity: { color: colors.subtle, fontSize: 11, fontWeight: '700', marginTop: 3 },
+  slotAction: { color: colors.accent, fontSize: 12, fontWeight: '900' },
   pressed: { opacity: 0.82 },
   empty: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, backgroundColor: colors.surface },
   emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '800', marginBottom: spacing.sm },
