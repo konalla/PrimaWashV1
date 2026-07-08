@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput } from 'react-native';
 
+import { BrandLogo } from '@/components/brand-logo';
 import { PrimaryButton, Surface } from '@/components/prima-ui';
 import { colors, radius, spacing } from '@/constants/design';
 import { useAuth } from '@/context/auth-context';
@@ -36,8 +37,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.brandMark}><Text style={styles.brandLetter}>P</Text></View>
-      <Text style={styles.eyebrow}>PRIMA WASH</Text>
+      <BrandLogo />
       <Text style={styles.title}>Your vehicle care, in one trusted place.</Text>
       <Text style={styles.body}>Sign in to book care, manage your garage, and follow every appointment.</Text>
       <Surface>
@@ -62,9 +62,6 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, justifyContent: 'center', backgroundColor: colors.canvas, padding: spacing.xl, gap: spacing.lg },
-  brandMark: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  brandLetter: { color: colors.onAccent, fontSize: 23, fontWeight: '900' },
-  eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '900', letterSpacing: 1.8 },
   title: { color: colors.text, fontSize: 36, lineHeight: 41, fontWeight: '900', letterSpacing: 0 },
   body: { color: colors.muted, fontSize: 15, lineHeight: 23 },
   label: { color: colors.muted, fontSize: 12, fontWeight: '700' },

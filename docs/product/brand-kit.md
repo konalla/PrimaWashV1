@@ -20,7 +20,7 @@ The product promise is:
 
 The explored orange wordmark has usable energy, but the gear/wrench/car symbols lean too heavily toward repair-shop mechanics. That is not the strongest signal for a premium car-care concierge.
 
-For launch, do not place the experimental gear/wrench logo into production UI yet. Use the simple Prima Wash wordmark treatment and the `P` monogram mark until the final identity is refined.
+For launch, use Logo B as the temporary production logo. It is the most commercially usable of the explored marks because the wordmark is strong, readable, and immediately understandable. The gear/car symbol still leans more mechanical than ideal, so treat this as a launch mark to refine, not the final identity forever.
 
 Recommended future logo direction:
 

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
+import { BrandLogo } from '@/components/brand-logo';
 import { PrimaryButton, Surface } from '@/components/prima-ui';
 import { colors, radius, spacing } from '@/constants/design';
 import { useAuth } from '@/context/auth-context';
@@ -135,7 +136,10 @@ export default function ProfileScreen() {
         <Setting label="Privacy and security" bordered onPress={() => router.push('/profile/privacy')} />
       </Surface>
       <PrimaryButton label="Sign out" onPress={logout} />
-      <Text style={styles.version}>Prima Wash mobile · Phase 1</Text>
+      <View style={styles.footerBrand}>
+        <BrandLogo compact />
+        <Text style={styles.version}>Mobile · Phase 1</Text>
+      </View>
     </AppScreen>
   );
 }
@@ -196,4 +200,5 @@ const styles = StyleSheet.create({
   arrow: { color: colors.subtle, fontSize: 25 },
   settingPressed: { opacity: 0.65 },
   version: { color: colors.subtle, textAlign: 'center', fontSize: 11 },
+  footerBrand: { alignItems: 'center', gap: spacing.xs, paddingTop: spacing.sm },
 });

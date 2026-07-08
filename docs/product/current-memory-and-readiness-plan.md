@@ -13,6 +13,7 @@ Launch brand-system update on 2026-07-08:
 - Updated web and mobile design tokens so primary actions use copper, trust/selected states use petrol teal, and the app avoids returning to dark green full-page UI.
 - Added a visible shell-level UI pass after tokenization: elevated mobile cards, premium mobile background treatment, floating mobile tab bar, stronger web sidebar treatment, web hero identity mark, and more deliberate web card/queue/metric hover hierarchy.
 - Corrected the copper action-button contrast rule to white text and normalized dashboard spacing around a 28px section / 24px card / 16px inner-panel rhythm.
+- Adopted Logo B as the temporary production logo across web and mobile brand surfaces while preserving the note that the gear/car symbol should be refined after launch.
 
 Launch-freeze payment update on 2026-07-08:
 

@@ -96,15 +96,10 @@
       }
 
       .mark {
-        display: grid;
-        width: 42px;
+        display: block;
+        width: 162px;
         height: 42px;
-        place-items: center;
-        border: 1px solid rgba(14, 74, 85, 0.22);
-        border-radius: 16px;
-        background: var(--green);
-        color: #ffffff;
-        box-shadow: 0 12px 32px rgba(14, 74, 85, 0.14);
+        object-fit: contain;
       }
 
       .pill {
@@ -1601,12 +1596,12 @@
 
       .hero > .card:first-child::after {
         position: absolute;
-        top: 58px;
-        right: 64px;
-        color: var(--green);
-        content: "P";
-        font-size: 44px;
-        font-weight: 950;
+        top: 62px;
+        right: 44px;
+        width: 96px;
+        height: 54px;
+        background: url("assets/prima-wash-logo.png") center / contain no-repeat;
+        content: "";
       }
 
       .hero > .card:first-child > * {
@@ -1937,8 +1932,7 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="mark">P</div>
-          <span>Prima Wash</span>
+          <img class="mark" src="assets/prima-wash-logo.png" alt="Prima Wash" />
         </div>
         <nav class="nav-list" aria-label="Business navigation">
           <a class="nav-item is-active" href="#overview"><span class="nav-icon">⌂</span>Overview</a>
