@@ -4,7 +4,10 @@ import { createApiServer } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createAuthCodeDeliveryProvider } from "./modules/auth/delivery.js";
 import { createPaymentProvider } from "./modules/payments/provider.js";
-import { createLocalEvidenceStorageProvider } from "./modules/booking-evidence/storage.js";
+import {
+  createLocalEvidenceStorageProvider,
+  createS3CompatibleEvidenceStorageProvider,
+} from "./modules/booking-evidence/storage.js";
 import { createRepositories } from "./modules/repositories.js";
 
 const config = loadConfig();
@@ -21,10 +24,20 @@ const authCodeDeliveryProvider = createAuthCodeDeliveryProvider(config.authCodeD
 });
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(moduleDirectory, "../public");
-const evidenceStorageProvider = createLocalEvidenceStorageProvider({
-  rootDirectory: path.resolve(config.evidenceStorageDirectory),
-  ...(config.evidencePublicBaseUrl ? { publicBaseUrl: config.evidencePublicBaseUrl } : {}),
-});
+const evidenceStorageProvider =
+  config.evidenceStorageProvider === "s3"
+    ? createS3CompatibleEvidenceStorageProvider({
+        endpoint: config.evidenceS3Endpoint ?? "",
+        region: config.evidenceS3Region ?? "",
+        bucket: config.evidenceS3Bucket ?? "",
+        accessKeyId: config.evidenceS3AccessKeyId ?? "",
+        secretAccessKey: config.evidenceS3SecretAccessKey ?? "",
+        ...(config.evidencePublicBaseUrl ? { publicBaseUrl: config.evidencePublicBaseUrl } : {}),
+      })
+    : createLocalEvidenceStorageProvider({
+        rootDirectory: path.resolve(config.evidenceStorageDirectory),
+        ...(config.evidencePublicBaseUrl ? { publicBaseUrl: config.evidencePublicBaseUrl } : {}),
+      });
 const server = createApiServer({
   repositories,
   paymentProvider,
@@ -48,7 +61,7 @@ server.listen(config.port, "0.0.0.0", () => {
       persistence: config.persistenceMode,
       paymentProvider: config.paymentProvider,
       authCodeDeliveryProvider: config.authCodeDeliveryProvider,
-      evidenceStorageDirectory: config.evidenceStorageDirectory,
+      evidenceStorageProvider: config.evidenceStorageProvider,
     }),
   );
 });

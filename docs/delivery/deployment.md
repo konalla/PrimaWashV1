@@ -119,6 +119,14 @@ Environment contract:
 - `PAYMENT_PROVIDER`: `local` for development or `stripe` for Stripe-backed payment operations.
 - `STRIPE_SECRET_KEY`: Stripe API secret key when `PAYMENT_PROVIDER=stripe`.
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `/v1/webhooks/stripe`.
+- `EVIDENCE_STORAGE_PROVIDER`: `local` for development or `s3` for S3-compatible durable evidence storage. Production must use `s3`.
+- `EVIDENCE_STORAGE_DIRECTORY`: local evidence upload directory when `EVIDENCE_STORAGE_PROVIDER=local`. Default `var/uploads`.
+- `EVIDENCE_PUBLIC_BASE_URL`: optional public/CDN base URL for returned evidence URLs.
+- `EVIDENCE_S3_ENDPOINT`: S3-compatible endpoint, for example AWS S3, Cloudflare R2, DigitalOcean Spaces, MinIO, or another managed object store.
+- `EVIDENCE_S3_REGION`: S3 signing region.
+- `EVIDENCE_S3_BUCKET`: object storage bucket for booking evidence.
+- `EVIDENCE_S3_ACCESS_KEY_ID`: access key for object storage writes.
+- `EVIDENCE_S3_SECRET_ACCESS_KEY`: secret access key for object storage writes.
 
 Staging requirements before external users:
 
@@ -128,6 +136,7 @@ Staging requirements before external users:
 - Schedule `npm run auth:cleanup --workspace @prima-wash/api` or equivalent infrastructure job.
 - Move Postgres credentials to managed secrets.
 - Move payment and auth secrets to managed secrets.
+- Configure `EVIDENCE_STORAGE_PROVIDER=s3` with managed object-storage credentials and bucket backup/lifecycle policy.
 - Restrict CORS to deployed web origins only.
 - Add HTTPS termination and secure headers at the edge.
 - Persist structured logs centrally.

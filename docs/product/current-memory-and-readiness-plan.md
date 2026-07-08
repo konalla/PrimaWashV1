@@ -198,6 +198,14 @@ Latest evidence file upload productionization on 2026-07-05:
 - `npm run check` passed.
 - `npm run test --workspace @prima-wash/api` passed with 112 API tests.
 
+Latest durable evidence storage work on 2026-07-08:
+
+- Added `EVIDENCE_STORAGE_PROVIDER=local|s3`.
+- Added an S3-compatible evidence storage provider using AWS Signature V4 PUT requests without adding a heavy storage SDK dependency.
+- Production config now rejects local evidence storage and requires S3 endpoint, region, bucket, access key, and secret when durable storage is selected.
+- Evidence uploads keep stable booking-scoped storage keys and can return either an `s3://bucket/key` internal reference or an `EVIDENCE_PUBLIC_BASE_URL` URL.
+- Added config and storage tests covering production guards, required S3 settings, SigV4 upload headers, local evidence keys, and failed object-store writes.
+
 Latest booking handover productionization on 2026-07-05:
 
 - Added `0035_booking_handovers.sql`.

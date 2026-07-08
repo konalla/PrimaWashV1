@@ -84,11 +84,13 @@ Done when:
 
 Why: partner proof, handover proof, and finance evidence are trust records. Local container filesystem storage is not enough unless it is backed by a durable mounted volume and backup.
 
+Status: S3-compatible durable evidence storage support was added on 2026-07-08. Production config now rejects local evidence storage and requires S3 endpoint, region, bucket, access key, and secret when `EVIDENCE_STORAGE_PROVIDER=s3`. The remaining pilot work is provider provisioning: create the bucket, set managed secrets, decide bucket access policy, and run an upload rehearsal against the deployed environment.
+
 Done when:
 
 - Pilot evidence uploads persist across API restarts/redeploys.
 - Evidence storage location is backed up or otherwise recoverable.
-- `EVIDENCE_STORAGE_DIRECTORY` and `EVIDENCE_PUBLIC_BASE_URL` are set intentionally.
+- `EVIDENCE_STORAGE_PROVIDER=s3` and the S3-compatible endpoint, region, bucket, access key, secret, and optional public base URL are set intentionally.
 - The team confirms who can access uploaded evidence files.
 
 ### 5. Staging Deployment and Database Release Runbook

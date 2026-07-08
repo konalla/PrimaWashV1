@@ -2,6 +2,7 @@ import { defaultLocalCorsAllowedOrigins } from "./http/respond.js";
 
 export type PersistenceMode = "memory" | "postgres";
 export type PaymentProviderMode = "local" | "stripe";
+export type EvidenceStorageProviderMode = "local" | "s3";
 
 export interface ApiConfig {
   readonly port: number;
@@ -18,8 +19,14 @@ export interface ApiConfig {
   readonly paymentProvider: PaymentProviderMode;
   readonly stripeSecretKey?: string;
   readonly stripeWebhookSecret?: string;
+  readonly evidenceStorageProvider: EvidenceStorageProviderMode;
   readonly evidenceStorageDirectory: string;
   readonly evidencePublicBaseUrl?: string;
+  readonly evidenceS3Endpoint?: string;
+  readonly evidenceS3Region?: string;
+  readonly evidenceS3Bucket?: string;
+  readonly evidenceS3AccessKeyId?: string;
+  readonly evidenceS3SecretAccessKey?: string;
 }
 
 const localDatabaseUrl = "postgres://postgres:postgres@127.0.0.1:5432/prima_wash";
@@ -83,6 +90,28 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     throw new Error("STRIPE_WEBHOOK_SECRET is required in production");
   }
 
+  const evidenceStorageProvider = parseEvidenceStorageProvider(environment);
+
+  if (environment.NODE_ENV === "production" && evidenceStorageProvider === "local") {
+    throw new Error("EVIDENCE_STORAGE_PROVIDER=s3 is required in production");
+  }
+
+  if (evidenceStorageProvider === "s3") {
+    const missing = [
+      ["EVIDENCE_S3_ENDPOINT", environment.EVIDENCE_S3_ENDPOINT],
+      ["EVIDENCE_S3_REGION", environment.EVIDENCE_S3_REGION],
+      ["EVIDENCE_S3_BUCKET", environment.EVIDENCE_S3_BUCKET],
+      ["EVIDENCE_S3_ACCESS_KEY_ID", environment.EVIDENCE_S3_ACCESS_KEY_ID],
+      ["EVIDENCE_S3_SECRET_ACCESS_KEY", environment.EVIDENCE_S3_SECRET_ACCESS_KEY],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+
+    if (missing.length > 0) {
+      throw new Error(`${missing.join(", ")} required when EVIDENCE_STORAGE_PROVIDER=s3`);
+    }
+  }
+
   return {
     port: Number.parseInt(environment.PORT ?? "3001", 10),
     persistenceMode,
@@ -109,8 +138,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ApiCon
     paymentProvider,
     ...(environment.STRIPE_SECRET_KEY ? { stripeSecretKey: environment.STRIPE_SECRET_KEY } : {}),
     ...(environment.STRIPE_WEBHOOK_SECRET ? { stripeWebhookSecret: environment.STRIPE_WEBHOOK_SECRET } : {}),
+    evidenceStorageProvider,
     evidenceStorageDirectory: environment.EVIDENCE_STORAGE_DIRECTORY ?? "var/uploads",
     ...(environment.EVIDENCE_PUBLIC_BASE_URL ? { evidencePublicBaseUrl: environment.EVIDENCE_PUBLIC_BASE_URL } : {}),
+    ...(environment.EVIDENCE_S3_ENDPOINT ? { evidenceS3Endpoint: environment.EVIDENCE_S3_ENDPOINT } : {}),
+    ...(environment.EVIDENCE_S3_REGION ? { evidenceS3Region: environment.EVIDENCE_S3_REGION } : {}),
+    ...(environment.EVIDENCE_S3_BUCKET ? { evidenceS3Bucket: environment.EVIDENCE_S3_BUCKET } : {}),
+    ...(environment.EVIDENCE_S3_ACCESS_KEY_ID ? { evidenceS3AccessKeyId: environment.EVIDENCE_S3_ACCESS_KEY_ID } : {}),
+    ...(environment.EVIDENCE_S3_SECRET_ACCESS_KEY
+      ? { evidenceS3SecretAccessKey: environment.EVIDENCE_S3_SECRET_ACCESS_KEY }
+      : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
   };
 }
@@ -153,6 +190,16 @@ function parsePaymentProviderMode(environment: NodeJS.ProcessEnv): PaymentProvid
   }
 
   throw new Error("PAYMENT_PROVIDER must be either 'local' or 'stripe'");
+}
+
+function parseEvidenceStorageProvider(environment: NodeJS.ProcessEnv): EvidenceStorageProviderMode {
+  const value = environment.EVIDENCE_STORAGE_PROVIDER ?? "local";
+
+  if (value === "local" || value === "s3") {
+    return value;
+  }
+
+  throw new Error("EVIDENCE_STORAGE_PROVIDER must be either 'local' or 's3'");
 }
 
 function parsePositiveInteger(value: string | undefined, fallback: number, name: string): number {
