@@ -26,6 +26,10 @@
         --blue: #2f6f8f;
         --shadow: 0 18px 48px rgba(17, 19, 21, 0.1);
         --focus-ring: 0 0 0 3px rgba(14, 74, 85, 0.18);
+        --space-section: 28px;
+        --space-card: 24px;
+        --space-inner: 16px;
+        --space-tight: 12px;
         --radius-sm: 12px;
         --radius-md: 16px;
         --radius-lg: 24px;
@@ -129,7 +133,7 @@
         display: grid;
         grid-template-columns: 1.35fr 0.65fr;
         gap: 18px;
-        margin-bottom: 18px;
+        margin-bottom: var(--space-section);
       }
 
       .card {
@@ -137,7 +141,7 @@
         border-radius: var(--radius-lg);
         background: var(--panel);
         box-shadow: var(--shadow);
-        padding: 22px;
+        padding: var(--space-card);
       }
 
       .card,
@@ -205,7 +209,7 @@
 
       .metric-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        margin-bottom: 18px;
+        margin-bottom: var(--space-section);
       }
 
       .metric {
@@ -214,7 +218,7 @@
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         background: var(--panel);
-        padding: 18px;
+        padding: var(--space-inner);
       }
 
       .metric span {
@@ -235,15 +239,15 @@
       .finance-summary-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 16px;
+        gap: var(--space-tight);
+        margin-bottom: var(--space-inner);
       }
 
       .finance-summary-card {
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         background: var(--panel-2);
-        padding: 14px;
+        padding: var(--space-inner);
       }
 
       .finance-summary-card span,
@@ -263,8 +267,8 @@
       .finance-toolbar {
         display: grid;
         grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(150px, 0.55fr));
-        gap: 10px;
-        margin-bottom: 16px;
+        gap: var(--space-tight);
+        margin-bottom: var(--space-inner);
       }
 
       .finance-toolbar input,
@@ -279,30 +283,30 @@
       }
 
       #finance-reconciliation-result:not(:empty) {
-        margin: -4px 0 16px;
+        margin: -4px 0 var(--space-inner);
       }
 
       .finance-board {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 360px;
-        gap: 16px;
+        gap: var(--space-inner);
         align-items: start;
       }
 
       .finance-ledger {
         display: grid;
-        gap: 10px;
+        gap: var(--space-tight);
       }
 
       .finance-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 14px;
+        gap: var(--space-inner);
         align-items: center;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         background: var(--panel-2);
-        padding: 14px;
+        padding: var(--space-inner);
         text-align: left;
         cursor: pointer;
       }
@@ -351,7 +355,7 @@
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         background: #ffffff;
-        padding: 16px;
+        padding: var(--space-inner);
       }
 
       .finance-detail-grid {
@@ -462,7 +466,7 @@
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         background: var(--panel-2);
-        padding: 15px;
+        padding: var(--space-inner);
       }
 
       .queue-row {
@@ -602,7 +606,7 @@
         min-width: 148px;
         border-color: var(--amber-2);
         background: var(--amber);
-        color: var(--ink);
+        color: #ffffff;
       }
 
       button.action:hover {
@@ -895,7 +899,7 @@
       }
 
       .availability-card {
-        margin-top: 18px;
+        margin-top: var(--space-section);
       }
 
       .section-heading,
@@ -1143,14 +1147,14 @@
       .lead-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-        margin-bottom: 16px;
+        gap: var(--space-tight);
+        margin-bottom: var(--space-inner);
       }
 
       .lead-summary {
         border: 1px solid var(--line);
         border-radius: var(--radius-sm);
-        padding: 14px;
+        padding: var(--space-inner);
         background: #fbfaf6;
       }
 
@@ -1172,11 +1176,11 @@
       .lead-row {
         display: grid;
         grid-template-columns: 1.1fr 0.9fr auto;
-        gap: 14px;
+        gap: var(--space-inner);
         align-items: start;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
-        padding: 16px;
+        padding: var(--space-inner);
         background: var(--panel-2);
       }
 
@@ -1234,11 +1238,11 @@
       .wash-day-planner {
         display: grid;
         grid-template-columns: 1.2fr repeat(4, minmax(110px, 0.6fr));
-        gap: 10px;
-        margin: 18px 0;
+        gap: var(--space-tight);
+        margin: var(--space-inner) 0;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
-        padding: 16px;
+        padding: var(--space-inner);
         background: #fbfaf6;
       }
 
@@ -1259,11 +1263,11 @@
       .wash-day-row {
         display: grid;
         grid-template-columns: 1fr auto auto auto;
-        gap: 12px;
+        gap: var(--space-tight);
         align-items: center;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
-        padding: 14px;
+        padding: var(--space-inner);
         background: var(--panel-2);
       }
 
@@ -1276,14 +1280,14 @@
       .access-grid {
         display: grid;
         grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-        gap: 16px;
+        gap: var(--space-inner);
         align-items: start;
       }
 
       .access-form {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
+        gap: var(--space-tight);
       }
 
       .access-result {
@@ -1291,7 +1295,7 @@
         gap: 10px;
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
-        padding: 16px;
+        padding: var(--space-inner);
         background: #fbfaf6;
       }
 
@@ -1691,15 +1695,15 @@
       }
 
       .availability-card {
-        margin-bottom: 30px;
+        margin-bottom: var(--space-section);
       }
 
       .availability-day {
         display: grid;
         grid-template-columns: 150px minmax(0, 1fr);
-        gap: 18px;
+        gap: var(--space-inner);
         border-top: 1px solid var(--line);
-        padding-top: 18px;
+        padding-top: var(--space-inner);
       }
 
       .availability-day:first-child {
@@ -1800,7 +1804,7 @@
       .action.primary {
         border-color: transparent;
         background: var(--amber);
-        color: var(--ink);
+        color: #ffffff;
       }
 
       .agenda-controls {

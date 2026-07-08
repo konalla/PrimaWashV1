@@ -16,7 +16,7 @@ export const colors = {
   white: '#FFFFFF',
   black: '#111315',
   onAccent: '#FFFFFF',
-  onAction: '#111315',
+  onAction: '#FFFFFF',
 } as const;
 
 export const spacing = {

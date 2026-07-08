@@ -61,7 +61,7 @@ Usage rules:
 - Use copper sparingly. It should guide action, not dominate the interface.
 - Use black/near-black for primary text.
 - Use white text on petrol backgrounds.
-- Use black/near-black text on copper action buttons.
+- Use white text on copper action buttons.
 - Keep panels white or warm off-white. Avoid returning to dark green full-page UI.
 
 ## Typography
@@ -104,4 +104,3 @@ The web and mobile surfaces now share the same brand direction:
 - Warm canvas and white surfaces.
 - Black text.
 - Manrope typography.
-
