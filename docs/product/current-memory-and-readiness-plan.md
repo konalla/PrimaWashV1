@@ -1,8 +1,15 @@
 # Prima Wash Current Memory and Readiness Plan
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
+
+Launch-freeze payment update on 2026-07-08:
+
+- Added `npm run payments:stripe:rehearse` for a staging Stripe test-mode payment rehearsal.
+- The rehearsal logs in through the production-like auth delivery path, creates a customer vehicle, creates partner availability, creates two real bookings, creates Stripe-backed PaymentIntents, confirms them against Stripe test mode, authorizes through the Prima Wash API, completes the operational checklist for one booking, verifies capture, refunds from the internal finance path, then cancels the second booking to verify authorization voiding.
+- The rehearsal also checks that partner queue scope remains limited to the configured partner location.
+- This command requires `PAYMENT_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, webhook/auth delivery staging configuration, and Mailpit or staging delivery capture for auth-code retrieval.
 
 Launch-freeze update on 2026-07-07:
 

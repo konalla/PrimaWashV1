@@ -54,6 +54,22 @@ Run this while `npm run compose:auth-staging` is up. The rehearsal:
 - Reads the invitation code from Mailpit.
 - Accepts the invitation and confirms the resulting partner session.
 
+Automated Stripe test-mode payment rehearsal:
+
+```bash
+PAYMENT_PROVIDER=stripe STRIPE_SECRET_KEY=sk_test_... npm run payments:stripe:rehearse
+```
+
+Run this only against staging/local environments configured with Stripe test-mode secrets and production-like auth delivery. The rehearsal creates real API sessions through delivered auth codes, creates partner availability and bookings, creates Stripe-backed PaymentIntents, confirms them with a Stripe test payment method, verifies authorization, captures on operational completion, refunds through the internal finance path, and verifies cancellation voids an authorization. Optional overrides:
+
+- `STRIPE_REHEARSAL_API_BASE`, default `http://127.0.0.1:3001`.
+- `STRIPE_REHEARSAL_MAILPIT_BASE`, default `http://127.0.0.1:8025`.
+- `STRIPE_REHEARSAL_PAYMENT_METHOD`, default `pm_card_visa`.
+- `STRIPE_REHEARSAL_CUSTOMER_IDENTIFIER`, default generated test customer.
+- `STRIPE_REHEARSAL_PARTNER_IDENTIFIER`, default `partner.demo@primawash.local`.
+- `STRIPE_REHEARSAL_ADMIN_IDENTIFIER`, default `finance@primawash.local`.
+- `STRIPE_REHEARSAL_PARTNER_LOCATION_ID`, default `loc_demo_001`.
+
 Local manual preview flow:
 
 ```powershell
