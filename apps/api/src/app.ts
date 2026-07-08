@@ -13,6 +13,7 @@ import type {
   BillingSession,
   Booking,
   BookingHold,
+  ClaimReferralRequest,
   RequestAuthCodeRequest,
   RefreshAuthSessionRequest,
   VerifyAuthCodeRequest,
@@ -66,6 +67,7 @@ import type {
   PartnerLocation,
   PrimaWashDayBookingItem,
   PropertyManagementDashboardResponse,
+  ReferralSummary,
   ResendAccessInvitationResponse,
   ResidenceType,
   SchedulingConfig,
@@ -158,6 +160,7 @@ import {
   validateCreateCommunicationThread,
 } from "./modules/communications/repository.js";
 import { publicAccessInvitation } from "./modules/invitations/repository.js";
+import { validateClaimReferral } from "./modules/referrals/repository.js";
 
 export interface CreateApiServerOptions {
   readonly repositories: Repositories;
@@ -182,6 +185,7 @@ export function createApiServer(options: CreateApiServerOptions): Server {
     options.authSessionSecret ?? process.env.AUTH_SESSION_SECRET ?? "prima-wash-development-secret-change-before-production";
   const evidenceStorageProvider = options.evidenceStorageProvider ?? new InMemoryEvidenceStorageProvider();
   const corsAllowedOrigins = options.corsAllowedOrigins ?? defaultLocalCorsAllowedOrigins;
+  const referralShareBaseUrl = process.env.REFERRAL_SHARE_BASE_URL;
   const authService = new AuthService(
     authSessionSecret,
     authCodeDeliveryProvider,
@@ -711,6 +715,71 @@ export function createApiServer(options: CreateApiServerOptions): Server {
           sendError(response, 404, "profile_not_found", "Customer profile does not exist");
         }
       }
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/referrals/me") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertOwnerAccess(actor, actor.userId);
+        const summary = await options.repositories.referrals.getSummary(actor.userId);
+        sendJson(response, 200, { data: withReferralShareUrl(summary, referralShareBaseUrl) });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/v1/referrals/claim") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertOwnerAccess(actor, actor.userId);
+        const input = await readJsonBody<ClaimReferralRequest>(request);
+        const errors = validateClaimReferral(input);
+
+        if (errors.length > 0) {
+          sendError(response, 400, "validation_failed", "Referral claim payload is invalid", errors);
+          return;
+        }
+
+        await options.repositories.referrals.claim({
+          code: input.code,
+          referredOwnerId: actor.userId,
+        });
+        await options.repositories.audit.record({
+          actor,
+          action: "referral.claimed",
+          resourceType: "referral_relationship",
+          resourceId: actor.userId,
+          requestId: requestContext.requestId,
+          metadata: {
+            code: input.code.trim().toUpperCase(),
+          },
+        });
+
+        const summary = await options.repositories.referrals.getSummary(actor.userId);
+        sendJson(response, 201, { data: withReferralShareUrl(summary, referralShareBaseUrl) });
+      } catch (error) {
+        if (!sendAuthError(response, error)) {
+          const message = error instanceof Error ? error.message : "unknown_error";
+          const status = message === "referral_code_not_found" ? 404 : message === "referral_already_claimed" ? 409 : 400;
+          sendError(response, status, message, referralErrorMessage(message));
+        }
+      }
+
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/internal/referrals") {
+      try {
+        const actor = await requireActor(request, options.repositories.accessControl, options.repositories.auth);
+        assertInternalPermission(actor, "finance_read");
+        sendJson(response, 200, { data: await options.repositories.referrals.listInternal() });
+      } catch (error) {
+        sendAuthError(response, error);
+      }
+
       return;
     }
 
@@ -4040,6 +4109,24 @@ export function createApiServer(options: CreateApiServerOptions): Server {
               serviceCode: serviceRecord.serviceCode,
             },
           });
+
+          const referralCredit = await options.repositories.referrals.creditCompletedBooking(updatedBooking);
+          if (referralCredit) {
+            await options.repositories.audit.record({
+              actor,
+              action: "referral.credit_available",
+              resourceType: "referral_credit",
+              resourceId: referralCredit.id,
+              requestId: requestContext.requestId,
+              metadata: {
+                bookingId: updatedBooking.id,
+                referredOwnerId: updatedBooking.ownerId,
+                referrerOwnerId: referralCredit.ownerId,
+                amountMinor: referralCredit.amount.amountMinor,
+                currency: referralCredit.amount.currency,
+              },
+            });
+          }
         }
 
         sendJson(response, 200, { data: updatedBooking });
@@ -5306,6 +5393,35 @@ function formatMoney(amountMinor: number, currency: string): string {
     style: "currency",
     currency,
   }).format(amountMinor / 100);
+}
+
+function withReferralShareUrl(summary: ReferralSummary, shareBaseUrl?: string): ReferralSummary {
+  const normalizedBaseUrl = shareBaseUrl?.trim();
+  if (!normalizedBaseUrl) {
+    return summary;
+  }
+
+  const separator = normalizedBaseUrl.includes("?") ? "&" : "?";
+  return {
+    ...summary,
+    code: {
+      ...summary.code,
+      shareUrl: `${normalizedBaseUrl}${separator}ref=${encodeURIComponent(summary.code.code)}`,
+    },
+  };
+}
+
+function referralErrorMessage(code: string): string {
+  if (code === "referral_code_not_found") {
+    return "Referral code was not found";
+  }
+  if (code === "self_referral_not_allowed") {
+    return "You cannot use your own referral code";
+  }
+  if (code === "referral_already_claimed") {
+    return "A referral code has already been claimed for this account";
+  }
+  return "Referral request could not be processed";
 }
 
 async function createServiceRecordIfCompleted(

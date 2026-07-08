@@ -29,6 +29,7 @@ import type {
   PartnerLocation,
   PrimaWashDay,
   Property,
+  ReferralSummary,
   ServiceOffering,
   ServiceRecord,
   Vehicle,
@@ -106,6 +107,9 @@ export const primaApi = {
   profile: () => request<CustomerProfile>('/v1/profile'),
   updateProfile: (input: UpdateCustomerProfileRequest) =>
     request<CustomerProfile>('/v1/profile', { method: 'PATCH', body: JSON.stringify(input) }),
+  referralSummary: () => request<ReferralSummary>('/v1/referrals/me'),
+  claimReferral: (code: string) =>
+    request<ReferralSummary>('/v1/referrals/claim', { method: 'POST', body: JSON.stringify({ code }) }),
   properties: (input?: { readonly query?: string; readonly residenceType?: string }) => {
     const params = new URLSearchParams();
 

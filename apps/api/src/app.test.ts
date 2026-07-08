@@ -42,6 +42,8 @@ import type {
   Property,
   PropertyManagementDashboardResponse,
   PropertyLead,
+  ReferralSummary,
+  InternalReferralSummary,
   CondoOperationalProfile,
   PrimaWashDay,
   ServiceRecord,
@@ -4036,6 +4038,89 @@ describe("Prima Wash API", () => {
 
     assert.equal(response.status, 403);
     assert.equal(payload.code, "forbidden_owner_scope");
+  });
+
+  it("manages referral claims and credits referrers after first completed paid booking", async () => {
+    const referrerSession = await createCustomerSession("referrer@example.com");
+    const referredSession = await createCustomerSession("referred@example.com");
+    const referrerHeaders = authHeaders(referrerSession);
+    const referredHeaders = authHeaders(referredSession);
+
+    const summaryResponse = await fetch(`${baseUrl}/v1/referrals/me`, { headers: referrerHeaders });
+    const summaryPayload = (await summaryResponse.json()) as ApiResponse<ReferralSummary>;
+
+    assert.equal(summaryResponse.status, 200);
+    assert.match(summaryPayload.data.code.code, /^PW[A-Z0-9]{8}$/);
+
+    const selfClaimResponse = await fetch(`${baseUrl}/v1/referrals/claim`, {
+      method: "POST",
+      headers: referrerHeaders,
+      body: JSON.stringify({ code: summaryPayload.data.code.code }),
+    });
+    const selfClaimPayload = (await selfClaimResponse.json()) as ApiErrorResponse;
+
+    assert.equal(selfClaimResponse.status, 400);
+    assert.equal(selfClaimPayload.code, "self_referral_not_allowed");
+
+    const claimResponse = await fetch(`${baseUrl}/v1/referrals/claim`, {
+      method: "POST",
+      headers: referredHeaders,
+      body: JSON.stringify({ code: summaryPayload.data.code.code.toLowerCase() }),
+    });
+    const claimPayload = (await claimResponse.json()) as ApiResponse<ReferralSummary>;
+
+    assert.equal(claimResponse.status, 201);
+    assert.equal(claimPayload.data.relationships[0]?.status, "claimed");
+
+    const duplicateClaimResponse = await fetch(`${baseUrl}/v1/referrals/claim`, {
+      method: "POST",
+      headers: referredHeaders,
+      body: JSON.stringify({ code: summaryPayload.data.code.code }),
+    });
+    const duplicateClaimPayload = (await duplicateClaimResponse.json()) as ApiErrorResponse;
+
+    assert.equal(duplicateClaimResponse.status, 409);
+    assert.equal(duplicateClaimPayload.code, "referral_already_claimed");
+
+    const slot = await createAvailabilitySlot({
+      startsAt: "2026-07-21T09:00:00.000Z",
+      endsAt: "2026-07-21T09:45:00.000Z",
+      capacity: 1,
+      serviceCodes: ["wash_basic"],
+    });
+    const vehicle = await createVehicle("REF123", referredHeaders);
+    const booking = await createBooking(vehicle.id, "wash_basic", slot.id, referredHeaders);
+    const payment = await createPaymentIntent(booking.id, referredHeaders);
+    const authorizeResponse = await fetch(`${baseUrl}/v1/payments/${payment.id}/authorize`, {
+      method: "POST",
+      headers: referredHeaders,
+    });
+
+    assert.equal(authorizeResponse.status, 200);
+
+    await updateBookingStatus(booking.id, "confirmed");
+    await updateBookingStatus(booking.id, "checked_in");
+    await updateBookingStatus(booking.id, "in_service");
+    await updateBookingStatus(booking.id, "completed");
+
+    const creditedResponse = await fetch(`${baseUrl}/v1/referrals/me`, { headers: referrerHeaders });
+    const creditedPayload = (await creditedResponse.json()) as ApiResponse<ReferralSummary>;
+
+    assert.equal(creditedResponse.status, 200);
+    assert.equal(creditedPayload.data.credits.length, 1);
+    assert.equal(creditedPayload.data.credits[0]?.status, "available");
+    assert.equal(creditedPayload.data.availableCreditTotal.amountMinor, 1000);
+
+    const internalResponse = await fetch(`${baseUrl}/v1/internal/referrals`, {
+      headers: {
+        ...internalHeaders,
+        "x-prima-permissions": "finance_read",
+      },
+    });
+    const internalPayload = (await internalResponse.json()) as ApiResponse<InternalReferralSummary>;
+
+    assert.equal(internalResponse.status, 200);
+    assert.ok(internalPayload.data.credits.some((credit) => credit.bookingId === booking.id));
   });
 
   it("blocks customer actors from partner dashboard", async () => {

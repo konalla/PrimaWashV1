@@ -1959,6 +1959,7 @@
         <div class="finance-summary-grid" id="finance-summary"></div>
         <div id="finance-reconciliation-result"></div>
         <div id="finance-reconciliation-history"></div>
+        <div id="referral-rebates"></div>
         <div class="finance-toolbar" aria-label="Payment operation filters">
           <input id="finance-search" type="search" placeholder="Search booking, provider ref, request id" />
           <select id="finance-status-filter" aria-label="Payment operation status">
@@ -2415,6 +2416,7 @@
       const financeReconciliationProviderSelect = document.querySelector("#finance-reconciliation-provider");
       const financeReconciliationResultEl = document.querySelector("#finance-reconciliation-result");
       const financeReconciliationHistoryEl = document.querySelector("#finance-reconciliation-history");
+      const referralRebatesEl = document.querySelector("#referral-rebates");
       const queueEl = document.querySelector("#queue");
       const auditEl = document.querySelector("#audit");
       const availabilityEl = document.querySelector("#availability");
@@ -2470,6 +2472,7 @@
       let paymentOperationsCache = [];
       let paymentReconciliationCasesCache = [];
       let paymentProviderReconciliationRunsCache = [];
+      let referralRebatesCache = { relationships: [], credits: [] };
       let paymentEvidencePacksCache = new Map();
       let paymentProviderReconciliationResult = null;
       let selectedPaymentOperationId = null;
@@ -3180,6 +3183,9 @@
         const paymentProviderReconciliationRuns = isAdminMode && hasAdminPermission("finance_read")
           ? await requestJson(`/v1/internal/payment-provider-reconciliation-runs?limit=8`, adminHeaders("finance_read"))
           : [];
+        const referralRebates = isAdminMode && hasAdminPermission("finance_read")
+          ? await requestJson(`/v1/internal/referrals`, adminHeaders("finance_read"))
+          : { relationships: [], credits: [] };
 
         primaWashDayBookingsCache = primaWashDayBookings;
         primaWashDaysCache = primaWashDays;
@@ -3189,10 +3195,12 @@
         paymentOperationsCache = paymentOperations;
         paymentReconciliationCasesCache = paymentReconciliationCases;
         paymentProviderReconciliationRunsCache = paymentProviderReconciliationRuns;
+        referralRebatesCache = referralRebates;
         bookingFinanceRequestCache.clear();
         renderDashboard(dashboard, mavo);
         void loadFinanceRequestsForBookings(dashboard.queue.map((item) => item.bookingId));
         renderFinance(paymentOperationsCache);
+        renderReferralRebates(referralRebatesCache);
         syncInvitationForm();
         renderAccessInvitations(accessInvitationsCache);
         renderAccessMemberships(accessMembershipsCache);
@@ -3740,21 +3748,26 @@
           paymentOperationsCache = [];
           paymentReconciliationCasesCache = [];
           paymentProviderReconciliationRunsCache = [];
+          referralRebatesCache = { relationships: [], credits: [] };
           paymentEvidencePacksCache = new Map();
           renderFinance(paymentOperationsCache);
+          renderReferralRebates(referralRebatesCache);
           return;
         }
 
-        const [operations, cases, runs] = await Promise.all([
+        const [operations, cases, runs, referralRebates] = await Promise.all([
           requestJson(`/v1/internal/payment-operations?limit=200`, adminHeaders("finance_read")),
           requestJson(`/v1/internal/payment-reconciliation-cases?limit=200`, adminHeaders("finance_read")),
           requestJson(`/v1/internal/payment-provider-reconciliation-runs?limit=8`, adminHeaders("finance_read")),
+          requestJson(`/v1/internal/referrals`, adminHeaders("finance_read")),
         ]);
         paymentOperationsCache = operations;
         paymentReconciliationCasesCache = cases;
         paymentProviderReconciliationRunsCache = runs;
+        referralRebatesCache = referralRebates;
         paymentEvidencePacksCache = new Map();
         renderFinance(paymentOperationsCache);
+        renderReferralRebates(referralRebatesCache);
       }
 
       async function createPaymentReconciliationCase(input) {
@@ -3858,6 +3871,7 @@
           financeSummaryEl.innerHTML = "";
           financeReconciliationResultEl.innerHTML = "";
           financeReconciliationHistoryEl.innerHTML = "";
+          referralRebatesEl.innerHTML = "";
           financeLedgerEl.innerHTML = `<div class="empty">Finance reconciliation requires finance_read permission.</div>`;
           financeDetailEl.innerHTML = `
             <p class="eyebrow">Restricted</p>
@@ -3894,6 +3908,7 @@
           .join("");
         financeReconciliationResultEl.innerHTML = renderProviderReconciliationResult();
         financeReconciliationHistoryEl.innerHTML = renderProviderReconciliationHistory();
+        renderReferralRebates(referralRebatesCache);
 
         if (!selectedPaymentOperationId || !filteredOperations.some((operation) => operation.id === selectedPaymentOperationId)) {
           selectedPaymentOperationId = filteredOperations[0]?.id || null;
@@ -3905,6 +3920,51 @@
             : filteredOperations.map(renderFinanceRow).join("");
 
         renderFinanceDetail(filteredOperations.find((operation) => operation.id === selectedPaymentOperationId) || filteredOperations[0]);
+      }
+
+      function renderReferralRebates(data) {
+        if (!isAdminMode || !hasAdminPermission("finance_read")) {
+          referralRebatesEl.innerHTML = "";
+          return;
+        }
+
+        const credits = data?.credits || [];
+        const relationships = data?.relationships || [];
+        const availableTotal = credits
+          .filter((credit) => credit.status === "available")
+          .reduce((total, credit) => total + (credit.amount?.amountMinor || 0), 0);
+        const currency = credits[0]?.amount?.currency || "SGD";
+        const latestCredits = credits.slice(0, 5);
+
+        referralRebatesEl.innerHTML = `
+          <section class="finance-reconciliation-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Referral rebates</p>
+                <h3>Pilot invite credit ledger</h3>
+                <p class="section-description">Read-only referral claims and available credits for manual pilot rebate handling.</p>
+              </div>
+              <span class="pill">${relationships.length} claims · ${formatMoney({ amountMinor: availableTotal, currency })} available</span>
+            </div>
+            ${
+              latestCredits.length === 0
+                ? `<div class="empty">No referral credits available yet. Credits appear after a referred customer completes their first paid booking.</div>`
+                : latestCredits
+                    .map(
+                      (credit) => `
+                        <div class="audit-row">
+                          <div class="badge">✓</div>
+                          <div>
+                            <strong>${formatMoney(credit.amount)} ${escapeHtml(credit.status)} rebate</strong><br />
+                            <span class="muted">Owner ${escapeHtml(credit.ownerId)} · Booking ${escapeHtml(credit.bookingId || "pending")} · ${formatRelativeTime(credit.createdAt)}</span>
+                          </div>
+                        </div>
+                      `,
+                    )
+                    .join("")
+            }
+          </section>
+        `;
       }
 
       function renderProviderReconciliationResult() {

@@ -13,6 +13,16 @@ Launch-freeze payment update on 2026-07-08:
 - The Stripe rehearsal passed locally on 2026-07-08 against the isolated webhook-auth API on port `3012`, Mailpit, delivery relay, Postgres persistence, and Stripe test mode. The run verified capture/refund booking `book_22cc8dc8-bac7-441e-b1a6-b89b5709a4c4` with provider reference `pi_3TqoYi9nVwFNenFq1txNJHdp`, and void booking `book_2013565a-04a0-4671-87ef-b31670e4578e` with provider reference `pi_3TqoYn9nVwFNenFq0ytB1AIP`.
 - The delivery relay SMTP client now treats STARTTLS as opportunistic for unauthenticated SMTP servers such as Mailpit, while still refusing to send SMTP credentials when STARTTLS is unavailable.
 
+Launch-freeze referral rebate update on 2026-07-08:
+
+- Added a pilot-safe referral rebate MVP before staging deployment.
+- Customers can view and share their Prima Wash invite code from the mobile Profile tab.
+- Customers can claim a friend or family invite code once; self-referrals and duplicate claims are blocked.
+- Referral codes, relationships, and credits are durable in Postgres through `0043_referrals.sql`.
+- Credits become available only after the referred customer completes their first paid booking.
+- Internal finance users can view referral claims and available credits from the web Finance dashboard for manual pilot redemption.
+- Checkout auto-redemption is intentionally not included yet; rebates are manual during pilot to keep payment totals and Stripe capture flows stable.
+
 Launch-freeze update on 2026-07-07:
 
 - The active goal is now a controlled Singapore pilot launch as soon as possible, not continued feature expansion.

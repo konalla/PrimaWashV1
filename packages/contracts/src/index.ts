@@ -3,6 +3,58 @@ export interface Money {
   readonly currency: string;
 }
 
+export type ReferralRelationshipStatus = "claimed" | "credited";
+
+export type ReferralCreditStatus = "available" | "redeemed" | "voided";
+
+export interface ReferralCode {
+  readonly ownerId: string;
+  readonly code: string;
+  readonly shareUrl?: string;
+  readonly createdAt: string;
+}
+
+export interface ReferralRelationship {
+  readonly id: string;
+  readonly referrerOwnerId: string;
+  readonly referredOwnerId: string;
+  readonly referralCode: string;
+  readonly status: ReferralRelationshipStatus;
+  readonly qualifyingBookingId?: string;
+  readonly creditedAt?: string;
+  readonly createdAt: string;
+}
+
+export interface ReferralCredit {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly referralRelationshipId: string;
+  readonly amount: Money;
+  readonly status: ReferralCreditStatus;
+  readonly reason: string;
+  readonly bookingId?: string;
+  readonly createdAt: string;
+  readonly availableAt?: string;
+  readonly redeemedAt?: string;
+  readonly voidedAt?: string;
+}
+
+export interface ReferralSummary {
+  readonly code: ReferralCode;
+  readonly relationships: readonly ReferralRelationship[];
+  readonly credits: readonly ReferralCredit[];
+  readonly availableCreditTotal: Money;
+}
+
+export interface ClaimReferralRequest {
+  readonly code: string;
+}
+
+export interface InternalReferralSummary {
+  readonly relationships: readonly ReferralRelationship[];
+  readonly credits: readonly ReferralCredit[];
+}
+
 export interface ApiErrorResponse {
   readonly code: string;
   readonly message: string;
