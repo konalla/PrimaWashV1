@@ -55,7 +55,7 @@ export default function ConfirmedScreen() {
 const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingVertical: spacing.xxxl, gap: spacing.md },
   check: { width: 72, height: 72, borderRadius: 24, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  checkText: { color: colors.black, fontSize: 34, fontWeight: '900' },
+  checkText: { color: colors.onAccent, fontSize: 34, fontWeight: '900' },
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
   title: { color: colors.text, fontSize: 30, fontWeight: '900', letterSpacing: 0, textAlign: 'center' },
   body: { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: 'center' },

@@ -63,7 +63,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, justifyContent: 'center', backgroundColor: colors.canvas, padding: spacing.xl, gap: spacing.lg },
   brandMark: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  brandLetter: { color: colors.black, fontSize: 23, fontWeight: '900' },
+  brandLetter: { color: colors.onAccent, fontSize: 23, fontWeight: '900' },
   eyebrow: { color: colors.accent, fontSize: 11, fontWeight: '900', letterSpacing: 1.8 },
   title: { color: colors.text, fontSize: 36, lineHeight: 41, fontWeight: '900', letterSpacing: 0 },
   body: { color: colors.muted, fontSize: 15, lineHeight: 23 },

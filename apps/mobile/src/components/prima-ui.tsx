@@ -24,7 +24,7 @@ export function PrimaryButton({
       disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, (disabled || loading) && styles.disabled]}>
-      {loading ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryLabel}>{label}</Text>}
+      {loading ? <ActivityIndicator color={colors.onAction} /> : <Text style={styles.primaryLabel}>{label}</Text>}
     </Pressable>
   );
 }
@@ -75,10 +75,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.md,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.action,
     paddingHorizontal: spacing.lg,
   },
-  primaryLabel: { color: colors.white, fontSize: 16, fontWeight: '800' },
+  primaryLabel: { color: colors.onAction, fontSize: 16, fontWeight: '800' },
   pressed: { opacity: 0.86, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.5 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
   sectionTitle: { color: colors.text, fontSize: 21, fontWeight: '800', letterSpacing: 0, marginTop: 3 },
   chip: { alignSelf: 'flex-start', borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, paddingHorizontal: 10, paddingVertical: 6 },
-  chipWarning: { backgroundColor: '#FBF2DE' },
+  chipWarning: { backgroundColor: '#FFF2E8' },
   chipNeutral: { backgroundColor: colors.canvasRaised },
   chipText: { color: colors.accent, fontSize: 11, fontWeight: '800' },
   chipWarningText: { color: colors.warning },

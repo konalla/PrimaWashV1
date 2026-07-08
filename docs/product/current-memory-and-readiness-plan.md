@@ -4,6 +4,14 @@ Last updated: 2026-07-08
 
 This document is the current working memory for Prima Wash. It consolidates the product direction, what has already been built, what remains, and the phased path to pilot and launch readiness.
 
+Launch brand-system update on 2026-07-08:
+
+- Added `docs/product/brand-kit.md` as the current launch brand direction.
+- Rejected the experimental gear/wrench logo as a production mark for now because it leans too much toward repair-shop mechanics rather than premium vehicle-care coordination.
+- Confirmed a light-first Prima Wash identity: near-black text, warm white canvas, petrol-teal trust/operations color, and copper-orange action/reward accent.
+- Kept Manrope as the launch typeface across web and mobile because it is premium, readable, broad-audience, and production-safe.
+- Updated web and mobile design tokens so primary actions use copper, trust/selected states use petrol teal, and the app avoids returning to dark green full-page UI.
+
 Launch-freeze payment update on 2026-07-08:
 
 - Added `npm run payments:stripe:rehearse` for a staging Stripe test-mode payment rehearsal.

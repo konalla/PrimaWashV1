@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   profile: { flexDirection: 'row', gap: spacing.lg, alignItems: 'center' },
   profileCopy: { flex: 1 },
   avatar: { width: 60, height: 60, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.black, fontSize: 23, fontWeight: '900' },
+  avatarText: { color: colors.onAccent, fontSize: 23, fontWeight: '900' },
   name: { color: colors.text, fontSize: 21, fontWeight: '800' },
   detail: { color: colors.muted, fontSize: 13, marginTop: 4 },
   field: { gap: spacing.sm },

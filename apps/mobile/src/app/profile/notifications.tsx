@@ -117,7 +117,7 @@ function Preference({
         accessibilityLabel={label}
         disabled={disabled}
         onValueChange={onValueChange}
-        thumbColor={value ? colors.black : colors.muted}
+        thumbColor={value ? colors.onAccent : colors.muted}
         trackColor={{ false: colors.border, true: colors.accent }}
         value={value}
       />
@@ -144,11 +144,11 @@ const styles = StyleSheet.create({
   permissionButton: {
     alignSelf: 'flex-start',
     borderRadius: 999,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.action,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  permissionLabel: { color: colors.black, fontSize: 13, fontWeight: '900' },
+  permissionLabel: { color: colors.onAction, fontSize: 13, fontWeight: '900' },
   preference: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   border: { borderTopWidth: 1, borderTopColor: colors.border },
   copy: { flex: 1 },
