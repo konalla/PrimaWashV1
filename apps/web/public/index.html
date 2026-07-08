@@ -1693,6 +1693,26 @@
         margin-bottom: var(--space-section);
       }
 
+      .workspace-view {
+        animation: view-enter 180ms ease-out;
+      }
+
+      .workspace-view[hidden] {
+        display: none !important;
+      }
+
+      @keyframes view-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
       .availability-day {
         display: grid;
         grid-template-columns: 150px minmax(0, 1fr);
@@ -1935,13 +1955,13 @@
           <img class="mark" src="assets/prima-wash-logo.png" alt="Prima Wash" />
         </div>
         <nav class="nav-list" aria-label="Business navigation">
-          <a class="nav-item is-active" href="#overview"><span class="nav-icon">⌂</span>Overview</a>
-          <a class="nav-item" href="#queue-section"><span class="nav-icon">▣</span>Bookings</a>
-          <a class="nav-item" href="#availability-section"><span class="nav-icon">◫</span>Availability</a>
-          <a class="nav-item" href="#activity-section"><span class="nav-icon">↻</span>Activity</a>
-          <a class="nav-item" href="#condo-leads-section"><span class="nav-icon">CL</span>Condo leads</a>
-          <a class="nav-item" href="#finance-section"><span class="nav-icon">$</span>Finance</a>
-          <a class="nav-item" href="#access-section"><span class="nav-icon">A</span>Access</a>
+          <a class="nav-item is-active" href="#overview" data-view-target="overview"><span class="nav-icon">O</span>Overview</a>
+          <a class="nav-item" href="#bookings" data-view-target="bookings"><span class="nav-icon">B</span>Bookings</a>
+          <a class="nav-item" href="#availability" data-view-target="availability"><span class="nav-icon">AV</span>Availability</a>
+          <a class="nav-item" href="#activity" data-view-target="activity"><span class="nav-icon">AC</span>Activity</a>
+          <a class="nav-item" href="#condo-leads" data-view-target="condo-leads" data-admin-only><span class="nav-icon">CL</span>Condo leads</a>
+          <a class="nav-item" href="#finance" data-view-target="finance" data-admin-only><span class="nav-icon">$</span>Finance</a>
+          <a class="nav-item" href="#access" data-view-target="access" data-admin-only><span class="nav-icon">A</span>Access</a>
         </nav>
         <div class="sidebar-footer">
           <div class="business-avatar">PW</div>
@@ -1977,7 +1997,7 @@
         </div>
       </header>
 
-      <section class="hero" id="overview">
+      <section class="hero workspace-view" id="overview" data-view="overview">
         <div class="card">
           <p class="eyebrow">Today’s operations</p>
           <h1>Good morning, Amadou.</h1>
@@ -2000,10 +2020,10 @@
         </aside>
       </section>
 
-      <section class="metric-grid" id="metrics"></section>
-      <div class="secondary-metrics" id="secondary-metrics" aria-label="Secondary business metrics"></div>
+      <section class="metric-grid workspace-view" id="metrics" data-view="overview"></section>
+      <div class="secondary-metrics workspace-view" id="secondary-metrics" data-view="overview" aria-label="Secondary business metrics"></div>
 
-      <section class="card availability-card" id="finance-section">
+      <section class="card availability-card workspace-view" id="finance-section" data-view="finance" data-admin-only>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Finance reconciliation</p>
@@ -2054,7 +2074,7 @@
         </div>
       </section>
 
-      <section class="card availability-card" id="access-section">
+      <section class="card availability-card workspace-view" id="access-section" data-view="access" data-admin-only>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Access control</p>
@@ -2118,7 +2138,7 @@
         <div class="cluster" id="access-memberships"></div>
       </section>
 
-      <section class="card availability-card" id="condo-leads-section">
+      <section class="card availability-card workspace-view" id="condo-leads-section" data-view="condo-leads" data-admin-only>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Condo activation</p>
@@ -2148,8 +2168,8 @@
         <div class="cluster" id="prima-wash-days"></div>
       </section>
 
-      <section class="split" id="queue-section">
-        <div class="card" id="activity-section">
+      <section class="workspace-view" id="queue-section" data-view="bookings">
+        <div class="card">
           <p class="eyebrow">Today’s queue</p>
           <div class="section-heading">
             <h2>Bookings to manage</h2>
@@ -2163,15 +2183,21 @@
           </div>
           <div class="cluster" id="queue"></div>
         </div>
-
-        <div class="card">
-          <p class="eyebrow">Recent activity</p>
-          <h2>Operational trail</h2>
-          <div class="cluster" id="audit"></div>
-        </div>
       </section>
 
-      <section class="card availability-card" id="availability-section">
+      <section class="card availability-card workspace-view" id="activity-section" data-view="activity">
+        <p class="eyebrow">Recent activity</p>
+        <div class="section-heading">
+          <div>
+            <h2>Operational trail</h2>
+            <p class="section-description">Audit trail for booking, payment, availability, access, and operating events.</p>
+          </div>
+          <span class="sync-label">Latest first</span>
+        </div>
+        <div class="cluster" id="audit"></div>
+      </section>
+
+      <section class="card availability-card workspace-view" id="availability-section" data-view="availability">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Availability control</p>
@@ -2525,6 +2551,32 @@
       const plannerCadenceEl = document.querySelector("#planner-cadence");
       const mobileMenuButton = document.querySelector(".mobile-menu");
       const sidebarEl = document.querySelector(".sidebar");
+      const navItems = [...document.querySelectorAll(".nav-item")];
+      const workspaceViews = [...document.querySelectorAll(".workspace-view")];
+      const viewHashAliases = {
+        overview: "overview",
+        bookings: "bookings",
+        "queue-section": "bookings",
+        availability: "availability",
+        "availability-section": "availability",
+        activity: "activity",
+        "activity-section": "activity",
+        finance: "finance",
+        "finance-section": "finance",
+        access: "access",
+        "access-section": "access",
+        "condo-leads": "condo-leads",
+        "condo-leads-section": "condo-leads",
+      };
+      const viewIconLabels = {
+        overview: "O",
+        bookings: "B",
+        availability: "AV",
+        activity: "AC",
+        "condo-leads": "CL",
+        finance: "$",
+        access: "A",
+      };
       const currentMonth = new Date().toISOString().slice(0, 7);
       let dashboardCache = null;
       let condoLeadsCache = [];
@@ -2592,9 +2644,10 @@
       });
 
       if (!isAdminMode) {
-        condoLeadsSectionEl.hidden = true;
-        accessSectionEl.hidden = true;
-        financeSectionEl.hidden = true;
+        document.querySelectorAll("[data-admin-only]").forEach((element) => {
+          element.dataset.viewDisabled = "true";
+          element.hidden = true;
+        });
       }
 
       adminPermissionSelect.addEventListener("change", async () => {
@@ -2646,8 +2699,22 @@
         }
       });
 
-      document.querySelectorAll(".nav-item").forEach((item) => {
-        item.addEventListener("click", () => sidebarEl.classList.remove("is-open"));
+      navItems.forEach((item) => {
+        const hash = item.getAttribute("href")?.replace("#", "") || "overview";
+        item.dataset.viewTarget ||= viewHashAliases[hash] || hash;
+        const icon = item.querySelector(".nav-icon");
+        if (icon && viewIconLabels[item.dataset.viewTarget]) {
+          icon.textContent = viewIconLabels[item.dataset.viewTarget];
+        }
+        item.addEventListener("click", (event) => {
+          event.preventDefault();
+          syncWorkspaceView(item.dataset.viewTarget || "overview");
+          sidebarEl.classList.remove("is-open");
+        });
+      });
+
+      window.addEventListener("hashchange", () => {
+        syncWorkspaceView(resolveWorkspaceViewFromHash(), { updateHash: false });
       });
 
       [financeSearchInput, financeStatusFilter, financeOperationFilter, financeProviderFilter].forEach((control) => {
@@ -4865,7 +4932,7 @@
                 )
                 .join("");
 
-        document.querySelector("#queue-section").scrollIntoView({ behavior: "smooth", block: "start" });
+        syncWorkspaceView("bookings");
       }
 
       function resetMainQueueHeading() {
@@ -8029,6 +8096,38 @@
         return plan;
       }
 
+      function resolveWorkspaceViewFromHash() {
+        const rawHash = window.location.hash.replace("#", "");
+        return viewHashAliases[rawHash] || rawHash || "overview";
+      }
+
+      function isWorkspaceViewAvailable(view) {
+        return workspaceViews.some((element) => element.dataset.view === view && element.dataset.viewDisabled !== "true");
+      }
+
+      function syncWorkspaceView(view, options = {}) {
+        const updateHash = options.updateHash !== false;
+        const safeView = isWorkspaceViewAvailable(view) ? view : "overview";
+
+        workspaceViews.forEach((element) => {
+          const disabled = element.dataset.viewDisabled === "true";
+          element.hidden = disabled || element.dataset.view !== safeView;
+        });
+
+        navItems.forEach((item) => {
+          const disabled = item.dataset.viewDisabled === "true";
+          const active = !disabled && item.dataset.viewTarget === safeView;
+          item.classList.toggle("is-active", active);
+          item.setAttribute("aria-current", active ? "page" : "false");
+        });
+
+        if (updateHash && window.location.hash !== `#${safeView}`) {
+          window.history.replaceState({}, "", `#${safeView}`);
+        }
+
+        window.scrollTo(0, 0);
+      }
+
       document.querySelectorAll("[data-close-dialog]").forEach((button) => {
         button.addEventListener("click", () => availabilityDialog.close());
       });
@@ -8213,6 +8312,8 @@
           showToast(error.message, "error");
         }
       });
+
+      syncWorkspaceView(resolveWorkspaceViewFromHash(), { updateHash: false });
 
       if (portalMode === "management") {
         loadManagementPortal().catch((error) => {
